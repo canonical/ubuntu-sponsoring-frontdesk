@@ -1,0 +1,55 @@
+digraph SyncTriage {
+    rankdir=TB;
+    bgcolor="white";
+    node [fontname="Helvetica", fontsize=11, style="filled", color="#333333"];
+    edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+    // IMPLEMENTED (llm_reviewer._triage_sync / _parse_sync_title,
+    // archive_lookup.py, LPClient.set_bug_tasks_fix_released, main.py SYNCED
+    // status). Sub-flow of the bug branch of triage_bug (flow.dot's `kind`
+    // node), specific to sync requests. A sync request is always a bug (a
+    // sync is a source-package copy; there is no code to review), never an MP.
+
+    entry [label="bug title matches /sync/i\n(_is_sync)", shape=box, fillcolor="#E8EAF6"];
+
+    ffe [label="[BACKLOG] After Feature Freeze\n(release_schedule.FEATURE_FREEZE,\nhand-maintained per cycle -- see #19):\nnew-feature syncs need a\nFeatureFreezeException.\n\"Is this a new feature?\" detection\ndeferred to a future shared skill.", shape=note, fillcolor="#FFFDE7"];
+    entry -> ffe [style=dotted, arrowhead=none];
+
+    delta [label="Ubuntu delta?\ncurrent published Ubuntu version\ncontains \"ubuntuN\" in revision?\n(\"buildN\" = no-change rebuild, not a delta)", shape=diamond, fillcolor="#FFF9C4"];
+    entry -> delta;
+
+    // ---- no-delta branch (1) ----
+    synced [label="1.a already synced?\nLaunchpad: published Ubuntu <pkg>\nfor $devel and $devel-proposed:\nrequested-or-newer present?", shape=diamond, fillcolor="#FFF9C4"];
+    delta -> synced [label="no (clean sync already)"];
+
+    close_synced [label="set matching Ubuntu task(s) to\n\"Fix Released\"\n(the untargeted task, or the one\nnominated to $devel if present)\ncomment explaining why", shape=box, fillcolor="#C8E6C9"];
+    synced -> close_synced [label="yes"];
+
+    in_debian [label="1.b requested version in Debian?\napi.ftp-master.debian.org/madison <pkg>:\nunstable, or experimental IF the\ntitle/description says so\n(live dak db -- no publish-run lag)", shape=diamond, fillcolor="#FFF9C4"];
+    synced -> in_debian [label="no"];
+
+    in_debian -> rfh [label="found"];
+
+    justified [label="LLM: does the description give a\nspecific justification for a version\nnot currently in the stated Debian pocket?", shape=diamond, fillcolor="#F8BBD0"];
+    in_debian -> justified [label="not found"];
+
+    justified -> rfh [label="yes (special case)\nleave for human, no write"];
+    ask_version [label="comment: version not found in Debian,\nplease clarify\nset Incomplete", shape=box, fillcolor="#FFE0B2"];
+    justified -> ask_version [label="no justification"];
+
+    // ---- has-delta branch (2) ----
+    explained [label="2.a LLM: delta explained +\njustified as droppable?\n(review_sync_request, existing)", shape=diamond, fillcolor="#F8BBD0"];
+    delta -> explained [label="yes (\"ubuntuN\" present)"];
+
+    explained -> rfh [label="pass"];
+    ask_delta [label="comment: please explain the Ubuntu\ndelta and why it can be dropped\nset Incomplete", shape=box, fillcolor="#FFE0B2"];
+    explained -> ask_delta [label="fail / missing"];
+
+    backlog [label="2.b [BACKLOG]\nverify \"already in Debian\" delta\nclaims are actually true", shape=note, fillcolor="#FFFDE7"];
+    explained -> backlog [style=dotted, arrowhead=none];
+
+    // ---- terminal ----
+    rfh [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
+
+    { rank=same; close_synced; rfh; ask_version; ask_delta; }
+}

@@ -1,0 +1,93 @@
+digraph SponsoringBot {
+    rankdir=TB;
+    bgcolor="white";
+    node [fontname="Helvetica", fontsize=11, style="filled", color="#333333"];
+    edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+    // ---- entry ----
+    entry   [label="main()\n--url U  |  --all\nmode: dry-run | interactive | yes\n--force  --verbose", shape=box, fillcolor="#E8EAF6"];
+    fetch   [label="--all: fetch sponsoring.json\nloop items (source_package known)", shape=box, fillcolor="#E8EAF6"];
+    triage  [label="triage_url(url)", shape=box, fillcolor="#C5CAE9"];
+
+    entry -> fetch [label="--all"];
+    entry -> triage [label="--url"];
+    fetch -> triage [label="per item"];
+
+    // ---- load + facts gate ----
+    load    [label="load_url → lp_obj", shape=box, fillcolor="#FFFFFF"];
+    loaderr [label="load fails:\nprint, return", shape=box, fillcolor="#ECEFF1"];
+    facts   [label="build_facts\n(fingerprint contributor signals)", shape=box, fillcolor="#FFFFFF"];
+    gate    [label="force?  OR\nstored facts ≠ new facts?", shape=diamond, fillcolor="#FFF9C4"];
+    skip    [label="Skip\n(nothing changed)", shape=box, fillcolor="#ECEFF1"];
+
+    triage -> load;
+    load -> loaderr [label="error"];
+    load -> facts [label="ok"];
+    facts -> gate;
+    gate -> skip [label="unchanged"];
+
+    // ---- deterministic checks ----
+    c1 [label="Check 1: administrative_state", shape=box, fillcolor="#FFFFFF"];
+    c2 [label="Check 2: target_branch\n(merge MPs only -- see #20)", shape=box, fillcolor="#FFFFFF"];
+    c2note [label="is this a merge (Debian rebase)?\nsource branch name has \"merge\",\nor a linked bug titled \"Merge …\"\nfix / SRU MPs: skip, no bounce", shape=note, fillcolor="#FFFDE7"];
+    c2 -> c2note [style=dotted, arrowhead=none];
+    c3 [label="Check 3: mp_conflicts", shape=box, fillcolor="#FFFFFF"];
+    c4 [label="Check 4: empty_diff", shape=box, fillcolor="#FFFFFF"];
+    c5 [label="Check 5: changelog_bug_reference\n(see #25)", shape=box, fillcolor="#FFFFFF"];
+    c6 [label="Check 6: stale_version\n(see #27)", shape=box, fillcolor="#FFFFFF"];
+    incnote [label="every check can also return None:\na lookup failed, not \"nothing to flag\"\n-> inconclusive=True, keep going\n(see #28)", shape=note, fillcolor="#FFFDE7"];
+    c6 -> incnote [style=dotted, arrowhead=none];
+
+    gate -> c1 [label="changed / forced"];
+    c1 -> c2 [label="no / None"];
+    c2 -> c3 [label="no / None"];
+    c3 -> c4 [label="no / None"];
+    c4 -> c5 [label="no / None"];
+    c5 -> c6 [label="no / None"];
+
+    // ---- LLM phase ----
+    llm  [label="LLM phase\nresource_type?", shape=diamond, fillcolor="#FFF9C4"];
+    tbug [label="triage_bug", shape=box, fillcolor="#FFFFFF"];
+    tmp  [label="triage_mp  (stub)", shape=box, fillcolor="#FFFFFF"];
+    kind [label="SRU? Sync? neither?", shape=diamond, fillcolor="#FFF9C4"];
+    rev  [label="review_sru_template /\nreview_sync_request\n→ opencode CLI", shape=box, fillcolor="#F8BBD0"];
+    verd [label="_extract_verdict\n(fail-safe to human)", shape=diamond, fillcolor="#FFF9C4"];
+
+    c6 -> llm [label="no"];
+    llm -> tbug [label="bug / bug_task"];
+    llm -> tmp  [label="merge_proposal"];
+    llm -> rfh  [label="other type"];
+    tbug -> kind;
+    kind -> rev [label="SRU / sync"];
+    kind -> rfh [label="neither"];
+    rev -> verd;
+    tmp -> rfh;
+
+    // ---- conclusive states ----
+    done [label="DONE\ncomment + unsubscribe_sponsors\n(MPs: no status write -- see #25)", shape=box, fillcolor="#C8E6C9"];
+    wait [label="WAITING_ON_CONTRIBUTOR\nMP: comment(vote='Needs Fixing')\n(git-ubuntu MPs reject direct\nqueue_status writes -- #25)", shape=box, fillcolor="#FFE0B2"];
+    inc  [label="WAITING_ON_CONTRIBUTOR\ncomment + set tasks Incomplete\n(fold writes into facts)", shape=box, fillcolor="#FFE0B2"];
+    rfh  [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
+    pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- see #27)", shape=box, fillcolor="#D1C4E9"];
+
+    c1 -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged"];
+    c2 -> wait [label="merge MP not on debian/*"];
+    c3 -> wait [label="has conflicts"];
+    c4 -> done [label="empty diff (landed)"];
+    c5 -> wait [label="changelog bug not\nagainst this package"];
+    c6 -> done [label="version already uploaded,\nold enough (matching content)"];
+    c6 -> pend [label="version already uploaded,\n<24h old (matching content)"];
+    c6 -> wait [label="version stale or a\nduplicate upload"];
+    verd -> inc [label="well-formed fail+reason"];
+    verd -> rfh [label="pass / missing / malformed"];
+
+    // ---- persist note ----
+    persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend, and any path where\ninconclusive=True (#28) -- both\nomit facts= so the next run retries", shape=note, fillcolor="#FFFDE7"];
+    done -> persist [style=dotted, arrowhead=none];
+    wait -> persist [style=dotted, arrowhead=none];
+    inc  -> persist [style=dotted, arrowhead=none];
+    rfh  -> persist [style=dotted, arrowhead=none];
+    pend -> persist [style=dotted, arrowhead=none];
+
+    { rank=same; done; wait; inc; rfh; pend; }
+}

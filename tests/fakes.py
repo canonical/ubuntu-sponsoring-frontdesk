@@ -1,0 +1,231 @@
+"""Lightweight stand-ins for launchpadlib objects used across the test suite."""
+
+BOT = "https://api.launchpad.net/devel/~ubuntu-sponsoring-bot"
+HUMAN = "https://api.launchpad.net/devel/~marco"
+DEVEL_SERIES = "Noble"
+
+
+class FakePerson:
+    def __init__(self, link):
+        self.self_link = link
+
+
+class FakeHostedFile:
+    """Stand-in for launchpadlib's HostedFile (what `preview_diff.diff_text`
+    returns): `.open().read()` gives the raw bytes."""
+
+    def __init__(self, content):
+        self._content = content.encode() if isinstance(content, str) else content
+
+    def open(self):
+        return self
+
+    def read(self):
+        return self._content
+
+
+class FakeDiff:
+    def __init__(self, link, lines, conflicts="", diff_text=None):
+        self.self_link = link
+        self.diff_lines_count = lines
+        self.conflicts = conflicts  # string of conflicting files; empty = none
+        if diff_text is not None:
+            self.diff_text = FakeHostedFile(diff_text)
+
+
+class FakeBugRef:
+    def __init__(self, title):
+        self.title = title
+
+
+class FakeMP:
+    resource_type_link = "https://api.launchpad.net/devel/#branch_merge_proposal"
+
+    def __init__(
+        self,
+        target="git+ssh://.../debian/sid",
+        source="refs/heads/merge-1.2-3-stonking",
+        diff=None,
+        conflicts="",
+        queue_status="Needs review",
+        bugs=None,
+        package="testpkg",
+        date_created=None,
+        no_diff=False,
+    ):
+        self.target_git_path = target
+        self.source_git_path = source
+        # Linked bugs, used as a merge-detection fallback when the source
+        # branch name doesn't look like a merge (see checks._is_merge_proposal).
+        self.bugs = bugs or []
+        # Conflict state lives on the preview diff, mirroring real Launchpad.
+        # no_diff=True forces preview_diff to a genuine None (Launchpad
+        # hasn't generated a diff yet/at all), distinct from `diff` being
+        # unset (which just means "use the default FakeDiff").
+        self.preview_diff = (
+            None
+            if no_diff
+            else (
+                diff
+                if diff is not None
+                else FakeDiff("/diff/1", 42, conflicts=conflicts)
+            )
+        )
+        # Used by checks._diff_missing_is_still_generating's grace-period
+        # check when preview_diff is None.
+        self.date_created = date_created
+        self.queue_status = queue_status
+        self.self_link = f"https://api.launchpad.net/devel/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
+        self.all_comments = []
+        self.created_comments = []
+        self.created_votes = []
+
+    def createComment(self, content, vote=None):
+        self.created_comments.append(content)
+        self.created_votes.append(vote)
+
+
+class FakeTask:
+    def __init__(self, name, status):
+        self.bug_target_name = name
+        self.status = status
+
+    def transitionToStatus(self, status):
+        self.status = status
+
+
+class FakeBug:
+    resource_type_link = "https://api.launchpad.net/devel/#bug"
+
+    def __init__(self, tasks=None, description="", tags=None, title=""):
+        self.bug_tasks = tasks or []
+        self.description = description
+        self.tags = tags or []
+        self.title = title
+        self.self_link = "https://api.launchpad.net/devel/bug/1"
+        self.messages = []
+        self.new_messages = []
+
+    @property
+    def bug(self):
+        return self
+
+    def newMessage(self, content):
+        self.new_messages.append(content)
+
+    def unsubscribe(self, person=None):
+        pass
+
+
+class FakeBugMessage:
+    def __init__(self, owner_link, content):
+        self.owner_link = owner_link
+        self.content = content
+
+
+class FakeMPComment:
+    def __init__(self, author_link, message_body):
+        self.author_link = author_link
+        self.message_body = message_body
+
+
+class FakeSeries:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakeDistribution:
+    def __init__(self, devel_series_name="noble"):
+        self.current_series = FakeSeries(devel_series_name)
+
+
+class FakeRoot:
+    """Stand-in for the launchpadlib root object (self.lp)."""
+
+    def __init__(self, me_link=BOT, devel_series_name="noble"):
+        self.me = FakePerson(me_link)
+        self.people = {
+            "ubuntu-sponsors": FakePerson(
+                "https://api.launchpad.net/devel/~ubuntu-sponsors"
+            )
+        }
+        self.distributions = {"ubuntu": FakeDistribution(devel_series_name)}
+
+
+class FakeTriageClient:
+    """Minimal lp_client for exercising main.triage_url end-to-end."""
+
+    def __init__(self, objects):
+        self.objects = objects  # url -> lp_obj
+        self.comments = []
+        self.votes = []
+
+    def load_url(self, url):
+        return self.objects[url]
+
+    def comment(self, obj, message, vote=None):
+        self.comments.append(message)
+        self.votes.append(vote)
+
+    def unsubscribe_sponsors(self, obj):
+        self.unsubscribed = getattr(self, "unsubscribed", 0) + 1
+
+    def set_bug_tasks_incomplete(self, obj):
+        bug = (
+            obj.bug
+            if getattr(obj, "resource_type_link", "").endswith("bug_task")
+            else obj
+        )
+        resolved = (
+            "Fix Released",
+            "Fix Committed",
+            "Won't Fix",
+            "Invalid",
+            "Incomplete",
+        )
+        changed = {}
+        for task in bug.bug_tasks:
+            if "(Ubuntu" in task.bug_target_name and task.status not in resolved:
+                task.transitionToStatus(status="Incomplete")
+                changed[task.bug_target_name] = "Incomplete"
+        return changed
+
+    def set_bug_tasks_fix_released(self, obj):
+        bug = (
+            obj.bug
+            if getattr(obj, "resource_type_link", "").endswith("bug_task")
+            else obj
+        )
+        terminal = ("Fix Released", "Fix Committed", "Won't Fix", "Invalid")
+        changed = {}
+        for task in bug.bug_tasks:
+            name = task.bug_target_name or ""
+            if name.endswith("(Ubuntu)") or name.endswith(f"(Ubuntu {DEVEL_SERIES})"):
+                if task.status not in terminal:
+                    task.transitionToStatus(status="Fix Released")
+                    changed[name] = "Fix Released"
+        return changed
+
+
+class FakeAudit:
+    """In-memory audit sink so tests don't touch audit.jsonl."""
+
+    def __init__(self):
+        self.records = []
+
+    def record(self, **kwargs):
+        self.records.append(kwargs)
+
+
+class FakeLLM:
+    def __init__(
+        self, bug_result=("READY_FOR_HUMAN", ""), mp_result=("READY_FOR_HUMAN", "n/a")
+    ):
+        self.bug_result = bug_result
+        self.mp_result = mp_result
+
+    def triage_bug(self, obj):
+        return self.bug_result
+
+    def triage_mp(self, obj):
+        return self.mp_result

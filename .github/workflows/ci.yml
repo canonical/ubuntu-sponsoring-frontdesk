@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # archive_lookup.py imports apt_pkg (python3-apt), a compiled extension
+      # tied to the system Python -- it isn't pip-installable, so this uses
+      # the runner's system python3 rather than actions/setup-python's
+      # isolated build (which wouldn't have it).
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-apt python3-pip
+          pip install --break-system-packages ruff pytest pyyaml launchpadlib
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test

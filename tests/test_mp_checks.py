@@ -1,0 +1,702 @@
+"""MP deterministic checks: conflicts (via preview_diff) and target branch."""
+
+import datetime
+import types
+
+import archive_lookup
+import checks
+import facts
+from fakes import FakeMP, FakeDiff, FakeBugRef, FakeBug, FakeTask
+
+
+class _LP:
+    def __init__(self, bugs=None):
+        self.comments = []
+        self.votes = []
+        self.lp = types.SimpleNamespace(bugs=bugs or {})
+
+    def comment(self, obj, message, vote=None):
+        self.comments.append(message)
+        self.votes.append(vote)
+
+
+def test_conflicts_detected_from_preview_diff():
+    mp = FakeMP(diff=FakeDiff("/d/1", 100, conflicts="foo.c\nbar.c"))
+    lp = _LP()
+    assert checks.check_mp_conflicts("url", mp, lp) is True
+    assert lp.votes == ["Needs Fixing"]
+
+
+def test_no_conflicts_when_diff_conflicts_empty():
+    mp = FakeMP(diff=FakeDiff("/d/1", 100, conflicts=""))
+    assert checks.check_mp_conflicts("url", mp, _LP()) is False
+
+
+class _MPWithRaisingPreviewDiff:
+    """A launchpadlib `preview_diff` fetch can fail on a network/API error
+    (it's lazily fetched on first access) -- distinct from the attribute
+    genuinely not existing, which `getattr(..., default)` already handles.
+    `getattr` only swallows AttributeError, so this must propagate to a
+    try/except inside the check, not the caller."""
+
+    resource_type_link = FakeMP.resource_type_link
+
+    @property
+    def preview_diff(self):
+        raise RuntimeError("network blip fetching preview_diff")
+
+
+def test_mp_conflicts_returns_none_when_preview_diff_unreadable():
+    lp = _LP()
+    assert checks.check_mp_conflicts("url", _MPWithRaisingPreviewDiff(), lp) is None
+    assert lp.comments == []
+
+
+def test_empty_diff_fires_on_zero_lines():
+    mp = FakeMP(diff=FakeDiff("/d/1", 0))
+    lp = _LP()
+    assert checks.check_empty_diff("url", mp, lp) is True
+    assert lp.votes == [None]
+
+
+def test_empty_diff_false_when_diff_has_content():
+    mp = FakeMP(diff=FakeDiff("/d/1", 100))
+    assert checks.check_empty_diff("url", mp, _LP()) is False
+
+
+def test_empty_diff_returns_none_when_preview_diff_unreadable():
+    lp = _LP()
+    assert checks.check_empty_diff("url", _MPWithRaisingPreviewDiff(), lp) is None
+    assert lp.comments == []
+
+
+# --- missing (not-yet-generated / stuck) preview_diff -----------------------
+# preview_diff can be cleanly None (no exception) when Launchpad hasn't
+# produced a diff -- normal for a few minutes after an MP is opened or a new
+# commit is pushed, but live data (MP #503471) showed this can also mean a
+# stuck Launchpad job that never gets retried. checks._diff_missing_is_still_
+# generating distinguishes the two via the MP's date_created.
+
+
+def test_mp_conflicts_returns_none_when_diff_missing_and_mp_is_fresh():
+    mp = FakeMP(no_diff=True, date_created=datetime.datetime.now(datetime.timezone.utc))
+    assert checks.check_mp_conflicts("url", mp, _LP()) is None
+
+
+def test_mp_conflicts_returns_false_when_diff_missing_past_grace_period():
+    old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+    mp = FakeMP(no_diff=True, date_created=old)
+    assert checks.check_mp_conflicts("url", mp, _LP()) is False
+
+
+def test_empty_diff_returns_none_when_diff_missing_and_mp_is_fresh():
+    mp = FakeMP(no_diff=True, date_created=datetime.datetime.now(datetime.timezone.utc))
+    assert checks.check_empty_diff("url", mp, _LP()) is None
+
+
+def test_empty_diff_returns_false_when_diff_missing_past_grace_period():
+    old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+    mp = FakeMP(no_diff=True, date_created=old)
+    assert checks.check_empty_diff("url", mp, _LP()) is False
+
+
+def test_diff_missing_without_date_created_fails_safe_to_still_generating():
+    mp = FakeMP(no_diff=True)  # date_created unset -> can't tell the age
+    assert checks.check_mp_conflicts("url", mp, _LP()) is None
+    assert checks.check_empty_diff("url", mp, _LP()) is None
+
+
+def test_changelog_bug_reference_returns_false_when_diff_missing_past_grace_period():
+    old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+    mp = FakeMP(no_diff=True, date_created=old)
+    assert checks.check_changelog_bug_reference("url", mp, _LP()) is False
+
+
+def test_facts_reflect_conflict_state():
+    assert facts.build_facts(FakeMP(conflicts="x.c"))["has_conflicts"] is True
+    assert facts.build_facts(FakeMP(conflicts=""))["has_conflicts"] is False
+
+
+def test_target_branch_matches_real_ref_format():
+    # Real Launchpad returns e.g. 'refs/heads/ubuntu/devel'. Default FakeMP
+    # source branch is merge-shaped, so this is a merge MP mistargeted.
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    lp = _LP()
+    assert checks.check_target_branch("url", mp, lp) is True
+    assert lp.votes == ["Needs Fixing"]
+
+    ok = FakeMP(target="refs/heads/debian/sid")
+    assert checks.check_target_branch("url", ok, _LP()) is False
+
+
+def test_fix_mp_targeting_devel_is_not_bounced():
+    # Regression test: a plain fix MP (not a Debian rebase) legitimately
+    # targets ubuntu/devel and must not be treated as a mistargeted merge.
+    mp = FakeMP(target="refs/heads/ubuntu/devel", source="refs/heads/fix-lp2155031")
+    assert checks.check_target_branch("url", mp, _LP()) is False
+
+
+def test_sru_mp_targeting_series_is_not_bounced():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/jammy", source="refs/heads/fix-lp2155031-jammy"
+    )
+    assert checks.check_target_branch("url", mp, _LP()) is False
+
+
+def test_merge_detected_via_linked_bug_title_when_branch_isnt_merge_shaped():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/some-branch",
+        bugs=[FakeBugRef("Merge foo from Debian for stonking cycle")],
+    )
+    lp = _LP()
+    assert checks.check_target_branch("url", mp, lp) is True
+    assert lp.votes == ["Needs Fixing"]
+
+
+def test_unrelated_linked_bug_title_does_not_trigger_bounce():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/fix-branch",
+        bugs=[FakeBugRef("foo: crashes on startup")],
+    )
+    assert checks.check_target_branch("url", mp, _LP()) is False
+
+
+def test_merge_proposal_detection_returns_none_when_bugs_unreadable():
+    # A branch name that isn't merge-shaped plus an unreadable bugs fallback
+    # means "couldn't determine" (None), not a confirmed "not a merge"
+    # (False) -- the caller must retry, not cache a guess.
+    class _NoBugs:
+        source_git_path = "refs/heads/some-branch"
+
+        @property
+        def bugs(self):
+            raise RuntimeError("boom")
+
+    assert checks._is_merge_proposal(_NoBugs()) is None
+
+
+def test_check_target_branch_returns_none_when_merge_status_undeterminable():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/some-branch",
+    )
+
+    class _RaisingBugs:
+        def __iter__(self):
+            raise RuntimeError("boom")
+
+    mp.bugs = _RaisingBugs()
+    assert checks.check_target_branch("url", mp, _LP()) is None
+
+
+# --- sid vs experimental: diff-context (primary) and archive_lookup (fallback) ---
+
+_CHANGELOG_DIFF = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,11 @@
++testpkg (1.2-3ubuntu1) stonking; urgency=medium
++
++  * Merge with Debian {debian_suite} (LP: #1234567). Remaining changes:
++    - some change
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.2-3) {debian_suite}; urgency=medium
+
+   * Something
+diff --git a/debian/control b/debian/control
+index 1..2 100644
+--- a/debian/control
++++ b/debian/control
+@@ -1,1 +1,1 @@
+-Foo
++Bar
+"""
+
+_CHANGELOG_DIFF_NO_HEADER_CONTEXT = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,7 @@
++testpkg (1.2-3ubuntu1) stonking; urgency=medium
++
++  * Merge with Debian unstable (LP: #1234567).
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ not a changelog header, just some old context line
+"""
+
+
+def _merge_mp_with_diff(diff_text, package="testpkg"):
+    return FakeMP(
+        target="refs/heads/ubuntu/devel",
+        diff=FakeDiff("/d/1", 174, diff_text=diff_text),
+        package=package,
+    )
+
+
+def test_debian_target_suite_from_diff_context_unstable():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    assert checks._debian_target_suite(mp) == "sid"
+
+
+def test_debian_target_suite_from_diff_context_experimental():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="experimental"))
+    assert checks._debian_target_suite(mp) == "experimental"
+
+
+def test_debian_target_suite_falls_back_to_archive_lookup(monkeypatch):
+    # Diff context doesn't have a parseable header on the context line, but the
+    # new entry's own version (1.2-3ubuntu1 -> 1.2-3) is readable, so we fall
+    # back to checking which Debian suite holds exactly that version.
+    monkeypatch.setattr(
+        archive_lookup,
+        "debian_versions",
+        lambda pkg: (
+            {"unstable": "1.2-3", "experimental": "1.1-1"} if pkg == "testpkg" else None
+        ),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_NO_HEADER_CONTEXT)
+    assert checks._debian_target_suite(mp) == "sid"
+
+
+def test_debian_target_suite_none_when_archive_lookup_ambiguous(monkeypatch):
+    monkeypatch.setattr(
+        archive_lookup,
+        "debian_versions",
+        lambda pkg: {"unstable": "1.2-3", "experimental": "1.2-3"},
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_NO_HEADER_CONTEXT)
+    assert checks._debian_target_suite(mp) is None
+
+
+def test_debian_target_suite_none_when_nothing_resolvable():
+    # No diff at all, no bugs, default FakeMP diff has no diff_text.
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    assert checks._debian_target_suite(mp) is None
+
+
+def test_check_target_branch_names_the_specific_suite_when_resolvable():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="experimental"))
+    lp = _LP()
+    assert checks.check_target_branch("url", mp, lp) is True
+    assert "`debian/experimental`" in lp.comments[0]
+    assert "or `debian/experimental`, matching" not in lp.comments[0]
+
+
+def test_check_target_branch_falls_back_to_generic_message_when_unresolvable():
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    lp = _LP()
+    assert checks.check_target_branch("url", mp, lp) is True
+    assert "`debian/sid` (or `debian/experimental`, matching" in lp.comments[0]
+
+
+# --- changelog LP bug reference sanity -----------------------------------
+
+_CHANGELOG_DIFF_NO_BUG_REF = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,7 @@
++testpkg (1.2-4) stonking; urgency=medium
++
++  * Fix something, no bug reference here.
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.2-3) unstable; urgency=medium
+"""
+
+_CHANGELOG_DIFF_TWO_BUGS = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,8 @@
++testpkg (1.2-4) stonking; urgency=medium
++
++  * Fix something (LP: #1234567, #7654321).
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.2-3) unstable; urgency=medium
+"""
+
+# Regression fixture: a real git-ubuntu merge diff can show far more than the
+# new entry as "+" (confirmed live: 1472 of 1697 debian/changelog diff lines
+# were "+" for one real merge MP, not a clean top-of-file insert). Here the
+# *whole* hunk -- including an unrelated older stanza citing a different bug
+# -- is "+"-prefixed; only #1234567 (the first/new stanza) should be picked up.
+_CHANGELOG_DIFF_WHOLESALE_REPLACE = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,10 +1,15 @@
++testpkg (1.2-4ubuntu1) stonking; urgency=medium
++
++  * Merge with Debian unstable (LP: #1234567). Remaining changes:
++    - some carried-forward change
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
++testpkg (1.2-3ubuntu2) resolute; urgency=medium
++
++  * Some old unrelated fix (LP: #9999999)
++
++ -- C D <c@d.com>  Wed, 01 Jan 2025 10:27:27 +0200
++
+ testpkg (1.2-3) unstable; urgency=medium
+"""
+
+
+def test_changelog_bug_reference_matches_package_no_warning():
+    bug = FakeBug(tasks=[FakeTask("testpkg (Ubuntu)", "New")])
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    lp = _LP(bugs={1234567: bug})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is False
+
+
+def test_changelog_bug_reference_matches_debian_task():
+    # Any task naming the package counts, not just an Ubuntu one -- a bug
+    # page can legitimately list several packages.
+    bug = FakeBug(tasks=[FakeTask("testpkg (Debian)", "New")])
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    lp = _LP(bugs={1234567: bug})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is False
+
+
+def test_changelog_bug_reference_mismatched_package_warns():
+    bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    lp = _LP(bugs={1234567: bug})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is True
+    assert lp.votes == ["Needs Fixing"]
+    assert "testpkg" in lp.comments[0]
+    assert "#1234567" in lp.comments[0]
+
+
+def test_changelog_bug_reference_confirmed_mismatch_fires_even_if_other_lookup_fails():
+    # #1234567's lookup fails (missing from the fake bugs map) but #7654321
+    # is a confirmed mismatch -- we already have a definite problem to
+    # report, so this still fires rather than returning None.
+    mismatched_bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_TWO_BUGS)
+    lp = _LP(bugs={7654321: mismatched_bug})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is True
+    assert "#7654321" in lp.comments[0]
+
+
+def test_changelog_bug_reference_returns_none_when_diff_unreadable():
+    mp = FakeMP(target="refs/heads/ubuntu/devel")  # default diff has no diff_text
+    assert checks.check_changelog_bug_reference("url", mp, _LP()) is None
+
+
+def test_changelog_bug_reference_no_bug_cited_skips():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_NO_BUG_REF)
+    assert checks.check_changelog_bug_reference("url", mp, _LP()) is False
+
+
+def test_lp_bug_numbers_ignore_older_entries_swept_up_by_a_wholesale_diff():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_WHOLESALE_REPLACE)
+    numbers = checks._lp_bug_numbers_from_new_changelog_entry(mp)
+    assert numbers == {1234567}
+
+
+def test_changelog_bug_reference_lookup_failure_returns_none():
+    # Bug #1234567 isn't in the fake `lp.bugs` map -> lookup fails. We
+    # neither treat "couldn't check" as a confirmed mismatch, nor as a
+    # confirmed clean pass (False) -- it's genuinely undetermined (None),
+    # so a network blip here isn't cached as "no problem" forever.
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    lp = _LP(bugs={})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is None
+    assert lp.comments == []
+
+
+def test_changelog_bug_reference_partial_mismatch_lists_only_mismatched():
+    matching_bug = FakeBug(tasks=[FakeTask("testpkg (Ubuntu)", "New")])
+    mismatched_bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_TWO_BUGS)
+    lp = _LP(bugs={1234567: matching_bug, 7654321: mismatched_bug})
+    assert checks.check_changelog_bug_reference("url", mp, lp) is True
+    assert "#7654321" in lp.comments[0]
+    assert "#1234567" not in lp.comments[0]
+
+
+def test_changelog_bug_reference_skips_when_package_undeterminable():
+    class _NoPackageMP:
+        resource_type_link = FakeMP.resource_type_link
+        self_link = "https://api.launchpad.net/devel/mp/1"
+        preview_diff = None
+
+    assert checks.check_changelog_bug_reference("url", _NoPackageMP(), _LP()) is False
+
+
+# --- proposed version vs. archive ------------------------------------------
+
+_CHANGELOG_DIFF_V124 = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,7 @@
++testpkg (1.2-4) stonking; urgency=medium
++
++  * Fix something.
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.2-3) unstable; urgency=medium
+"""
+
+_ARCHIVE_CHANGELOG_MATCHING = """testpkg (1.2-4) stonking; urgency=medium
+
+  * Fix something.
+
+ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
+
+testpkg (1.2-3) unstable; urgency=medium
+
+  * Something old.
+"""
+
+_ARCHIVE_CHANGELOG_DIFFERENT = """testpkg (1.2-4) stonking; urgency=medium
+
+  * A completely different fix uploaded by someone else.
+
+ -- C D <c@d.com>  Thu, 02 Jul 2026 10:27:27 +0200
+
+testpkg (1.2-3) unstable; urgency=medium
+
+  * Something old.
+"""
+
+
+def _patch_archive(
+    monkeypatch, devel="noble", versions=None, pub=object(), changelog=None
+):
+    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: devel)
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        lambda lp, pkg, series_names=None: versions,
+    )
+    monkeypatch.setattr(
+        archive_lookup, "published_source", lambda lp, pkg, series, version: pub
+    )
+    monkeypatch.setattr(archive_lookup, "changelog_text", lambda p: changelog)
+
+
+def test_stale_version_newer_than_archive_is_fine(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is False
+
+
+def test_stale_version_older_than_archive_bounces(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert lp.votes == ["Needs Fixing"]
+    assert "1.2-4" in lp.comments[0]
+    assert "1.2-5" in lp.comments[0]
+
+
+def test_stale_version_prefers_proposed_pocket_over_release(monkeypatch):
+    # -proposed (1.2-5) is ahead of the release pocket (1.2-3); the older
+    # comparison should use -proposed, not the release version.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3", "noble-proposed": "1.2-5"})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert "1.2-5" in lp.comments[0]
+
+
+def test_stale_version_same_version_matching_content_is_done(monkeypatch):
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.votes == [None]
+    assert "1.2-4" in lp.comments[0]
+
+
+def test_stale_version_same_version_different_content_bounces(monkeypatch):
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_DIFFERENT,
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert lp.votes == ["Needs Fixing"]
+
+
+def test_stale_version_returns_none_when_devel_series_unknown(monkeypatch):
+    # A lookup failure -- must not be cached as "nothing to flag".
+    _patch_archive(monkeypatch, devel=None, versions={"noble": "1.2-5"})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
+
+
+def test_stale_version_structural_false_when_archive_has_nothing_published(
+    monkeypatch,
+):
+    # versions={} (not None): the lookup succeeded, this package just isn't
+    # published in this series yet -- a stable fact, not a lookup failure.
+    _patch_archive(monkeypatch, versions={})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is False
+
+
+def test_stale_version_returns_none_when_ubuntu_versions_lookup_fails(monkeypatch):
+    _patch_archive(monkeypatch, versions=None)
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
+
+
+def test_stale_version_returns_none_when_publication_record_unavailable(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-4"}, pub=None)
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
+
+
+def test_stale_version_returns_none_when_archive_changelog_unfetchable(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-4"}, changelog=None)
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
+
+
+def test_stale_version_returns_none_when_diff_unreadable(monkeypatch):
+    # Default FakeDiff has no diff_text -- reading it raises, same as a
+    # real network failure fetching the diff. Must not be cached as clean.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    assert checks.check_stale_version("url", mp, _LP()) is None
+
+
+def test_stale_version_structural_false_when_diff_missing_past_grace_period(
+    monkeypatch,
+):
+    # preview_diff genuinely None (not an exception) and older than the
+    # generation grace period -- treated as "no diff data available", same
+    # bucket as no debian/changelog section, not retried forever.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+    mp = FakeMP(target="refs/heads/ubuntu/devel", no_diff=True, date_created=old)
+    assert checks.check_stale_version("url", mp, _LP()) is False
+
+
+def test_stale_version_structural_false_when_diff_has_no_changelog_section(
+    monkeypatch,
+):
+    # Diff fetched fine, but touches only debian/control -- a stable fact
+    # about this MP's content, distinct from an unreadable diff.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    diff_text = (
+        "diff --git a/debian/control b/debian/control\n"
+        "index 1..2 100644\n"
+        "--- a/debian/control\n"
+        "+++ b/debian/control\n"
+        "@@ -1,1 +1,1 @@\n"
+        "-Foo\n"
+        "+Bar\n"
+    )
+    mp = _merge_mp_with_diff(diff_text)
+    assert checks.check_stale_version("url", mp, _LP()) is False
+
+
+def test_stale_version_not_applied_to_bugs(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    bug = FakeBug()
+    assert checks.check_stale_version("url", bug, _LP()) is False
+
+
+# --- 3a deferral: git-ubuntu's importer may auto-close the MP itself -------
+
+
+class _FakePublishedSource:
+    def __init__(self, date_published=None):
+        self.date_published = date_published
+
+
+def test_stale_version_recent_upload_defers_close_comment(monkeypatch):
+    recent = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+        pub=_FakePublishedSource(date_published=recent),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "pending"
+    assert lp.comments == []
+    assert lp.votes == []
+
+
+def test_stale_version_old_upload_posts_the_close_comment(monkeypatch):
+    old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+        pub=_FakePublishedSource(date_published=old),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.comments
+
+
+def test_stale_version_recent_upload_with_different_content_still_bounces(
+    monkeypatch,
+):
+    # The grace period only applies to 3a (matching content) -- a genuine
+    # duplicate-version upload with different content needs a rebase
+    # regardless of how recently it landed.
+    recent = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_DIFFERENT,
+        pub=_FakePublishedSource(date_published=recent),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+
+
+def test_stale_version_missing_date_published_does_not_defer(monkeypatch):
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+        pub=_FakePublishedSource(date_published=None),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+
+
+def test_stale_version_unparseable_date_published_fails_safe_to_no_defer(
+    monkeypatch,
+):
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+        pub=_FakePublishedSource(date_published="not-a-datetime"),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"

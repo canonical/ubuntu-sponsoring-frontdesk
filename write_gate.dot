@@ -1,0 +1,40 @@
+digraph WriteGate {
+    rankdir=TB;
+    bgcolor="white";
+    node [fontname="Helvetica", fontsize=11, style="filled", color="#333333"];
+    edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+    call  [label="LPClient write\ncomment / set_status /\nunsubscribe_sponsors /\nset_bug_tasks_incomplete", shape=box, fillcolor="#C5CAE9"];
+
+    isc   [label="is it a comment()?", shape=diamond, fillcolor="#FFF9C4"];
+    dedup [label="_already_posted?\n(self.lp.me + exact text\non Launchpad)", shape=diamond, fillcolor="#FFF9C4"];
+    askip [label="audit: skipped-duplicate\nreturn", shape=box, fillcolor="#ECEFF1"];
+
+    decide[label="_decide(mode)", shape=diamond, fillcolor="#FFF9C4"];
+
+    dry   [label="dry-run (default)\nprint, no write\noutcome='dry-run'", shape=box, fillcolor="#B3E5FC"];
+    notty [label="interactive + no TTY\nrefuse\noutcome='no-tty'", shape=box, fillcolor="#B3E5FC"];
+    decl  [label="interactive + [y/N]=n\noutcome='declined'", shape=box, fillcolor="#B3E5FC"];
+    perform [label="--yes, or interactive [y/N]=y\n→ perform LP API write", shape=box, fillcolor="#C8E6C9"];
+
+    ok    [label="audit: performed", shape=box, fillcolor="#FFFDE7"];
+    err   [label="audit: error + detail", shape=box, fillcolor="#FFCDD2"];
+    askip2[label="audit: <outcome>\n(dry-run / no-tty / declined)", shape=box, fillcolor="#FFFDE7"];
+
+    call -> isc;
+    isc -> dedup [label="yes"];
+    isc -> decide [label="no (status/unsub)"];
+    dedup -> askip [label="duplicate"];
+    dedup -> decide [label="new / unreadable"];
+
+    decide -> dry    [label="dry-run"];
+    decide -> notty  [label="interactive\n(no TTY)"];
+    decide -> decl   [label="interactive\n(declined)"];
+    decide -> perform [label="perform"];
+
+    dry  -> askip2;
+    notty -> askip2;
+    decl -> askip2;
+    perform -> ok [label="success"];
+    perform -> err [label="exception"];
+}
