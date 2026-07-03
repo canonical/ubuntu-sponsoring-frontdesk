@@ -74,6 +74,43 @@ def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
     assert "Moving to LLM review" in caplog.text
 
 
+class _RaisesOnQueueStatus:
+    """Simulates an unguarded launchpadlib attribute read (e.g.
+    lp_obj.queue_status in checks.check_administrative_state) hitting the
+    LPClient timeout (design_journal.md #33) -- no try/except of its own,
+    unlike the lookups in archive_lookup.py."""
+
+    resource_type_link = "https://api.launchpad.net/devel/#branch_merge_proposal"
+    target_git_path = "refs/heads/debian/sid"
+    source_git_path = "refs/heads/merge-1.2-3"
+    preview_diff = None
+    date_created = None
+    self_link = "https://api.launchpad.net/devel/~human/+merge/999"
+
+    @property
+    def queue_status(self):
+        raise TimeoutError("simulated Launchpad API timeout")
+
+
+def test_unexpected_exception_does_not_crash_the_run(tmp_path, caplog):
+    # A single stalled/failed launchpadlib call anywhere in the pipeline must
+    # not propagate out of triage_url -- that would abort an --all run and
+    # silently skip every later queue item (design_journal.md #33).
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(objects={URL: _RaisesOnQueueStatus()})
+    llm = FakeLLM()
+
+    with caplog.at_level(logging.WARNING):
+        result = main.triage_url(URL, sm, lp, llm)
+
+    assert result is None
+    assert "Unexpected error triaging" in caplog.text
+    # Nothing persisted -- next run retries from scratch rather than caching
+    # a failure as a clean pass.
+    assert sm.get_facts(URL) is None
+    assert sm.get_status(URL) is None
+
+
 def test_force_bypasses_facts_gate(tmp_path):
     sm = _state(tmp_path)
     lp = FakeTriageClient(

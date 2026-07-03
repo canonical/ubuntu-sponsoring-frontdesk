@@ -1,6 +1,7 @@
 import argparse
 import logging
 import shutil
+import sys
 import time
 import urllib.request
 import json
@@ -21,6 +22,18 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     t_start = time.monotonic()
     try:
         return _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start)
+    except Exception:
+        # Several launchpadlib attribute reads in facts.build_facts and the
+        # checks (queue_status, bug_tasks, target_git_path, ...) have no
+        # try/except of their own -- unlike the lookups in archive_lookup.py,
+        # which already fail safe internally. Without this, a single stalled
+        # or failed Launchpad call (now bounded by LPClient's timeout, see
+        # design_journal.md #33) would propagate out of process_queue's loop
+        # and abort an --all run, silently skipping every later item. Nothing
+        # gets persisted here, so this URL is retried from scratch next run,
+        # same as an unhandled load_url failure already was.
+        logger.exception("Unexpected error triaging %s; skipping for this run.", url)
+        return None
     finally:
         logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
 
@@ -320,7 +333,18 @@ def main():
     logger.info(
         "Authenticating to Launchpad... (write mode: %s, audit: %s)", mode, audit.path
     )
-    lp_client = LPClient(mode=mode, audit=audit)
+    try:
+        lp_client = LPClient(mode=mode, audit=audit)
+    except Exception as e:
+        # Unlike a per-item failure inside triage_url (caught there, see
+        # design_journal.md #33), there is no session to fall back to here --
+        # nothing this run can do without one. Log clearly and exit non-zero
+        # rather than letting a raw traceback fall out (confirmed live: a
+        # forced 1s timeout crashed here with a 60-line TimeoutError
+        # traceback, not the clean [timing]/logging output the rest of a
+        # run now produces).
+        logger.error("Failed to authenticate to Launchpad: %s", e)
+        sys.exit(1)
     llm_reviewer = LLMReviewer(lp=lp_client.lp)
 
     if args.url:

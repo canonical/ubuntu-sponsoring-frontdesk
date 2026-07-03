@@ -235,6 +235,11 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     `llm_reviewer.triage_bug`/`triage_mp` will need to contribute findings
     into the same pool instead of writing their own comment. Interactive-mode
     UX (one prompt for the aggregate vs. per-finding) explicitly left open.
+    **Addendum:** a pass with any inconclusive (`None`) result must not post
+    the aggregated comment at all -- same "don't cache, retry next run"
+    treatment `inconclusive` already gets for facts persistence, extended to
+    gate the write itself, so a partial finding set is never posted as if it
+    were a complete review.
     **Not implemented yet** — this is a refactor of every check's return
     contract and the `main.py` dispatcher; recorded as a design first.
 15. **Per-check timing + `print()` → `logging` throughout (DONE).** See
@@ -255,6 +260,34 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     visible without `--verbose`. `--log`/`--logdir` considered and
     deliberately not added yet -- no concrete need until `--all` runs
     unattended via cron.
+16. **Launchpad session timeout + fail-safe error handling (DONE).** See
+    design_journal.md #33. Found live: a `--all --dry-run --verbose` run sat
+    stuck for 1h33m (log silent the last 27+ min) on one item -- `LPClient`
+    had no `timeout=` on `Launchpad.login_with(...)`, so a single stalled
+    API call blocked the whole run forever. Fixed with `_LP_TIMEOUT_SECONDS
+    = 30`; traced (not guessed) that this becomes a raw socket timeout with
+    no retry logic anywhere in httplib2/lazr.restfulclient/launchpadlib, and
+    confirmed live that it's a per-syscall bound, not a per-request
+    deadline -- a slow trickle or a redirect hop can still add up to
+    several multiples of 30s before failing (confirmed: 102s and 165s on
+    two real items in the same clean run). Also added: a per-item catch-all
+    in `main.triage_url` (several launchpadlib attribute reads have no
+    try/except of their own, unlike `archive_lookup.py`'s lookups) so one
+    item's failure logs and skips rather than aborting the rest of an
+    `--all` run; and a separate try/except around `LPClient(...)`
+    construction in `main()`, found necessary live (a forced-timeout test
+    crashed there with a 60-line raw traceback, outside the per-item
+    catch-all's coverage) -- now a clean one-line `logger.error` +
+    `sys.exit(1)`. **Live-validated end to end:** a full clean `--all
+    --dry-run --verbose` run against the real 90-item queue completed with
+    exit code 0, zero unexpected errors, ~23.1 min total (median item
+    8.84s; `check_stale_version` + `check_changelog_bug_reference` alone
+    account for ~60% of total time). Backlog, deliberately not built:
+    in-process retry (rejected -- today's failures are slow degrading
+    struggles, not clean fast timeouts, so retrying immediately risks
+    making a bad item worse; the next cron run is already a correct,
+    better-spaced retry) and per-item memoization of the repeated diff-content
+    fetch across checks 5/6 (real signature-change scope, deferred).
 
 ## Known residual edges (documented in code)
 

@@ -34,6 +34,13 @@ _RESOLVED_STATUSES = (
 # else uploaded it in the meantime), and should still be closed out.
 _CONCLUSIVE_STATUSES = ("Fix Released", "Fix Committed", "Won't Fix", "Invalid")
 
+# launchpadlib passes this straight through to httplib2 as a socket timeout.
+# Left unset, a single stalled Launchpad API call blocks forever -- confirmed
+# live (design_journal.md #33): a --all --dry-run --verbose run sat for over
+# an hour with one idle ESTABLISHED connection to the API, no timeout to
+# recover from it.
+_LP_TIMEOUT_SECONDS = 30
+
 
 class LPClient:
     def __init__(
@@ -66,6 +73,7 @@ class LPClient:
             service_root="production",
             credentials_file=creds_file,
             launchpadlib_dir=cache_dir,
+            timeout=_LP_TIMEOUT_SECONDS,
             version="devel",
         )
 
