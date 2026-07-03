@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-04_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -288,6 +288,17 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     making a bad item worse; the next cron run is already a correct,
     better-spaced retry) and per-item memoization of the repeated diff-content
     fetch across checks 5/6 (real signature-change scope, deferred).
+    **Outcome breakdown from that same clean 90-item run** (what the triage
+    actually found, not just timing): 28 `check_stale_version` fires (23
+    stale, 4 already-uploaded, 1 duplicate-version), 4 real merge conflicts
+    (ROCm/HIP cluster), 2 admin-resolved bugs, zero wrong-target-branch and
+    zero bad-changelog-reference bounces (good signal on #20/#25's
+    precision, though one clean run isn't a trend). 56 items reached the LLM
+    phase: 53 `READY_FOR_HUMAN`, 3 `INCOMPLETE`. One of the 2 `inconclusive`
+    items (`google-osconfig-agent` MP #504883) is a live example of the
+    #31-addendum scenario (an inconclusive check co-occurring with a fired
+    one) -- harmless today, but concrete confirmation the addendum matters
+    once #31 ships. Full breakdown in design_journal.md #33.
 
 ## Known residual edges (documented in code)
 
