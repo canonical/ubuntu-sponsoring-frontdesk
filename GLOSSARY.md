@@ -121,6 +121,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
 - **`--verbose`** — logs every check's decision step (fired and skipped, not
   just fired) via the standard `logging` module, for reconstructing why a
   check did or didn't trigger without re-deriving the logic by hand (#24).
+  Also logs a `[timing]` line per step (`load_url`, `build_facts`, each
+  check, the LLM phase) plus a `TOTAL` per URL (#32), for seeing where a
+  run's time actually goes. All bot output (not just verbose logging) goes
+  through `logging` rather than `print` as of #32, so output is a single
+  correctly-ordered stream even when redirected/piped.
 - **Smoke test** — a read-only, no-write check of real Launchpad object
   attributes (`make smoke URL=...`), used to validate an assumption (e.g. an
   attribute's actual name) against production before trusting it in a check.

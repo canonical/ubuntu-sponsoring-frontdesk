@@ -24,8 +24,12 @@ python3 main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
 Write modes: **`--dry-run`** (default; logs intended writes, does nothing),
 `--interactive` (`[y/N]` per write; refuses if no TTY), `--yes` (unattended/cron).
 Every write attempt is recorded in `audit.jsonl`. `--verbose` (design_journal.md
-#24) logs every decision step each check considered, not just the ones that
-fired -- useful for working out why a check did or didn't trigger.
+#24, #32) logs every decision step each check considered (not just the ones
+that fired) plus a `[timing]` line per step and a `TOTAL` line per URL --
+useful both for working out why a check did or didn't trigger and for seeing
+where a slow run's time actually goes. All output goes through `logging`
+(design_journal.md #32), not `print`, so it's a single correctly-ordered
+stream even when redirected/piped.
 
 Auth: first run opens a browser to authorize; the token persists to
 `~/.cache/ubuntu-sponsoring-bot/credentials`, so later runs are non-interactive.
@@ -233,6 +237,24 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     UX (one prompt for the aggregate vs. per-finding) explicitly left open.
     **Not implemented yet** — this is a refactor of every check's return
     contract and the `main.py` dispatcher; recorded as a design first.
+15. **Per-check timing + `print()` → `logging` throughout (DONE).** See
+    design_journal.md #32. `--verbose` now logs a `[timing]` line after each
+    step in `triage_url` (`load_url`, `build_facts`, each of the 6 checks,
+    the LLM phase) plus a `TOTAL` per URL, regardless of which return path
+    fired. Live-validated against MP #507686 (xmltooling): 7.5s total,
+    dominated by `check_stale_version` (3.67s) and
+    `check_changelog_bug_reference` (1.41s) -- both do live external
+    lookups; nothing pathological, just serialized network calls across 6
+    checks. Also fixed, found while reading that capture: `print()` (stdout)
+    and the `[verbose]` `logging` output (stderr) interleaved out of true
+    execution order in piped/captured output. Every `print()` across
+    `main.py`/`checks.py`/`llm_reviewer.py`/`launchpad_client.py`/
+    `archive_lookup.py` (59 sites) now goes through `logging`
+    (`logger.info`/`logger.warning`); default level is `INFO` (was
+    verbose-only `WARNING`) so today's always-visible narration stays
+    visible without `--verbose`. `--log`/`--logdir` considered and
+    deliberately not added yet -- no concrete need until `--all` runs
+    unattended via cron.
 
 ## Known residual edges (documented in code)
 

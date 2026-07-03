@@ -21,12 +21,15 @@ use that to distinguish "genuinely no results" from "we couldn't check" and
 fail safe rather than act on a guess.
 """
 
+import logging
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
 
 import apt_pkg
+
+logger = logging.getLogger(__name__)
 
 # apt_pkg.version_compare() raises until the system is initialized; do it
 # once, lazily, rather than paying the config-file read on import.
@@ -79,7 +82,7 @@ def debian_versions(package, suites=None):
         with urllib.request.urlopen(url, timeout=15) as resp:
             output = resp.read().decode()
     except (urllib.error.URLError, OSError, TimeoutError) as e:
-        print(f"WARNING: could not query {url}: {e}")
+        logger.warning("could not query %s: %s", url, e)
         return None
     return _parse_madison(output)
 
@@ -97,7 +100,7 @@ def devel_codename(lp):
     try:
         return lp.distributions["ubuntu"].current_series.name
     except Exception as e:
-        print(f"WARNING: could not determine the Ubuntu devel series: {e}")
+        logger.warning("could not determine the Ubuntu devel series: %s", e)
         return None
 
 
@@ -125,7 +128,7 @@ def ubuntu_versions(lp, package, series_names=None):
                 versions[f"{name}{suffix}"] = pub.source_package_version
         return versions
     except Exception as e:
-        print(f"WARNING: Launchpad lookup failed (ubuntu versions for {package}): {e}")
+        logger.warning("Launchpad lookup failed (ubuntu versions for %s): %s", package, e)
         return None
 
 
@@ -148,9 +151,12 @@ def published_source(lp, package, series_name, version):
             return pub
         return None
     except Exception as e:
-        print(
-            f"WARNING: Launchpad lookup failed (published source for "
-            f"{package} {version} in {series_name}): {e}"
+        logger.warning(
+            "Launchpad lookup failed (published source for %s %s in %s): %s",
+            package,
+            version,
+            series_name,
+            e,
         )
         return None
 
@@ -173,7 +179,7 @@ def changelog_text(pub):
     try:
         url = pub.changelogUrl()
     except Exception as e:
-        print(f"WARNING: could not resolve changelogUrl(): {e}")
+        logger.warning("could not resolve changelogUrl(): %s", e)
         return None
     if not url:
         return None
@@ -181,7 +187,7 @@ def changelog_text(pub):
         with urllib.request.urlopen(url, timeout=15) as resp:
             return resp.read().decode(errors="replace")
     except (urllib.error.URLError, OSError, TimeoutError) as e:
-        print(f"WARNING: could not fetch changelog at {url}: {e}")
+        logger.warning("could not fetch changelog at %s: %s", url, e)
         return None
 
 

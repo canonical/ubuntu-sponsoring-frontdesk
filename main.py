@@ -1,6 +1,7 @@
 import argparse
 import logging
 import shutil
+import time
 import urllib.request
 import json
 from state import StateManager
@@ -14,7 +15,27 @@ logger = logging.getLogger(__name__)
 
 
 def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=None):
-    print(f"\n--- Starting triage for: {url} ---")
+    # Verbose timing: log how long each step takes, and the total for the URL
+    # regardless of which return path was taken, so a slow --all --dry-run
+    # scan can be attributed to a specific check/lookup instead of guessed at.
+    t_start = time.monotonic()
+    try:
+        return _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start)
+    finally:
+        logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
+
+
+def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start):
+    logger.info("--- Starting triage for: %s ---", url)
+
+    t_last = [t_start]
+
+    def checkpoint(label):
+        now = time.monotonic()
+        logger.debug(
+            "[timing] %s: %.2fs (total %.2fs)", label, now - t_last[0], now - t_start
+        )
+        t_last[0] = now
 
     # The queue entry tells us which package the request is about, which lets the
     # admin check look at the right Ubuntu series tasks. Absent for --url runs.
@@ -23,17 +44,20 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     try:
         lp_obj = lp_client.load_url(url)
     except Exception as e:
-        print(f"Failed to load URL from Launchpad: {e}")
+        logger.warning("Failed to load URL from Launchpad: %s", e)
         return
+    checkpoint("load_url")
 
     # Fingerprint the contributor-controlled signals. We (re-)triage only when
     # these change; an unchanged snapshot means nothing has happened since we
     # last looked, so we stay quiet and avoid re-posting the same comment.
     new_facts = facts.build_facts(lp_obj)
+    checkpoint("build_facts")
     if not force:
         stored_facts = state_manager.get_facts(url)
+        checkpoint("get_facts")
         if stored_facts is not None and stored_facts == new_facts:
-            print("Facts unchanged since last triage. Skipping (nothing to do).")
+            logger.info("Facts unchanged since last triage. Skipping (nothing to do).")
             return
 
     # New, changed, or forced: run the full pipeline from scratch. Every
@@ -51,6 +75,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     fired = checks.check_administrative_state(
         url, lp_obj, lp_client, source_package=source_package
     )
+    checkpoint("check_administrative_state")
     logger.debug("check_administrative_state -> %s", fired)
     if fired is None:
         inconclusive = True
@@ -62,6 +87,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
 
     # Check 2: Target Branch
     fired = checks.check_target_branch(url, lp_obj, lp_client)
+    checkpoint("check_target_branch")
     logger.debug("check_target_branch -> %s", fired)
     if fired is None:
         inconclusive = True
@@ -76,6 +102,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
 
     # Check 3: MP Conflicts
     fired = checks.check_mp_conflicts(url, lp_obj, lp_client)
+    checkpoint("check_mp_conflicts")
     logger.debug("check_mp_conflicts -> %s", fired)
     if fired is None:
         inconclusive = True
@@ -87,6 +114,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
 
     # Check 4: MP Empty Diff
     fired = checks.check_empty_diff(url, lp_obj, lp_client)
+    checkpoint("check_empty_diff")
     logger.debug("check_empty_diff -> %s", fired)
     if fired is None:
         inconclusive = True
@@ -98,6 +126,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
 
     # Check 5: changelog LP bug reference sanity
     fired = checks.check_changelog_bug_reference(url, lp_obj, lp_client)
+    checkpoint("check_changelog_bug_reference")
     logger.debug("check_changelog_bug_reference -> %s", fired)
     if fired is None:
         inconclusive = True
@@ -114,6 +143,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     # Unlike the other checks, a fired result here maps to three different
     # outcomes, so it returns "needs_fixing"/"done"/"pending" rather than a bool.
     outcome = checks.check_stale_version(url, lp_obj, lp_client)
+    checkpoint("check_stale_version")
     logger.debug("check_stale_version -> %s", outcome)
     if outcome is None:
         inconclusive = True
@@ -149,12 +179,12 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
         return
 
     if inconclusive:
-        print(
+        logger.info(
             "One or more checks couldn't be fully evaluated (a lookup/fetch "
             "failure). Facts won't be persisted, so this URL is retried next run."
         )
 
-    print("Passed deterministic MVP checks. Moving to LLM review...")
+    logger.info("Passed deterministic MVP checks. Moving to LLM review...")
 
     # LLM Phase
     resource_type = lp_obj.resource_type_link.split("#")[-1]
@@ -168,9 +198,10 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
         new_status, comment = llm_reviewer.triage_mp(lp_obj)
     else:
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
+    checkpoint("llm_reviewer")
 
     if new_status == "SYNCED":
-        print(
+        logger.info(
             "Archive check found this already synced. Commenting, closing, and unsubscribing."
         )
         lp_client.comment(lp_obj, comment)
@@ -184,7 +215,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
             facts=None if inconclusive else new_facts,
         )
     elif new_status == "INCOMPLETE":
-        print(
+        logger.info(
             "LLM determined request is INCOMPLETE. Commenting and setting Incomplete."
         )
         lp_client.comment(lp_obj, comment)
@@ -201,7 +232,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
             facts=None if inconclusive else new_facts,
         )
     elif new_status == "READY_FOR_HUMAN":
-        print("LLM checks passed (or none applicable). Marking ready for human.")
+        logger.info("LLM checks passed (or none applicable). Marking ready for human.")
         state_manager.update_status(
             url,
             "READY_FOR_HUMAN",
@@ -211,13 +242,13 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
 
 
 def process_queue(state_manager, lp_client, llm_reviewer, force=False):
-    print("Fetching sponsoring queue JSON...")
+    logger.info("Fetching sponsoring queue JSON...")
     url = "https://sponsoring-reports.ubuntu.com/jsons/sponsoring.json"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req) as response:
         data = json.loads(response.read().decode())
 
-    print(f"Found {len(data)} items in the queue.")
+    logger.info("Found %d items in the queue.", len(data))
     for item in data:
         link = item.get("link")
         if link:
@@ -263,8 +294,8 @@ def main():
     args = parser.parse_args()
 
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.WARNING,
-        format="[verbose] %(name)s: %(message)s",
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(message)s" if not args.verbose else "[verbose] %(name)s: %(message)s",
     )
 
     if args.yes:
@@ -275,8 +306,8 @@ def main():
         mode = "dry-run"
 
     if shutil.which("opencode") is None:
-        print(
-            "WARNING: 'opencode' CLI not found on PATH. LLM review is DISABLED -- "
+        logger.warning(
+            "'opencode' CLI not found on PATH. LLM review is DISABLED -- "
             "every item that reaches the LLM phase (SRU template checks, sync "
             "justification checks) will fail safe to READY_FOR_HUMAN instead of "
             "getting a real qualitative review. Install/configure opencode to "
@@ -286,7 +317,9 @@ def main():
     state_manager = StateManager()
     audit = AuditLog()
 
-    print(f"Authenticating to Launchpad... (write mode: {mode}, audit: {audit.path})")
+    logger.info(
+        "Authenticating to Launchpad... (write mode: %s, audit: %s)", mode, audit.path
+    )
     lp_client = LPClient(mode=mode, audit=audit)
     llm_reviewer = LLMReviewer(lp=lp_client.lp)
 

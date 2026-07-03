@@ -92,7 +92,7 @@ class LLMReviewer:
         """
         Invokes the opencode CLI to query the LLM.
         """
-        print("--> [LLM Dispatcher] Querying opencode...")
+        logger.info("--> [LLM Dispatcher] Querying opencode...")
         cmd = ["opencode", "run", "--dangerously-skip-permissions"]
 
         # We can add model selection here if needed, e.g. cmd.extend(["--model", "gpt-4o"])
@@ -102,8 +102,8 @@ class LLMReviewer:
             proc = subprocess.run(cmd, text=True, capture_output=True, check=False)
 
             if proc.returncode != 0:
-                print(
-                    f"WARNING: opencode returned {proc.returncode}. Stderr: {proc.stderr}"
+                logger.warning(
+                    "opencode returned %d. Stderr: %s", proc.returncode, proc.stderr
                 )
                 return "FAIL: LLM invocation failed internally."
 
@@ -115,7 +115,7 @@ class LLMReviewer:
             return output
 
         except FileNotFoundError:
-            print("WARNING: 'opencode' command not found. Is the snap installed?")
+            logger.warning("'opencode' command not found. Is the snap installed?")
             return "FAIL: opencode is not installed in the environment."
 
     def _extract_verdict(self, text):
@@ -138,21 +138,19 @@ class LLMReviewer:
         """
         match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", text, re.DOTALL)
         if not match:
-            print("WARNING: no YAML verdict block found; failing safe to human review.")
+            logger.warning("no YAML verdict block found; failing safe to human review.")
             return True, ""
 
         try:
             data = yaml.safe_load(match.group(1))
         except yaml.YAMLError as exc:
-            print(
-                f"WARNING: malformed YAML verdict ({exc}); failing safe to human review."
+            logger.warning(
+                "malformed YAML verdict (%s); failing safe to human review.", exc
             )
             return True, ""
 
         if not isinstance(data, dict):
-            print(
-                "WARNING: YAML verdict was not a mapping; failing safe to human review."
-            )
+            logger.warning("YAML verdict was not a mapping; failing safe to human review.")
             return True, ""
 
         verdict = str(data.get("verdict", "")).strip().lower()
@@ -161,8 +159,8 @@ class LLMReviewer:
         if verdict == "fail":
             if reason:
                 return False, reason
-            print(
-                "WARNING: 'fail' verdict without a reason; failing safe to human review."
+            logger.warning(
+                "'fail' verdict without a reason; failing safe to human review."
             )
             return True, ""
 
@@ -308,9 +306,9 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         parsed = _parse_sync_title(title)
         logger.debug("_triage_sync: _parse_sync_title(%r) -> %s", title, parsed)
         if parsed is None:
-            print(
-                "WARNING: could not parse package/version from sync title; "
-                "falling back to delta-explanation review only."
+            logger.warning(
+                "could not parse package/version from sync title; falling "
+                "back to delta-explanation review only."
             )
             return self._review_sync_delta_explanation(description)
 
@@ -319,9 +317,9 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         devel = archive_lookup.devel_codename(self.lp)
         logger.debug("_triage_sync: devel_codename -> %r", devel)
         if devel is None:
-            print(
-                "WARNING: could not determine the Ubuntu devel series; "
-                "falling back to delta-explanation review only."
+            logger.warning(
+                "could not determine the Ubuntu devel series; falling back "
+                "to delta-explanation review only."
             )
             return self._review_sync_delta_explanation(description)
 
@@ -330,8 +328,8 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         )
         logger.debug("_triage_sync: ubuntu_versions(%r) -> %s", pkg, ubuntu_versions)
         if ubuntu_versions is None:
-            print(
-                "WARNING: Ubuntu archive lookup failed; falling back to "
+            logger.warning(
+                "Ubuntu archive lookup failed; falling back to "
                 "delta-explanation review only."
             )
             return self._review_sync_delta_explanation(description)
@@ -341,8 +339,9 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         )
         logger.debug("_triage_sync: has_ubuntu_delta -> %s", has_delta)
         if has_delta:
-            print(
-                f"{pkg}: Ubuntu delta detected. Routing to delta-explanation review..."
+            logger.info(
+                "%s: Ubuntu delta detected. Routing to delta-explanation review...",
+                pkg,
             )
             return self._review_sync_delta_explanation(description)
 
@@ -358,7 +357,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 f"Thanks for your contribution! It looks like {pkg} {req_version} (or newer) is already "
                 "published in Ubuntu. Closing this sync request as Fix Released."
             )
-            print(f"{pkg}: already synced. Closing as SYNCED.")
+            logger.info("%s: already synced. Closing as SYNCED.", pkg)
             return "SYNCED", comment
 
         # 1.b: is the requested version actually in the stated Debian suite?
@@ -371,7 +370,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             debian_versions,
         )
         if debian_versions is None:
-            print("WARNING: Debian archive lookup failed; routing to human.")
+            logger.warning("Debian archive lookup failed; routing to human.")
             return (
                 "READY_FOR_HUMAN",
                 "Could not verify Debian archive state; ready for human review.",
@@ -394,9 +393,12 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 f"{req_version} is present in Debian {target_suite}.",
             )
 
-        print(
-            f"{pkg} {req_version} not found in Debian {target_suite}; asking "
-            "LLM whether the description justifies this..."
+        logger.info(
+            "%s %s not found in Debian %s; asking LLM whether the "
+            "description justifies this...",
+            pkg,
+            req_version,
+            target_suite,
         )
         passed, feedback = self.review_sync_version_justification(
             description, pkg, req_version, target_suite, debian_versions
@@ -428,7 +430,9 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         logger.debug("triage_bug: is_sru=%s is_sync=%s", is_sru, is_sync)
 
         if is_sru:
-            print("Detected SRU request. Routing to LLM for SRU template analysis...")
+            logger.info(
+                "Detected SRU request. Routing to LLM for SRU template analysis..."
+            )
             passed, feedback = self.review_sru_template(description)
 
             if not passed:
@@ -446,7 +450,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 )
 
         elif is_sync:
-            print("Detected Sync request. Checking archive state...")
+            logger.info("Detected Sync request. Checking archive state...")
             return self._triage_sync(title, description)
 
         # If not an SRU or Sync, or we have no specific LLM checks yet

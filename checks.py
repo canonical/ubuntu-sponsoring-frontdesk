@@ -48,7 +48,7 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
             "check_administrative_state: MP queue_status=%r", lp_obj.queue_status
         )
         if lp_obj.queue_status in ("Merged", "Rejected"):
-            print(f"[{url}] is {lp_obj.queue_status}. No action needed.")
+            logger.info("[%s] is %s. No action needed.", url, lp_obj.queue_status)
             return True
         return False
 
@@ -78,8 +78,10 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         summary = ", ".join(
             sorted(f"{task.bug_target_name}: {task.status}" for task in tasks)
         )
-        print(
-            f"[{url}] all relevant Ubuntu tasks resolved ({summary}). Unsubscribing ~ubuntu-sponsors."
+        logger.info(
+            "[%s] all relevant Ubuntu tasks resolved (%s). Unsubscribing ~ubuntu-sponsors.",
+            url,
+            summary,
         )
         lp_client.comment(
             bug,
@@ -163,12 +165,14 @@ def _diff_missing_is_still_generating(lp_obj):
         )
         return True
 
-    print(
-        f"WARNING: preview_diff has been missing for {age} (MP created "
-        f"{created}) -- longer than Launchpad's diff generation should ever "
-        "take. This likely means Launchpad hit a bug generating the diff and "
-        "never retried. Treating as 'no diff data available' rather than "
-        "retrying forever (a human should look at this MP directly)."
+    logger.warning(
+        "preview_diff has been missing for %s (MP created %s) -- longer than "
+        "Launchpad's diff generation should ever take. This likely means "
+        "Launchpad hit a bug generating the diff and never retried. Treating "
+        "as 'no diff data available' rather than retrying forever (a human "
+        "should look at this MP directly).",
+        age,
+        created,
     )
     return False
 
@@ -217,7 +221,7 @@ def check_mp_conflicts(url, lp_obj, lp_client):
             "Please rebase your branch, resolve the conflicts, and push the updated branch.\n\n"
             "Once the conflicts are resolved, please let us know so we can review the updated branch!"
         )
-        print(f"[{url}] has conflicts. Commenting with a Needs Fixing vote.")
+        logger.info("[%s] has conflicts. Commenting with a Needs Fixing vote.", url)
         lp_client.comment(lp_obj, comment, vote="Needs Fixing")
 
         return True
@@ -490,9 +494,11 @@ def check_target_branch(url, lp_obj, lp_client):
             "Please update the target branch. See https://ubuntu.com/project/docs/contributors/merging/git-ubuntu-merge-proposal/#merge-git-ubuntu-merge-proposal\n\n"
             "Once the target branch is updated, please let us know!"
         )
-        print(
-            f"[{url}] is a merge MP incorrectly targeting {target_branch_name!r}. "
-            "Commenting with a Needs Fixing vote."
+        logger.info(
+            "[%s] is a merge MP incorrectly targeting %r. Commenting with a "
+            "Needs Fixing vote.",
+            url,
+            target_branch_name,
         )
         lp_client.comment(lp_obj, comment, vote="Needs Fixing")
 
@@ -536,9 +542,10 @@ def check_empty_diff(url, lp_obj, lp_client):
             "Thanks for your contribution! The proposed change seems to have landed in the target Vcs, "
             "so the merge request can be closed."
         )
-        print(
-            f"[{url}] has an empty diff. Commenting (no status write -- "
-            "git-ubuntu MPs don't accept it; a human closes this out)."
+        logger.info(
+            "[%s] has an empty diff. Commenting (no status write -- git-ubuntu "
+            "MPs don't accept it; a human closes this out).",
+            url,
         )
         lp_client.comment(lp_obj, comment)
 
@@ -753,9 +760,12 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
         "Please double-check the bug number(s) are correct.\n\n"
         "Once confirmed (or corrected), please let us know!"
     )
-    print(
-        f"[{url}] changelog cites {bug_list}, not reported against {package!r}. "
-        "Commenting with a Needs Fixing vote."
+    logger.info(
+        "[%s] changelog cites %s, not reported against %r. Commenting with a "
+        "Needs Fixing vote.",
+        url,
+        bug_list,
+        package,
     )
     lp_client.comment(lp_obj, comment, vote="Needs Fixing")
 
@@ -887,9 +897,12 @@ def check_stale_version(url, lp_obj, lp_client):
             f"(`{archive_version}` in {devel}) and needs to be rebased.\n\n"
             "Please rebase on top of the current archive version and let us know!"
         )
-        print(
-            f"[{url}] proposes {proposed_version!r}, older than the archive's "
-            f"{archive_version!r}. Commenting with a Needs Fixing vote."
+        logger.info(
+            "[%s] proposes %r, older than the archive's %r. Commenting with a "
+            "Needs Fixing vote.",
+            url,
+            proposed_version,
+            archive_version,
         )
         lp_client.comment(lp_obj, comment, vote="Needs Fixing")
         return "needs_fixing"
@@ -948,10 +961,14 @@ def check_stale_version(url, lp_obj, lp_client):
                     age,
                     _RECENT_UPLOAD_GRACE,
                 )
-                print(
-                    f"[{url}] version {archive_version!r} was published {age} ago "
-                    f"(< {_RECENT_UPLOAD_GRACE}); deferring the close comment in "
-                    "case git-ubuntu's importer auto-closes this MP first."
+                logger.info(
+                    "[%s] version %r was published %s ago (< %s); deferring the "
+                    "close comment in case git-ubuntu's importer auto-closes "
+                    "this MP first.",
+                    url,
+                    archive_version,
+                    age,
+                    _RECENT_UPLOAD_GRACE,
                 )
                 return "pending"
 
@@ -960,9 +977,11 @@ def check_stale_version(url, lp_obj, lp_client):
             f"uploaded to the archive as `{package} {archive_version}`, so this "
             "Merge Proposal can be closed."
         )
-        print(
-            f"[{url}] version {archive_version!r} already published with matching "
-            "content. Commenting (no status write -- see the code note below)."
+        logger.info(
+            "[%s] version %r already published with matching content. "
+            "Commenting (no status write -- see the code note below).",
+            url,
+            archive_version,
         )
         # TODO: set queue_status to Merged here once we've confirmed the
         # bot's account actually has permission to do so for git-ubuntu MPs.
@@ -980,9 +999,11 @@ def check_stale_version(url, lp_obj, lp_client):
         "the archive. Your change needs to be rebased (with a new version "
         "number) and resubmitted."
     )
-    print(
-        f"[{url}] version {archive_version!r} already published with different "
-        "content. Commenting with a Needs Fixing vote."
+    logger.info(
+        "[%s] version %r already published with different content. "
+        "Commenting with a Needs Fixing vote.",
+        url,
+        archive_version,
     )
     lp_client.comment(lp_obj, comment, vote="Needs Fixing")
 

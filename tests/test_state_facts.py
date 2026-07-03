@@ -1,5 +1,7 @@
 """Fix #2: facts-gated re-triage (the Marco lifecycle) and StateManager facts."""
 
+import logging
+
 import main
 from state import StateManager
 from fakes import FakeMP, FakeDiff, FakeTriageClient, FakeLLM
@@ -45,7 +47,7 @@ def test_marco_lifecycle(tmp_path):
 
 
 def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
-    tmp_path, capsys
+    tmp_path, caplog
 ):
     # A merge MP correctly targeting debian/sid, with no diff_text on its
     # preview diff -- check_changelog_bug_reference and check_stale_version
@@ -65,11 +67,11 @@ def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
     # skipped by the facts-unchanged gate -- there's no stored snapshot to
     # compare against, so the full pipeline runs again rather than being
     # cached as "nothing to do" forever.
-    capsys.readouterr()
-    main.triage_url(URL, sm, lp, llm)
-    out = capsys.readouterr().out
-    assert "Skipping (nothing to do)" not in out
-    assert "Moving to LLM review" in out
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        main.triage_url(URL, sm, lp, llm)
+    assert "Skipping (nothing to do)" not in caplog.text
+    assert "Moving to LLM review" in caplog.text
 
 
 def test_force_bypasses_facts_gate(tmp_path):

@@ -1,9 +1,12 @@
+import logging
 import os
 import sys
 
 from launchpadlib.launchpad import Launchpad
 
 from audit import AuditLog
+
+logger = logging.getLogger(__name__)
 
 
 def _target(lp_obj):
@@ -77,21 +80,21 @@ class LPClient:
         - 'interactive' : prompt [y/N]; with no TTY (e.g. under cron) refuse to
                           write rather than crash on input()'s EOF.
         """
-        print(f"\n[ACTION] {description}")
+        logger.info("\n[ACTION] %s", description)
 
         if self.mode == "dry-run":
-            print(
+            logger.info(
                 "  [dry-run] not performing this write. Re-run with --interactive or --yes to act."
             )
             return "dry-run"
 
         if self.mode == "yes":
-            print("  [--yes] performing write.")
+            logger.info("  [--yes] performing write.")
             return "perform"
 
         # interactive
         if not sys.stdin.isatty():
-            print(
+            logger.info(
                 "  [interactive] no TTY available; refusing to write. "
                 "Use --yes for unattended runs or --dry-run to preview."
             )
@@ -99,7 +102,7 @@ class LPClient:
         ans = input("  Proceed? [y/N]: ")
         if ans.strip().lower() == "y":
             return "perform"
-        print("  Skipped (declined).")
+        logger.info("  Skipped (declined).")
         return "declined"
 
     def load_url(self, url):
@@ -146,8 +149,9 @@ class LPClient:
         except Exception as e:
             # If we can't read history, don't crash and don't silently skip --
             # fall through to the normal mode gate (dry-run/[y/N]/--yes).
-            print(
-                f"  [dedup] could not read existing comments ({e}); proceeding to confirm."
+            logger.info(
+                "  [dedup] could not read existing comments (%s); proceeding to confirm.",
+                e,
             )
         return False
 
@@ -185,7 +189,7 @@ class LPClient:
                 try:
                     lp_obj.unsubscribe(person=sponsors_team)
                 except AttributeError:
-                    print("Note: Direct unsubscribe method not found on MP object.")
+                    logger.info("Note: Direct unsubscribe method not found on MP object.")
             self.audit.record(
                 url=target,
                 action="unsubscribe",
@@ -202,7 +206,7 @@ class LPClient:
                 outcome="error",
                 detail=str(e),
             )
-            print(f"Could not unsubscribe: {e}")
+            logger.warning("Could not unsubscribe: %s", e)
 
     def set_bug_tasks_incomplete(self, lp_obj):
         """
@@ -260,7 +264,7 @@ class LPClient:
                     outcome="error",
                     detail=f"Incomplete: {e}",
                 )
-                print(f"Could not set '{name}' to Incomplete: {e}")
+                logger.warning("Could not set '%s' to Incomplete: %s", name, e)
 
         return changed
 
@@ -271,7 +275,7 @@ class LPClient:
         try:
             return self.lp.distributions["ubuntu"].current_series.name.capitalize()
         except Exception as e:
-            print(f"WARNING: could not determine the Ubuntu devel series: {e}")
+            logger.warning("could not determine the Ubuntu devel series: %s", e)
             return None
 
     def set_bug_tasks_fix_released(self, lp_obj):
@@ -299,9 +303,8 @@ class LPClient:
         if devel_series:
             matching_suffixes.add(f"(Ubuntu {devel_series})")
         else:
-            print(
-                "WARNING: only matching the untargeted Ubuntu task "
-                "(devel series unknown)."
+            logger.warning(
+                "only matching the untargeted Ubuntu task (devel series unknown)."
             )
 
         for task in bug.bug_tasks:
@@ -343,7 +346,7 @@ class LPClient:
                     outcome="error",
                     detail=f"Fix Released: {e}",
                 )
-                print(f"Could not set '{name}' to Fix Released: {e}")
+                logger.warning("Could not set '%s' to Fix Released: %s", name, e)
 
         return changed
 
@@ -371,7 +374,7 @@ class LPClient:
         detail = f"[vote={vote}] {message}" if vote else message
 
         if self._already_posted(lp_obj, message, resource_type):
-            print(
+            logger.info(
                 "  [dedup] identical bot comment already present on Launchpad; skipping."
             )
             self.audit.record(
@@ -422,4 +425,4 @@ class LPClient:
                 outcome="error",
                 detail=str(e),
             )
-            print(f"Could not post comment: {e}")
+            logger.warning("Could not post comment: %s", e)
