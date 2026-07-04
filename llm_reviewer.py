@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import subprocess
@@ -91,9 +92,19 @@ class LLMReviewer:
     def _query_llm(self, prompt, model="high-complexity"):
         """
         Invokes the opencode CLI to query the LLM.
+
+        Uses ``--format json`` (NDJSON event stream) rather than opencode's
+        default pretty-printed output: that's the only format that exposes
+        per-call token usage/cost (a ``step_finish`` event's ``tokens``/
+        ``cost`` fields), which --verbose logs alongside the prompt and the
+        raw reply (design_journal.md #42, seb128's request) -- useful for
+        judging LLM cost/behavior without re-running by hand. It also
+        sidesteps the old ANSI-stripping regex entirely: JSON text content
+        has no terminal escape codes to begin with.
         """
         logger.info("--> [LLM Dispatcher] Querying opencode...")
-        cmd = ["opencode", "run", "--dangerously-skip-permissions"]
+        logger.debug("[llm] prompt sent to opencode:\n%s", prompt)
+        cmd = ["opencode", "run", "--format", "json", "--dangerously-skip-permissions"]
 
         # We can add model selection here if needed, e.g. cmd.extend(["--model", "gpt-4o"])
         cmd.append(prompt)
@@ -107,16 +118,91 @@ class LLMReviewer:
                 )
                 return "FAIL: LLM invocation failed internally."
 
-            output = proc.stdout.strip()
-            # Strip ANSI color codes just in case opencode emits them despite --print
-            ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-            output = ansi_escape.sub("", output)
+            output, usage = self._parse_ndjson_reply(proc.stdout)
+            logger.debug("[llm] raw reply from opencode:\n%s", output)
+            if usage is not None:
+                logger.debug(
+                    "[llm] token usage: total=%d input=%d output=%d "
+                    "reasoning=%d cache_read=%d cache_write=%d cost=$%.4f",
+                    usage["total"],
+                    usage["input"],
+                    usage["output"],
+                    usage["reasoning"],
+                    usage["cache_read"],
+                    usage["cache_write"],
+                    usage["cost"],
+                )
+            else:
+                logger.debug(
+                    "[llm] no token-usage data found in opencode's reply "
+                    "(unexpected output shape; falling back to raw stdout)."
+                )
 
             return output
 
         except FileNotFoundError:
             logger.warning("'opencode' command not found. Is the snap installed?")
             return "FAIL: opencode is not installed in the environment."
+
+    @staticmethod
+    def _parse_ndjson_reply(stdout):
+        """
+        Parse opencode's ``--format json`` NDJSON stream into (output_text,
+        usage_dict). usage_dict is None if no ``step_finish`` event was
+        found (an unexpected/older opencode output shape) -- callers must
+        fail safe to raw stdout in that case, never guess at usage numbers.
+
+        Text is concatenated across every ``text`` event in order (usually
+        just one for these single-turn review prompts, but this stays
+        correct if opencode ever streams a reply in multiple parts). Token
+        counts and cost are summed across every ``step_finish`` event, for
+        the same reason.
+        """
+        text_parts = []
+        usage = None
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except (ValueError, TypeError):
+                # Not every line is guaranteed to be a clean JSON object
+                # (a future opencode version could interleave something
+                # else) -- skip it rather than let one bad line lose the
+                # whole reply.
+                continue
+            part = event.get("part") or {}
+            if event.get("type") == "text" and "text" in part:
+                text_parts.append(part["text"])
+            elif event.get("type") == "step_finish":
+                tokens = part.get("tokens") or {}
+                cache = tokens.get("cache") or {}
+                if usage is None:
+                    usage = {
+                        "total": 0,
+                        "input": 0,
+                        "output": 0,
+                        "reasoning": 0,
+                        "cache_read": 0,
+                        "cache_write": 0,
+                        "cost": 0.0,
+                    }
+                usage["total"] += tokens.get("total", 0) or 0
+                usage["input"] += tokens.get("input", 0) or 0
+                usage["output"] += tokens.get("output", 0) or 0
+                usage["reasoning"] += tokens.get("reasoning", 0) or 0
+                usage["cache_read"] += cache.get("read", 0) or 0
+                usage["cache_write"] += cache.get("write", 0) or 0
+                usage["cost"] += part.get("cost", 0) or 0
+
+        if text_parts:
+            return "".join(text_parts).strip(), usage
+        # No parseable text event at all -- fall back to the raw stdout
+        # (mirrors the pre-#42 behavior) rather than returning an empty
+        # string, which _extract_verdict would otherwise fail safe on
+        # anyway, but this preserves any diagnostic content for the logs.
+        return stdout.strip(), usage
 
     def _extract_verdict(self, text):
         """

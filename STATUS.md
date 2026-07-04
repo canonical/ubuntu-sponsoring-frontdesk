@@ -406,6 +406,16 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     now correctly resolves to `done` (already in `noble-proposed`) instead
     of a false "needs rebase" bounce.
 
+25. **`--verbose` logs the LLM prompt/reply/token usage (DONE, 2026-07-05).**
+    See design_journal.md #42. `_query_llm` now invokes `opencode run
+    --format json` (an NDJSON event stream) instead of the default
+    pretty-printed output -- the only format exposing per-call token
+    usage/cost. `--verbose` now logs the full prompt sent, the raw reply,
+    and a one-line token/cost summary (total/input/output/reasoning/
+    cache read+write/cost). Fails safe to raw stdout if no usable event is
+    found, same fail-safe convention as everywhere else in this bot.
+    Live-validated against real `opencode`.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
