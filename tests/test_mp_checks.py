@@ -757,3 +757,104 @@ def test_diff_memo_caches_failures_too():
     checks.reset_diff_lines_cache()
     assert checks._changelog_diff_lines(mp) is None
     assert _FailingFile.opens == 2
+
+
+# --- target series resolution: SRUs target their own series, not devel -----
+# (design_journal.md #41: check_stale_version used to always compare against
+# the current devel series regardless of what the MP targets, wrongly
+# flagging a real SRU as stale against an unrelated, unreleased series.)
+
+
+def test_target_ubuntu_series_sru_branch():
+    mp = FakeMP(target="refs/heads/ubuntu/noble-devel")
+    assert checks._target_ubuntu_series(mp, lp=None) == "noble"
+
+
+def test_target_ubuntu_series_bare_devel_resolves_via_devel_codename(monkeypatch):
+    monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    assert checks._target_ubuntu_series(mp, lp=object()) == "stonking"
+
+
+def test_target_ubuntu_series_debian_target_falls_back_to_devel(monkeypatch):
+    # A merge MP not yet retargeted to debian/* -- still lands via devel (#27).
+    monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
+    mp = FakeMP(target="refs/heads/debian/sid")
+    assert checks._target_ubuntu_series(mp, lp=object()) == "stonking"
+
+
+def test_target_ubuntu_series_none_when_devel_codename_fails(monkeypatch):
+    monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: None)
+    mp = FakeMP(target="refs/heads/ubuntu/devel")
+    assert checks._target_ubuntu_series(mp, lp=object()) is None
+
+
+def test_max_published_version_picks_highest_across_pockets():
+    versions = {"noble": "1.2-3", "noble-updates": "1.2-6", "noble-proposed": "1.2-5"}
+    assert checks._max_published_version(versions) == "1.2-6"
+
+
+def test_max_published_version_empty_is_none():
+    assert checks._max_published_version({}) is None
+
+
+def _sru_mp_with_diff(diff_text, series="noble", package="testpkg"):
+    return FakeMP(
+        target=f"refs/heads/ubuntu/{series}-devel",
+        diff=FakeDiff("/d/1", 40, diff_text=diff_text),
+        package=package,
+    )
+
+
+_SRU_CHANGELOG_DIFF = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,7 @@
++testpkg (1.2-3ubuntu1~24.04.0) noble; urgency=medium
++
++  * Backport to noble.
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.2-3ubuntu1) stonking; urgency=medium
+
+   * Something
+"""
+
+
+def test_stale_version_checks_the_targeted_series_not_devel(monkeypatch):
+    # The bug this reproduces: an SRU proposing 1.2-3ubuntu1~24.04.0 for
+    # noble must be compared against noble's own archive state, not
+    # whatever unrelated version happens to be in the (still unreleased)
+    # devel series.
+    calls = []
+
+    def fake_ubuntu_versions(lp, pkg, series_names=None):
+        calls.append(series_names)
+        if series_names == ["noble"]:
+            return {"noble": "1.2-2ubuntu1~24.04.0"}  # older -> proposed wins
+        return {"stonking": "5.0-1"}  # devel: unrelated, would wrongly "win"
+
+    monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
+    monkeypatch.setattr(checks.archive_lookup, "ubuntu_versions", fake_ubuntu_versions)
+
+    mp = _sru_mp_with_diff(_SRU_CHANGELOG_DIFF)
+    assert checks.check_stale_version("url", mp, _LP()) is False
+    assert calls == [["noble"]]
+
+
+def test_stale_version_sru_older_than_noble_needs_fixing(monkeypatch):
+    def fake_ubuntu_versions(lp, pkg, series_names=None):
+        if series_names == ["noble"]:
+            return {"noble-updates": "1.2-4ubuntu1~24.04.0"}
+        return {"stonking": "0.1-1"}
+
+    monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
+    monkeypatch.setattr(checks.archive_lookup, "ubuntu_versions", fake_ubuntu_versions)
+
+    mp = _sru_mp_with_diff(_SRU_CHANGELOG_DIFF)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert "noble" in lp.comments[0]
+    assert "stonking" not in lp.comments[0]

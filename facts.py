@@ -27,27 +27,36 @@ logger = logging.getLogger(__name__)
 
 
 def _archive_version(lp, lp_obj):
-    """The package's currently published version in the devel series
-    (proposed pocket winning over release, mirroring check_stale_version).
-    '' if nothing is published (a stable fact); None if the lookup failed
-    (retriable -- main treats it as inconclusive, so it is never persisted
-    and never silently equals a stored value)."""
+    """The package's currently published version in the series this MP
+    actually targets (see checks._target_ubuntu_series -- the current devel
+    series for an 'ubuntu/devel' target, or the specific stable series for
+    an SRU targeting 'ubuntu/<series>-devel'), highest across every pocket
+    published for it (design_journal.md #41 -- mirrors check_stale_version
+    exactly, so the fingerprint tracks the same archive state the check
+    itself reacts to). '' if nothing is published (a stable fact); None if
+    a lookup failed (retriable -- main treats it as inconclusive, so it is
+    never persisted and never silently equals a stored value)."""
     # Imported here, not at module top: checks imports nothing from facts
     # today, but keeping this one-way keeps any future cycle impossible.
     import archive_lookup
-    from checks import _source_package_from_mp
+    from checks import (
+        _max_published_version,
+        _source_package_from_mp,
+        _target_ubuntu_series,
+    )
 
     package = _source_package_from_mp(lp_obj)
     if not package:
         # Structural, not a lookup failure: no package in the URL means
         # check_stale_version can't run either -- a stable fact.
         return ""
-    versions = archive_lookup.ubuntu_versions(lp, package)
+    target_series = _target_ubuntu_series(lp_obj, lp)
+    if not target_series:
+        return None
+    versions = archive_lookup.ubuntu_versions(lp, package, series_names=[target_series])
     if versions is None:
         return None
-    proposed = next((v for k, v in versions.items() if k.endswith("-proposed")), None)
-    release = next((v for k, v in versions.items() if "-" not in k), None)
-    return proposed or release or ""
+    return _max_published_version(versions) or ""
 
 
 def build_facts(lp_obj, lp=None):

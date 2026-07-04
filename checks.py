@@ -818,16 +818,69 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
 
 _RECENT_UPLOAD_GRACE = datetime.timedelta(hours=24)
 
+# git-ubuntu's per-series "tip" branches are named 'ubuntu/<series>-devel'
+# (e.g. 'ubuntu/noble-devel' for an SRU targeting noble), distinct from the
+# single 'ubuntu/devel' branch that tracks the archive's actual development
+# series. Matches either shape; non-greedy so '-devel' is stripped when
+# present rather than swallowed into the series name.
+_TARGET_SERIES_RE = re.compile(r"ubuntu/(?P<series>[a-z0-9.]+?)(?:-devel)?$")
+
+
+def _target_ubuntu_series(lp_obj, lp):
+    """The Ubuntu series this MP's changes actually target: 'noble' for
+    'refs/heads/ubuntu/noble-devel' (an SRU), the current devel codename
+    (e.g. 'stonking') for 'refs/heads/ubuntu/devel' or any target that
+    doesn't parse as 'ubuntu/<series>' at all (a Debian merge MP not yet
+    retargeted to debian/*, which still lands via devel -- see #27).
+
+    Found live (design_journal.md #41): check_stale_version previously
+    always compared against the current devel series regardless of what
+    the MP actually targets, which wrongly flagged a real SRU (MP #504085,
+    targeting noble) as 'older than devel' when devel (an unrelated,
+    unreleased series) was simply never the right comparison at all.
+
+    None only when devel_codename() itself fails -- retriable, not a guess.
+    """
+    target = getattr(lp_obj, "target_git_path", "") or ""
+    match = _TARGET_SERIES_RE.search(target)
+    series = match.group("series") if match else None
+    if series and series != "devel":
+        return series
+    return archive_lookup.devel_codename(lp)
+
+
+def _max_published_version(versions):
+    """The highest version among a {suite: version} dict (see
+    archive_lookup.ubuntu_versions) -- checks every pocket present for the
+    series (release, updates, security, proposed), not just release/
+    proposed, since for a stable series any of updates/security/proposed
+    can be the one currently ahead. None if nothing is published (a stable,
+    structural fact -- distinct from the lookup itself failing, which
+    ubuntu_versions already signals by returning None for the whole dict,
+    checked by the caller before this is ever called)."""
+    highest = None
+    for version in versions.values():
+        if highest is None or archive_lookup.version_compare(version, highest) > 0:
+            highest = version
+    return highest
+
 
 def check_stale_version(url, lp_obj, lp_client):
     """
     Check: proposed version vs. archive.
 
     Compares the version in the MP's new (top) debian/changelog entry
-    against what's currently published for this package in Ubuntu's devel
-    series (checking `<devel>-proposed` first, falling back to `<devel>`
-    itself -- whichever is ahead is what a new upload would actually land
-    behind).
+    against what's currently published for this package in the series the
+    MP actually targets -- the current devel series for an
+    'ubuntu/devel'-targeting MP (including a Debian merge MP still
+    targeting debian/*, which lands via devel per #27), or the specific
+    stable series for an SRU targeting 'ubuntu/<series>-devel' (see
+    _target_ubuntu_series). Checks every pocket published for that series
+    (release, updates, security, proposed) and takes the highest version,
+    not just release-or-proposed -- whichever pocket is actually ahead is
+    what a new upload would land behind (design_journal.md #41: comparing
+    an SRU against the unrelated devel series produced a false "stale"
+    bounce live).
 
     1. proposed > archive: nothing to do, this is the normal case.
     2. proposed < archive: someone else's upload already landed with a
@@ -900,24 +953,23 @@ def check_stale_version(url, lp_obj, lp_client):
     if not proposed_version:
         return False
 
-    devel = archive_lookup.devel_codename(lp_client.lp)
-    if not devel:
+    target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
+    if not target_series:
         logger.debug(
-            "check_stale_version: couldn't determine the devel series; can't determine."
+            "check_stale_version: couldn't determine the target series; can't determine."
         )
         return None
 
     versions = archive_lookup.ubuntu_versions(
-        lp_client.lp, package, series_names=[devel]
+        lp_client.lp, package, series_names=[target_series]
     )
     if versions is None:
         logger.debug("check_stale_version: archive lookup failed; can't determine.")
         return None
-    archive_version = versions.get(f"{devel}-proposed") or versions.get(devel)
+    archive_version = _max_published_version(versions)
     logger.debug(
-        "check_stale_version: %s/%s-proposed versions=%s -> using %r",
-        devel,
-        devel,
+        "check_stale_version: target_series=%s versions=%s -> using %r",
+        target_series,
         versions,
         archive_version,
     )
@@ -938,7 +990,7 @@ def check_stale_version(url, lp_obj, lp_client):
         comment = (
             "Thanks for your contribution! The proposed version "
             f"(`{proposed_version}`) is older than the one already in the archive "
-            f"(`{archive_version}` in {devel}) and needs to be rebased.\n\n"
+            f"(`{archive_version}` in {target_series}) and needs to be rebased.\n\n"
             "Please rebase on top of the current archive version and let us know!"
         )
         logger.info(
@@ -954,7 +1006,9 @@ def check_stale_version(url, lp_obj, lp_client):
     # cmp == 0: same version already published. Tell "this MP's own change,
     # already uploaded" apart from "an unrelated upload reused the version
     # number" by comparing changelog content.
-    pub = archive_lookup.published_source(lp_client.lp, package, devel, archive_version)
+    pub = archive_lookup.published_source(
+        lp_client.lp, package, target_series, archive_version
+    )
     if pub is None:
         # ubuntu_versions() just confirmed a publication with this exact
         # version exists, so this is almost certainly a lookup hiccup, not a

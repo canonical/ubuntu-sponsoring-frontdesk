@@ -391,6 +391,21 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     bare URL (Launchpad auto-linkifies these; Markdown link syntax would not
     render). Live-verified: 200 OK against the real ipu6-drivers publication.
 
+24. **`check_stale_version` compares against the targeted series, not always
+    devel (DONE, 2026-07-05).** See design_journal.md #41. Found live: a
+    real SRU (MP #504085, gce-compute-image-packages, targeting noble) was
+    wrongly bounced as stale because the check always compared against the
+    current devel series (`stonking`) regardless of what the MP actually
+    targets -- a known gap flagged in #27, hit live for the first time.
+    New `checks._target_ubuntu_series` reads the series from
+    `target_git_path` (`ubuntu/<series>-devel` for an SRU, falling back to
+    devel for `ubuntu/devel`/Debian-merge targets); `_max_published_version`
+    now checks every pocket (release/updates/security/proposed), not just
+    a hardcoded devel/devel-proposed pair. `facts._archive_version` (#37)
+    got the same fix for the same reason. Live-validated: the motivating MP
+    now correctly resolves to `done` (already in `noble-proposed`) instead
+    of a false "needs rebase" bounce.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
