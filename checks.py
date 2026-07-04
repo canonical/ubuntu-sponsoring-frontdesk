@@ -1021,6 +1021,18 @@ def check_stale_version(url, lp_obj, lp_client):
             f"uploaded to the archive as `{package} {archive_version}`, so this "
             "Merge Proposal can be closed."
         )
+        # Launchpad's comment renderer doesn't support Markdown link syntax (a
+        # `[text](url)` would show up literally), but it does auto-linkify
+        # bare URLs -- so the publication's page is appended as plain text.
+        # A SourcePackagePublishingHistory has no web_link (confirmed live:
+        # the real launchpadlib object simply lacks the attribute -- this
+        # kind of record has no canonical page of its own in Launchpad's
+        # object model), so the URL is constructed instead, same shape as
+        # any '+source/<pkg>/<version>' release page. Live-verified against
+        # a real MP (ipu6-drivers #503576): 200 OK, resolves to the intended
+        # publication.
+        pub_url = archive_lookup.published_source_url(package, archive_version)
+        comment += f"\n\n{pub_url}"
         logger.info(
             "[%s] version %r already published with matching content. "
             "Commenting (no status write -- see the code note below).",

@@ -294,3 +294,18 @@ def test_changelog_text_none_on_fetch_failure(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", raise_error)
     pub = _FakePub(url="https://launchpadlibrarian.net/1/foo_1.0-1.changelog")
     assert archive_lookup.changelog_text(pub) is None
+
+
+def test_published_source_url_basic():
+    assert (
+        archive_lookup.published_source_url("foo", "1.2-1")
+        == "https://launchpad.net/ubuntu/+source/foo/1.2-1"
+    )
+
+
+def test_published_source_url_keeps_debian_version_characters_readable():
+    # ~, +, and the epoch ':' are common in Debian versions and valid
+    # unescaped in a URL path -- only genuinely unsafe characters should
+    # ever get percent-encoded, so the link stays human-readable.
+    url = archive_lookup.published_source_url("foo", "1:2.0~exp1+dfsg-1")
+    assert url == "https://launchpad.net/ubuntu/+source/foo/1:2.0~exp1+dfsg-1"

@@ -134,6 +134,23 @@ def ubuntu_versions(lp, package, series_names=None):
         return None
 
 
+def published_source_url(package, version):
+    """The human-facing Launchpad page for a specific published source
+    version (e.g. 'https://launchpad.net/ubuntu/+source/foo/1.2-1'). Built
+    directly rather than read off the publication object: a
+    SourcePackagePublishingHistory has no `web_link` -- confirmed live, the
+    real launchpadlib object simply doesn't expose one, since this kind of
+    record has no canonical page of its own in Launchpad's object model
+    (the page instead belongs to the package+version combination). `quote`
+    keeps Debian-version characters valid in a URL path without mangling
+    version comparisons in the comment text elsewhere ('~', '+', ':' for an
+    epoch, all common and all safe to leave unescaped in a URL path)."""
+    return (
+        f"https://launchpad.net/ubuntu/+source/{package}/"
+        f"{urllib.parse.quote(version, safe='~+:')}"
+    )
+
+
 def published_source(lp, package, series_name, version):
     """The SourcePackagePublishingHistory for `package` == `version` in
     `series_name` (any pocket; first match), or None if there's no such

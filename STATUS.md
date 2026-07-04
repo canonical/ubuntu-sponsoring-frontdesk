@@ -381,6 +381,16 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     the redundant second fetch timing out -- it now completes and persisted
     facts for the first time.
 
+23. **"Already uploaded" comment links to the publication (DONE, 2026-07-05).**
+    See design_journal.md #40. seb128 asked for the "already uploaded to the
+    archive as `pkg version`" bounce (check 6, case 3a) to link to the
+    Launchpad page for that publication. Turned out `SourcePackagePublishingHistory`
+    has no `web_link` at all (confirmed live) -- fixed by constructing
+    `archive_lookup.published_source_url(package, version)`
+    (`https://launchpad.net/ubuntu/+source/<pkg>/<version>`), appended as a
+    bare URL (Launchpad auto-linkifies these; Markdown link syntax would not
+    render). Live-verified: 200 OK against the real ipu6-drivers publication.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

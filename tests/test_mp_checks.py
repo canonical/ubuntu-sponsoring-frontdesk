@@ -529,6 +529,18 @@ def test_stale_version_same_version_matching_content_is_done(monkeypatch):
     assert "1.2-4" in lp.comments[0]
 
 
+def test_stale_version_matching_content_links_to_the_publication(monkeypatch):
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert "https://launchpad.net/ubuntu/+source/testpkg/1.2-4" in lp.comments[0]
+
+
 def test_stale_version_same_version_different_content_bounces(monkeypatch):
     _patch_archive(
         monkeypatch,
