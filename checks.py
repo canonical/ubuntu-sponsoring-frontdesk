@@ -323,7 +323,51 @@ def _source_package_from_mp(lp_obj):
     return None
 
 
+# One-entry memo for _changelog_diff_lines, (diff_self_link, result) or None.
+# Checks 2/5/6 each need the same diff content within a single item's triage;
+# without this they re-fetched it independently -- doubling both the time
+# (the two slowest checks in every timing capture, design_journal.md #33)
+# and the exposure to librarian slow-trickle timeouts (seen live on grub2
+# #507575: check 5's fetch succeeded, check 6's identical re-fetch timed out
+# seconds later, design_journal.md #37). Keyed on the preview diff's
+# self_link -- a stable, hashable string that changes when the contributor
+# pushes (new diff, new link), unlike the launchpadlib Entry itself
+# (unhashable, see #30's reverted lru_cache) or id(lp_obj) (GC reuse risk).
+# One entry only: checks for the same item run consecutively, so memory stays
+# bounded and cross-item reuse is structurally impossible. Failures (None)
+# are cached too, deliberately: the second caller re-attempting a fetch that
+# just failed is exactly the compounding this exists to remove -- the item
+# is inconclusive either way and retries next run (#28).
+_diff_lines_cache = None
+
+
+def reset_diff_lines_cache():
+    """Drop the per-item diff-content memo. Called by main at the start of
+    each item (hygiene; distinct real MPs can't share a diff self_link) and
+    by the test suite between tests (fakes CAN reuse links like '/d/1')."""
+    global _diff_lines_cache
+    _diff_lines_cache = None
+
+
 def _changelog_diff_lines(lp_obj):
+    """Memoizing wrapper around _changelog_diff_lines_fetch -- same contract
+    (see that docstring); one fetch per preview diff per item."""
+    global _diff_lines_cache
+    try:
+        diff = getattr(lp_obj, "preview_diff", None)
+        key = getattr(diff, "self_link", None) if diff is not None else None
+    except Exception:
+        key = None
+    if key is not None and _diff_lines_cache and _diff_lines_cache[0] == key:
+        logger.debug("_changelog_diff_lines: reusing already-fetched diff content")
+        return _diff_lines_cache[1]
+    result = _changelog_diff_lines_fetch(lp_obj)
+    if key is not None:
+        _diff_lines_cache = (key, result)
+    return result
+
+
+def _changelog_diff_lines_fetch(lp_obj):
     """The unified-diff lines for the debian/changelog hunk in this MP's
     preview diff. Costs one extra API call (fetching the diff content
     itself, beyond the metadata check_mp_conflicts/check_empty_diff

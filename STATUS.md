@@ -373,6 +373,14 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     never skips evaluation. Implement #35 on top of #31's tiered dispatch,
     not before it.
 
+22. **Per-item diff-content memoization (DONE, 2026-07-04).** See
+    design_journal.md #39 (the #33 backlog item). Checks 2/5/6 now share one
+    fetch of the preview diff content per item (one-entry cache keyed on the
+    diff's `self_link`, failures cached too, reset per item and per test).
+    Live-validated on grub2 #507575, which had been stuck inconclusive on
+    the redundant second fetch timing out -- it now completes and persisted
+    facts for the first time.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

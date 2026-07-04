@@ -16,8 +16,10 @@ class FakeHostedFile:
 
     def __init__(self, content):
         self._content = content.encode() if isinstance(content, str) else content
+        self.opens = 0  # fetch counter, for the diff-memoization tests (#39)
 
     def open(self):
+        self.opens += 1
         return self
 
     def read(self):

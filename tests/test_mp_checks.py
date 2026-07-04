@@ -700,3 +700,48 @@ def test_stale_version_unparseable_date_published_fails_safe_to_no_defer(
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
     assert checks.check_stale_version("url", mp, lp) == "done"
+
+
+# --- per-item diff-content memoization (design_journal.md #39) ---
+
+
+def test_diff_content_fetched_once_across_checks():
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    checks._changelog_diff_lines(mp)
+    checks._changelog_diff_lines(mp)
+    assert mp.preview_diff.diff_text.opens == 1
+
+
+def test_diff_memo_invalidated_by_a_new_diff():
+    # A fresh push = a new preview diff with a new self_link -> refetch.
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+    first = checks._changelog_diff_lines(mp)
+    mp.preview_diff = FakeDiff(
+        "/d/2", 20, diff_text=_CHANGELOG_DIFF.format(debian_suite="experimental")
+    )
+    second = checks._changelog_diff_lines(mp)
+    assert mp.preview_diff.diff_text.opens == 1
+    assert first != second
+
+
+def test_diff_memo_caches_failures_too():
+    # The whole point (design #33/#39): a failed fetch must NOT be re-attempted
+    # by the next check in the same item -- that compounds slow failures.
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
+
+    class _FailingFile:
+        opens = 0
+
+        def open(self):
+            _FailingFile.opens += 1
+            raise TimeoutError("simulated librarian timeout")
+
+    mp.preview_diff.diff_text = _FailingFile()
+    assert checks._changelog_diff_lines(mp) is None
+    assert checks._changelog_diff_lines(mp) is None
+    assert _FailingFile.opens == 1
+
+    # reset (what main does per item) -> genuinely retried
+    checks.reset_diff_lines_cache()
+    assert checks._changelog_diff_lines(mp) is None
+    assert _FailingFile.opens == 2
