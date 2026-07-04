@@ -76,6 +76,12 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
 2. **Bot account.** Currently authenticates as `~seb128`. Before go-live,
    authorize as `~ubuntu-sponsoring-bot` (confirm the account exists and has
    queue access) — the self-comment dedup keys on `self.lp.me`.
+   **Switch-day caveat:** comments posted while running as `~seb128` become
+   invisible to the new account's dedup, so previously-bounced items could be
+   re-commented under the new identity. Cheap mitigation at switch time:
+   clear `state.db` facts (forces re-triage, which is correct anyway) and
+   accept the one-time duplicates, or manually skim the handful of items with
+   `performed` comment writes in `audit.jsonl` first.
 3. **First real `--interactive` run (DONE, 2026-07-04).** MP #507575
    (grub2, `~sharkcnnnnnn`): `check_stale_version` correctly found the
    proposed version already published with different content, prompted

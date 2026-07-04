@@ -200,7 +200,12 @@ class LPClient:
 
     def unsubscribe_sponsors(self, lp_obj):
         """
-        Unsubscribes ubuntu-sponsors from a bug or MP.
+        Unsubscribes ubuntu-sponsors from a bug.
+
+        Bugs only, by design (design_journal.md #8): MPs drop off the sponsor
+        queue via their status/vote transitions, and Launchpad offers no
+        direct API to unsubscribe a review team from an MP anyway. Both call
+        sites (check_administrative_state, the SYNCED path) are bug-only.
         """
         sponsors_team = self.lp.people["ubuntu-sponsors"]
 
@@ -209,6 +214,13 @@ class LPClient:
         if resource_type == "bug_task":
             lp_obj = lp_obj.bug
             resource_type = "bug"
+        if resource_type != "bug":
+            logger.warning(
+                "unsubscribe_sponsors called for a %s; only bugs are "
+                "supported (design #8). Ignoring.",
+                resource_type,
+            )
+            return
 
         target = _target(lp_obj)
         decision = self._decide(
@@ -225,16 +237,7 @@ class LPClient:
             return
 
         try:
-            if resource_type == "bug":
-                lp_obj.unsubscribe(person=sponsors_team)
-            elif resource_type == "branch_merge_proposal":
-                # For MPs, we can remove the reviewer
-                try:
-                    lp_obj.unsubscribe(person=sponsors_team)
-                except AttributeError:
-                    logger.info(
-                        "Note: Direct unsubscribe method not found on MP object."
-                    )
+            lp_obj.unsubscribe(person=sponsors_team)
             self._record_write(
                 url=target,
                 action="unsubscribe",
