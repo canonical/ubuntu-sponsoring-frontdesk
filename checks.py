@@ -883,8 +883,19 @@ def check_stale_version(url, lp_obj, lp_client):
     bounce live).
 
     1. proposed > archive: nothing to do, this is the normal case.
-    2. proposed < archive: someone else's upload already landed with a
-       higher version while this MP sat in the queue -- needs a rebase.
+    2. proposed < archive: normally means someone else's upload already
+       landed with a higher version while this MP sat in the queue --
+       needs a rebase. But first (design_journal.md #43, found live: MP
+       #505086, backport-iwlwifi-dkms): check whether the exact PROPOSED
+       version was ever published at all (any status -- Published or
+       since Superseded/Deleted). If so, this MP's own change already
+       landed and was later superseded by unrelated, newer work -- "please
+       rebase" would be the wrong message; instead this runs the same
+       content comparison as case 3 against that historical publication
+       (3a/3b below apply identically), since the version being older than
+       the current archive max doesn't mean it was never uploaded. Only
+       when no publication of the exact proposed version exists at all
+       does this fall through to the original "needs a rebase" bounce.
     3. proposed == archive: a publication with this exact version already
        exists. Fetch its changelog (SourcePackagePublishingHistory.
        changelogUrl()) and compare content against the proposed entry:
@@ -987,6 +998,36 @@ def check_stale_version(url, lp_obj, lp_client):
         return False
 
     if cmp < 0:
+        # Before assuming "someone else's newer upload landed, please
+        # rebase": check whether the exact PROPOSED version was ever
+        # published for this package (any status -- Published or since
+        # Superseded/Deleted). If it was, this MP's own change already
+        # landed at some point and was later superseded by unrelated,
+        # newer work -- "please rebase" is the wrong message; "already
+        # uploaded, this MP can be closed" is (design_journal.md #43,
+        # found live: MP #505086, backport-iwlwifi-dkms, where the
+        # currently-Superseded archive record for the exact proposed
+        # version matched its content).
+        historical_pub = archive_lookup.published_source(
+            lp_client.lp, package, target_series, proposed_version, status=None
+        )
+        if historical_pub is not None:
+            outcome = _classify_against_publication(
+                url,
+                lp_obj,
+                lp_client,
+                package,
+                proposed_version,
+                proposed_entry,
+                historical_pub,
+            )
+            if outcome is not None:
+                return outcome
+            # Publication exists but its changelog couldn't be fetched --
+            # genuinely can't determine whether this is a stale rebase or
+            # an already-landed change; don't guess either way.
+            return None
+
         comment = (
             "Thanks for your contribution! The proposed version "
             f"(`{proposed_version}`) is older than the one already in the archive "
@@ -1020,6 +1061,32 @@ def check_stale_version(url, lp_obj, lp_client):
         )
         return None
 
+    outcome = _classify_against_publication(
+        url, lp_obj, lp_client, package, archive_version, proposed_entry, pub
+    )
+    # None here means the changelog fetch failed -- correctly propagates as
+    # "couldn't determine" (see this function's own docstring/return-value
+    # contract), same as every other lookup-failure path in this module.
+    return outcome
+
+
+def _classify_against_publication(
+    url, lp_obj, lp_client, package, version, proposed_entry, pub
+):
+    """
+    Given an existing publication `pub` of exactly `version`, compare its
+    changelog content against `proposed_entry` and post the appropriate
+    comment. Shared by check_stale_version's cmp==0 path (the current
+    archive version matches the proposal) and its cmp<0 path (the proposal
+    is older than the archive, but was itself published and later
+    superseded -- design_journal.md #43).
+
+    Returns "done" (matching content -- this MP's change already landed),
+    "needs_fixing" (different content -- a genuine version collision,
+    needs a rebase with a new version number), "pending" (matching content
+    but the publication is too recent -- see _RECENT_UPLOAD_GRACE), or
+    None if the changelog itself couldn't be fetched (retriable).
+    """
     archive_text = archive_lookup.changelog_text(pub)
     if archive_text is None:
         logger.debug(
@@ -1033,8 +1100,10 @@ def check_stale_version(url, lp_obj, lp_client):
         proposed_entry
     ) == _normalize_changelog_entry(archive_entry)
     logger.debug(
-        "check_stale_version: version %r already published; content matches=%s",
-        archive_version,
+        "check_stale_version: version %r already published (status=%s); "
+        "content matches=%s",
+        version,
+        getattr(pub, "status", "?"),
         same_content,
     )
 
@@ -1055,7 +1124,7 @@ def check_stale_version(url, lp_obj, lp_client):
                     "check_stale_version: version %r published %s ago (< %s); "
                     "deferring -- git-ubuntu's importer may auto-close this MP "
                     "first once it catches up.",
-                    archive_version,
+                    version,
                     age,
                     _RECENT_UPLOAD_GRACE,
                 )
@@ -1064,7 +1133,7 @@ def check_stale_version(url, lp_obj, lp_client):
                     "close comment in case git-ubuntu's importer auto-closes "
                     "this MP first.",
                     url,
-                    archive_version,
+                    version,
                     age,
                     _RECENT_UPLOAD_GRACE,
                 )
@@ -1072,7 +1141,7 @@ def check_stale_version(url, lp_obj, lp_client):
 
         comment = (
             "Thanks for your contribution! It seems that this change was already "
-            f"uploaded to the archive as `{package} {archive_version}`, so this "
+            f"uploaded to the archive as `{package} {version}`, so this "
             "Merge Proposal can be closed."
         )
         # Launchpad's comment renderer doesn't support Markdown link syntax (a
@@ -1085,13 +1154,13 @@ def check_stale_version(url, lp_obj, lp_client):
         # any '+source/<pkg>/<version>' release page. Live-verified against
         # a real MP (ipu6-drivers #503576): 200 OK, resolves to the intended
         # publication.
-        pub_url = archive_lookup.published_source_url(package, archive_version)
+        pub_url = archive_lookup.published_source_url(package, version)
         comment += f"\n\n{pub_url}"
         logger.info(
             "[%s] version %r already published with matching content. "
             "Commenting (no status write -- see the code note below).",
             url,
-            archive_version,
+            version,
         )
         # TODO: this stays comment-only until the underlying permission gap
         # is resolved. Confirmed live 2026-07-05 (ipu6-drivers #503576):
@@ -1109,7 +1178,7 @@ def check_stale_version(url, lp_obj, lp_client):
 
     comment = (
         "Thanks for your contribution! It looks like an upload with the same "
-        f"version (`{archive_version}`) but different content already exists in "
+        f"version (`{version}`) but different content already exists in "
         "the archive. Your change needs to be rebased (with a new version "
         "number) and resubmitted."
     )
@@ -1117,7 +1186,7 @@ def check_stale_version(url, lp_obj, lp_client):
         "[%s] version %r already published with different content. "
         "Commenting with a Needs Fixing vote.",
         url,
-        archive_version,
+        version,
     )
     lp_client.comment(lp_obj, comment, vote="Needs Fixing")
 

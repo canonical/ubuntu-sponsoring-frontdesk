@@ -416,6 +416,19 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     found, same fail-safe convention as everywhere else in this bot.
     Live-validated against real `opencode`.
 
+26. **`check_stale_version` checks history before bouncing an older
+    proposal (DONE, 2026-07-05).** See design_journal.md #43. Found live:
+    MP #505086 proposed a version older than the current archive max, but
+    that exact version had itself been published and later superseded --
+    this MP's change already landed, so "please rebase" was the wrong
+    message. `archive_lookup.published_source` gained a `status=None` mode
+    (search every status, not just Published); the cmp<0 branch now checks
+    for a historical publication of the exact proposed version before
+    bouncing, running the same content-comparison logic as the cmp==0 case
+    (matching -> `done`, different -> `needs_fixing` as a version
+    collision, not found -> unchanged "needs rebase"). Live-validated on
+    the motivating MP: now correctly resolves to `done`.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

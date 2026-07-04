@@ -476,8 +476,18 @@ testpkg (1.2-3) unstable; urgency=medium
 
 
 def _patch_archive(
-    monkeypatch, devel="noble", versions=None, pub=object(), changelog=None
+    monkeypatch,
+    devel="noble",
+    versions=None,
+    pub=object(),
+    changelog=None,
+    historical_pub=None,
 ):
+    """historical_pub is what an any-status published_source lookup
+    (status=None) returns -- design_journal.md #43's cmp<0 check for a
+    since-superseded publication of the exact proposed version. Defaults
+    to None (nothing found), matching every pre-#43 test's expectation
+    that an older-than-archive proposal with no history just bounces."""
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: devel)
     monkeypatch.setattr(
         archive_lookup,
@@ -485,7 +495,11 @@ def _patch_archive(
         lambda lp, pkg, series_names=None: versions,
     )
     monkeypatch.setattr(
-        archive_lookup, "published_source", lambda lp, pkg, series, version: pub
+        archive_lookup,
+        "published_source",
+        lambda lp, pkg, series, version, status="Published": (
+            pub if status == "Published" else historical_pub
+        ),
     )
     monkeypatch.setattr(archive_lookup, "changelog_text", lambda p: changelog)
 
@@ -514,6 +528,78 @@ def test_stale_version_prefers_proposed_pocket_over_release(monkeypatch):
     lp = _LP()
     assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
     assert "1.2-5" in lp.comments[0]
+
+
+# --- older than archive, but the proposed version was itself once published
+# and later superseded by unrelated newer work (design_journal.md #43) -------
+
+
+def test_stale_version_older_but_was_itself_published_and_superseded_is_done(
+    monkeypatch,
+):
+    # Found live: MP #505086 proposed 1.2-4, archive is ahead at 1.2-5, but
+    # 1.2-4 itself was published (now Superseded) with matching content --
+    # this MP's own change already landed; "please rebase" is the wrong
+    # message, "already uploaded, can be closed" is.
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-5"},
+        changelog=_ARCHIVE_CHANGELOG_MATCHING,
+        historical_pub=_FakePublishedSource(),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.votes == [None]
+    assert "1.2-4" in lp.comments[0]
+
+
+def test_stale_version_older_but_was_itself_published_with_different_content(
+    monkeypatch,
+):
+    # The exact proposed version was published (now superseded) but with
+    # DIFFERENT content -- a genuine version collision, still needs a
+    # rebase, just phrased as a duplicate-version conflict rather than "the
+    # archive has moved on".
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-5"},
+        changelog=_ARCHIVE_CHANGELOG_DIFFERENT,
+        historical_pub=_FakePublishedSource(),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert lp.votes == ["Needs Fixing"]
+    assert "different content" in lp.comments[0]
+
+
+def test_stale_version_older_with_no_history_bounces_as_before(monkeypatch):
+    # The exact proposed version genuinely was never published (no history
+    # at all, any status) -- falls through to the original "needs a
+    # rebase" bounce. historical_pub defaults to None in _patch_archive.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert "needs to be rebased" in lp.comments[0]
+
+
+def test_stale_version_older_history_lookup_changelog_fetch_fails_is_none(
+    monkeypatch,
+):
+    # A historical publication of the exact proposed version was found, but
+    # its changelog couldn't be fetched -- genuinely can't determine
+    # whether this is "already landed" or a rebase; must not guess either
+    # way (changelog=None is _patch_archive's default: lookup "succeeded"
+    # in finding a record, but changelog_text itself fails).
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-5"},
+        historical_pub=_FakePublishedSource(),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
 
 
 def test_stale_version_same_version_matching_content_is_done(monkeypatch):

@@ -151,24 +151,37 @@ def published_source_url(package, version):
     )
 
 
-def published_source(lp, package, series_name, version):
+def published_source(lp, package, series_name, version, status="Published"):
     """The SourcePackagePublishingHistory for `package` == `version` in
     `series_name` (any pocket; first match), or None if there's no such
-    publication or the lookup fails."""
+    publication or the lookup fails.
+
+    ``status`` defaults to 'Published' (today's active archive state).
+    Pass ``status=None`` to search every publication status at once
+    (Published, Superseded, Deleted, ...) -- used by check_stale_version
+    (design_journal.md #43) to find a publication of an exact version that
+    has since been superseded by something newer, rather than assuming a
+    version older than the current archive max was simply never uploaded.
+    When several statuses match, a still-registered publication (not
+    'Deleted') is preferred -- a deleted record's changelog may not be
+    readable."""
     try:
         ubuntu = lp.distributions["ubuntu"]
         archive = ubuntu.main_archive
         series = ubuntu.getSeries(name_or_version=series_name)
-        pubs = archive.getPublishedSources(
+        kwargs = dict(
             source_name=package,
             exact_match=True,
             distro_series=series,
             version=version,
-            status="Published",
         )
-        for pub in pubs:
-            return pub
-        return None
+        if status is not None:
+            kwargs["status"] = status
+        matches = list(archive.getPublishedSources(**kwargs))
+        if not matches:
+            return None
+        matches.sort(key=lambda p: getattr(p, "status", "") == "Deleted")
+        return matches[0]
     except Exception as e:
         logger.warning(
             "Launchpad lookup failed (published source for %s %s in %s): %s",

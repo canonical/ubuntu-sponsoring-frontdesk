@@ -116,9 +116,10 @@ class _FakeSeries:
 
 
 class _FakePublication:
-    def __init__(self, version, pocket="Release"):
+    def __init__(self, version, pocket="Release", status="Published"):
         self.source_package_version = version
         self.pocket = pocket
+        self.status = status
 
 
 class _FakeArchive:
@@ -126,11 +127,18 @@ class _FakeArchive:
         self._publications = publications
 
     def getPublishedSources(
-        self, source_name, exact_match, distro_series, status, version=None
+        self, source_name, exact_match, distro_series, version=None, status=None
     ):
+        # Mirrors the real Launchpad API (confirmed live, design_journal.md
+        # #43): omitting `status` entirely returns every status, not just
+        # Published -- so the fake's default must be None too, not
+        # "Published", or it wouldn't reproduce what published_source's
+        # status=None path actually does against the real API.
         pubs = self._publications.get((source_name, distro_series.name), [])
         if version is not None:
             pubs = [p for p in pubs if p.source_package_version == version]
+        if status is not None:
+            pubs = [p for p in pubs if p.status == status]
         return pubs
 
 
@@ -251,6 +259,37 @@ def test_published_source_none_on_lookup_failure():
     lp = _FakeLP()
     del lp.distributions
     assert archive_lookup.published_source(lp, "foo", "noble", "1.0-1") is None
+
+
+def test_published_source_status_none_finds_superseded(monkeypatch):
+    # design_journal.md #43: check_stale_version looks up a version that
+    # isn't currently Published (it's been superseded by something newer)
+    # to tell "this MP's change already landed" apart from "never uploaded".
+    lp = _FakeLP(
+        devel_name="noble",
+        publications={
+            ("foo", "noble"): [_FakePublication("1.0-1", status="Superseded")]
+        },
+    )
+    pub = archive_lookup.published_source(lp, "foo", "noble", "1.0-1", status=None)
+    assert pub is not None
+    assert pub.status == "Superseded"
+
+
+def test_published_source_status_none_prefers_non_deleted():
+    # A Deleted record's changelog may not be readable -- prefer whichever
+    # match is still registered when several statuses exist for one version.
+    lp = _FakeLP(
+        devel_name="noble",
+        publications={
+            ("foo", "noble"): [
+                _FakePublication("1.0-1", status="Deleted"),
+                _FakePublication("1.0-1", status="Superseded"),
+            ]
+        },
+    )
+    pub = archive_lookup.published_source(lp, "foo", "noble", "1.0-1", status=None)
+    assert pub.status == "Superseded"
 
 
 # --- changelog_text ----------------------------------------------------------
