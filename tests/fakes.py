@@ -134,9 +134,33 @@ class FakeSeries:
         self.name = name
 
 
+class FakePublication:
+    def __init__(self, version, pocket="Release"):
+        self.source_package_version = version
+        self.pocket = pocket
+
+
+class FakeArchive:
+    """Stand-in for a distribution's main_archive: getPublishedSources
+    returns the configured publications regardless of filters."""
+
+    def __init__(self, pubs=None, fail=False):
+        self.pubs = pubs or []
+        self.fail = fail
+
+    def getPublishedSources(self, **kwargs):
+        if self.fail:
+            raise TimeoutError("simulated Launchpad timeout")
+        return self.pubs
+
+
 class FakeDistribution:
-    def __init__(self, devel_series_name="noble"):
+    def __init__(self, devel_series_name="noble", archive=None):
         self.current_series = FakeSeries(devel_series_name)
+        self.main_archive = archive if archive is not None else FakeArchive()
+
+    def getSeries(self, name_or_version):
+        return FakeSeries(name_or_version)
 
 
 class FakeRoot:
@@ -155,8 +179,11 @@ class FakeRoot:
 class FakeTriageClient:
     """Minimal lp_client for exercising main.triage_url end-to-end."""
 
-    def __init__(self, objects, write_outcome="performed"):
+    def __init__(self, objects, write_outcome="performed", lp=None):
         self.objects = objects  # url -> lp_obj
+        # Optional FakeRoot: when set, main passes it to facts.build_facts so
+        # the archive-version fingerprint (design #37) is exercised too.
+        self.lp = lp
         self.comments = []
         self.votes = []
         # Mirrors LPClient's per-item write-outcome tracking: main persists an

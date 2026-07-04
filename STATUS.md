@@ -340,6 +340,33 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     now enforced on the deterministic branches too, not just the LLM ones).
     A declined `[y/N]` re-prompts next run rather than dropping the item.
 
+19. **Archive version in the facts fingerprint (DONE, 2026-07-04).** See
+    design_journal.md #37. check_stale_version only ever worked on an item's
+    first triage: archive movement (someone else's upload, or this change
+    landing) never re-triggered the pipeline because facts were purely
+    contributor-controlled. `build_facts` now records the package's current
+    devel(-proposed) version for MPs (one getPublishedSources call per MP
+    per run); an archive upload changes the fingerprint and re-triages
+    immediately. Lookup failure -> `None` -> whole pass inconclusive (never
+    persisted). Old snapshots migrate themselves via a one-time re-triage
+    (dedup keeps it silent). Live-validated on hiprand #507756.
+
+20. **Unreadable comment history skips the write, every mode (DONE,
+    2026-07-04).** See design_journal.md #38. Dedup's history-read failing
+    used to fall through to posting -- a transient glitch under --yes could
+    double-post publicly. Now `_already_posted` returns None on failure and
+    `comment()` skips with a `skipped-dedup-unavailable` audit outcome
+    (non-effective per #36, so the item retries next run). seb128's call:
+    infra glitch -> skip and retry, never prompt or guess.
+
+21. **Design #35 amended: suppressed findings do not short-circuit.** The
+    original write-up had suppressed incomplete-tier findings stopping the
+    pipeline, which could skip the closing-capable checks (4/6) and miss an
+    archive-matches-MP close on a human-engaged item -- the exact case the
+    closing-tier exemption exists for. Now: suppression silences output,
+    never skips evaluation. Implement #35 on top of #31's tiered dispatch,
+    not before it.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

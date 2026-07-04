@@ -150,7 +150,9 @@ class LLMReviewer:
             return True, ""
 
         if not isinstance(data, dict):
-            logger.warning("YAML verdict was not a mapping; failing safe to human review.")
+            logger.warning(
+                "YAML verdict was not a mapping; failing safe to human review."
+            )
             return True, ""
 
         verdict = str(data.get("verdict", "")).strip().lower()

@@ -2,9 +2,18 @@
 
 import logging
 
+import facts
 import main
 from state import StateManager
-from fakes import FakeMP, FakeDiff, FakeTriageClient, FakeLLM
+from fakes import (
+    FakeArchive,
+    FakeDiff,
+    FakeLLM,
+    FakeMP,
+    FakePublication,
+    FakeRoot,
+    FakeTriageClient,
+)
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -153,6 +162,70 @@ def test_skipped_duplicate_counts_as_handled(tmp_path):
     )
     main.triage_url(URL, sm, lp, FakeLLM())
     assert sm.get_facts(URL) is not None
+
+
+def _root_with_archive(archive):
+    root = FakeRoot()
+    root.distributions["ubuntu"].main_archive = archive
+    return root
+
+
+def test_archive_version_is_part_of_the_fingerprint(tmp_path):
+    # Design #37: an archive upload landing after an item's first triage must
+    # re-trigger triage, even though nothing contributor-controlled changed.
+    sm = _state(tmp_path)
+    archive = FakeArchive(pubs=[FakePublication("1.0-1")])
+    lp = FakeTriageClient(
+        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        lp=_root_with_archive(archive),
+    )
+    llm = FakeLLM()
+
+    main.triage_url(URL, sm, lp, llm)
+    assert len(lp.comments) == 1
+    assert sm.get_facts(URL)["archive_version"] == "1.0-1"
+
+    # unchanged archive + unchanged MP -> skipped
+    main.triage_url(URL, sm, lp, llm)
+    assert len(lp.comments) == 1
+
+    # a new archive upload changes the fingerprint -> full re-triage
+    archive.pubs = [FakePublication("2.0-1")]
+    main.triage_url(URL, sm, lp, llm)
+    assert len(lp.comments) == 2
+
+
+def test_archive_lookup_failure_is_inconclusive_not_cached(tmp_path):
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(
+        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        lp=_root_with_archive(FakeArchive(fail=True)),
+    )
+    main.triage_url(URL, sm, lp, FakeLLM())
+    # the bounce still happens (the check itself didn't need the archive)...
+    assert len(lp.comments) == 1
+    # ...but a failed fingerprint lookup must never be persisted: two
+    # consecutive failures would compare equal at the gate and freeze the item.
+    assert sm.get_facts(URL) is None
+
+
+def test_archive_version_prefers_proposed_pocket():
+    root = _root_with_archive(
+        FakeArchive(
+            pubs=[FakePublication("1.0-1"), FakePublication("1.1-1", "Proposed")]
+        )
+    )
+    assert facts._archive_version(root, FakeMP()) == "1.1-1"
+
+
+def test_archive_version_nothing_published_is_a_stable_empty_string():
+    root = _root_with_archive(FakeArchive(pubs=[]))
+    assert facts._archive_version(root, FakeMP()) == ""
+
+
+def test_archive_version_lookup_failure_is_none():
+    root = _root_with_archive(FakeArchive(fail=True))
+    assert facts._archive_version(root, FakeMP()) is None
 
 
 def test_force_bypasses_facts_gate(tmp_path):

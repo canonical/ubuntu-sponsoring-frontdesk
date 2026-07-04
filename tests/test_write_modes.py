@@ -90,6 +90,27 @@ def test_mp_identical_comment_is_skipped(tmp_path):
     assert mp.created_comments == []
 
 
+class _UnreadableHistory:
+    """A comment-history read failing mid-iteration (network blip)."""
+
+    def __iter__(self):
+        raise TimeoutError("simulated Launchpad timeout")
+
+
+def test_unreadable_history_skips_the_write_even_under_yes(tmp_path):
+    # Never write on an incomplete picture (design_journal.md #28's
+    # principle applied to dedup): if the history can't be read, skip in
+    # every mode and retry next run rather than risk a double-post.
+    c = _client(tmp_path, "yes")
+    bug = FakeBug()
+    bug.messages = _UnreadableHistory()
+    c.comment(bug, "hello")
+    assert bug.new_messages == []
+    assert _entries(c)[-1]["outcome"] == "skipped-dedup-unavailable"
+    # not an effective outcome -> main won't persist facts -> retried
+    assert not c.all_writes_effective()
+
+
 # ---- MP review votes (git-ubuntu MPs don't accept direct status writes) ----
 
 

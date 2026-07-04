@@ -66,7 +66,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # Fingerprint the contributor-controlled signals. We (re-)triage only when
     # these change; an unchanged snapshot means nothing has happened since we
     # last looked, so we stay quiet and avoid re-posting the same comment.
-    new_facts = facts.build_facts(lp_obj)
+    new_facts = facts.build_facts(lp_obj, lp=getattr(lp_client, "lp", None))
     checkpoint("build_facts")
     if not force:
         stored_facts = state_manager.get_facts(url)
@@ -85,6 +85,17 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # facts-unchanged gate skip this URL forever, and whatever the check
     # couldn't determine this run would never get re-checked.
     inconclusive = False
+
+    # The archive-version part of the fingerprint (design_journal.md #37)
+    # follows the same None-means-lookup-failed convention as the checks: a
+    # failed lookup must not be persisted (two consecutive failures would
+    # silently compare equal at the gate), so the whole pass is inconclusive.
+    if new_facts.get("archive_version", "") is None:
+        inconclusive = True
+        logger.info(
+            "Archive version lookup failed while fingerprinting; "
+            "treating this pass as inconclusive."
+        )
 
     # Facts must also not be persisted when an intended write didn't actually
     # take effect (dry-run, declined at [y/N], no TTY, or an error). Otherwise

@@ -163,7 +163,8 @@ class LPClient:
 
     def _already_posted(self, lp_obj, message, resource_type):
         """
-        True if the bot account has already posted an identical comment here.
+        True if the bot account has already posted an identical comment here,
+        False if it definitively hasn't, None if the history couldn't be read.
 
         Launchpad is the source of truth: we compare the comment author to the
         bot's own account (self.lp.me) rather than relying on a text marker or on
@@ -171,6 +172,11 @@ class LPClient:
         from another machine. Only an EXACT content match is suppressed -- a
         genuinely different message (a new bounce reason, a reopen after
         back-and-forth) still goes through.
+
+        None follows the codebase-wide convention (see design_journal.md #28):
+        an infra failure is not a basis for acting either way -- the caller
+        skips the write and the item is retried next run (facts stay
+        unpersisted per #36), rather than risking a double-post.
         """
         me = self.lp.me.self_link
         target = message.strip()
@@ -184,12 +190,12 @@ class LPClient:
                     if c.author_link == me and (c.message_body or "").strip() == target:
                         return True
         except Exception as e:
-            # If we can't read history, don't crash and don't silently skip --
-            # fall through to the normal mode gate (dry-run/[y/N]/--yes).
-            logger.info(
-                "  [dedup] could not read existing comments (%s); proceeding to confirm.",
+            logger.warning(
+                "  [dedup] could not read existing comments (%s); "
+                "skipping this write, will retry next run.",
                 e,
             )
+            return None
         return False
 
     def unsubscribe_sponsors(self, lp_obj):
@@ -412,7 +418,21 @@ class LPClient:
         target = _target(lp_obj)
         detail = f"[vote={vote}] {message}" if vote else message
 
-        if self._already_posted(lp_obj, message, resource_type):
+        already = self._already_posted(lp_obj, message, resource_type)
+        if already is None:
+            # Comment history unreadable (infra glitch): never write on an
+            # incomplete picture. Not an effective outcome, so facts stay
+            # unpersisted and the write is retried next run.
+            self._record_write(
+                url=target,
+                action="comment",
+                target=target,
+                mode=self.mode,
+                outcome="skipped-dedup-unavailable",
+                detail=detail,
+            )
+            return
+        if already:
             logger.info(
                 "  [dedup] identical bot comment already present on Launchpad; skipping."
             )

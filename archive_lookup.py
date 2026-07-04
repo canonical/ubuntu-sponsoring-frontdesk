@@ -128,7 +128,9 @@ def ubuntu_versions(lp, package, series_names=None):
                 versions[f"{name}{suffix}"] = pub.source_package_version
         return versions
     except Exception as e:
-        logger.warning("Launchpad lookup failed (ubuntu versions for %s): %s", package, e)
+        logger.warning(
+            "Launchpad lookup failed (ubuntu versions for %s): %s", package, e
+        )
         return None
 
 
