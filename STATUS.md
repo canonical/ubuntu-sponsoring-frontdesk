@@ -305,6 +305,29 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     one) -- harmless today, but concrete confirmation the addendum matters
     once #31 ships. Full breakdown in design_journal.md #33.
 
+17. **Suppress bounces once a human is already engaged (DESIGNED, not built).**
+    See design_journal.md #35. Found by manually checking real items from a
+    dry run: the bot has no concept today of "a human sponsor already
+    commented here," so it can post a redundant/confusing bounce on an item
+    someone's actively reviewing -- against the whole point of giving
+    *early* feedback. Rule: skip posting a finding if anyone other than the
+    submitter (and not the bot itself) has commented since the item's
+    current diff was created -- not restricted to `~ubuntu-dev`, any human
+    engagement counts. Critically, this only ever suppresses `incomplete`/
+    `question`-tier output (per #31's taxonomy); `closing`-tier outcomes
+    (`check_administrative_state`, `check_empty_diff`,
+    `check_stale_version`'s `done`) always still fire regardless -- a
+    sponsor commenting "looks good, uploading" must not permanently block
+    the bot from later recognizing the archive actually got the matching
+    upload. MP-side "since current diff" anchor
+    (`preview_diff.date_created`) is decided; bug-side anchor is an open
+    question (no diff/attachment-date equivalent readily available, see
+    #30's lpcli attachment-visibility gap). Also surfaced a related backlog
+    item: if a version+content match on an `ubuntu/*` MP doesn't get
+    auto-closed by git-ubuntu within the existing 24h grace period, that's
+    worth an admin Matrix/Mattermost notification (same not-yet-built hook
+    as #30/#25).
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
