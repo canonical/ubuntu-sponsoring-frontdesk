@@ -76,8 +76,13 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
 2. **Bot account.** Currently authenticates as `~seb128`. Before go-live,
    authorize as `~ubuntu-sponsoring-bot` (confirm the account exists and has
    queue access) — the self-comment dedup keys on `self.lp.me`.
-3. **First real `--interactive` run** on a single URL, end-to-end with the
-   `[y/N]` gates and an `audit.jsonl` trail.
+3. **First real `--interactive` run (DONE, 2026-07-04).** MP #507575
+   (grub2, `~sharkcnnnnnn`): `check_stale_version` correctly found the
+   proposed version already published with different content, prompted
+   `[y/N]`, seb128 approved, comment + `vote="Needs Fixing"` posted for
+   real -- confirmed both in `audit.jsonl` (`outcome: "performed"`) and
+   directly on the MP on Launchpad. First real write this bot has ever
+   made outside a smoke test.
 4. **`triage_mp` is a stub** — implement MP LLM triage (e.g. DEP-3 headers).
 5. **Tool-using investigation triage** — pull packages, check Debian/upstream
    trackers, git status (the richer roadmap; opencode agent with tools).
