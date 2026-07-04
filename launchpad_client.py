@@ -41,6 +41,13 @@ _CONCLUSIVE_STATUSES = ("Fix Released", "Fix Committed", "Won't Fix", "Invalid")
 # recover from it.
 _LP_TIMEOUT_SECONDS = 30
 
+# Write outcomes after which the item can be considered handled: the write
+# either happened, or an identical bot comment already existed on Launchpad.
+# Everything else (dry-run, declined at [y/N], no TTY, error) means the
+# intended write did NOT take effect, so the item must be re-triaged next run
+# rather than have its facts cached as if it had been dealt with.
+_EFFECTIVE_WRITE_OUTCOMES = ("performed", "skipped-duplicate")
+
 
 class LPClient:
     def __init__(
@@ -48,6 +55,9 @@ class LPClient:
     ):
         self.mode = mode
         self.audit = audit if audit is not None else AuditLog()
+        # Per-item write-outcome tracking, reset by start_item(); see
+        # all_writes_effective() for why main.py cares.
+        self.write_outcomes = []
         # ``lp`` can be injected for testing; otherwise authenticate for real.
         if lp is not None:
             self.lp = lp
@@ -76,6 +86,25 @@ class LPClient:
             timeout=_LP_TIMEOUT_SECONDS,
             version="devel",
         )
+
+    def start_item(self):
+        """Reset per-item write tracking. Called by main at the start of each URL."""
+        self.write_outcomes = []
+
+    def all_writes_effective(self):
+        """
+        True when every write attempted since start_item() actually took effect
+        (performed, or an identical comment already existed). main.py persists
+        an item's facts snapshot only when this holds: a dry-run/declined/
+        no-TTY/errored write means the item was NOT handled, and persisting
+        facts would make the facts-unchanged gate skip it on the next (real)
+        run -- the write would then never happen at all.
+        """
+        return all(o in _EFFECTIVE_WRITE_OUTCOMES for o in self.write_outcomes)
+
+    def _record_write(self, **kwargs):
+        self.write_outcomes.append(kwargs["outcome"])
+        self.audit.record(**kwargs)
 
     def _decide(self, description):
         """
@@ -180,7 +209,7 @@ class LPClient:
             f"Unsubscribe ~ubuntu-sponsors from this {resource_type}."
         )
         if decision != "perform":
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="unsubscribe",
                 target=target,
@@ -197,8 +226,10 @@ class LPClient:
                 try:
                     lp_obj.unsubscribe(person=sponsors_team)
                 except AttributeError:
-                    logger.info("Note: Direct unsubscribe method not found on MP object.")
-            self.audit.record(
+                    logger.info(
+                        "Note: Direct unsubscribe method not found on MP object."
+                    )
+            self._record_write(
                 url=target,
                 action="unsubscribe",
                 target=target,
@@ -206,7 +237,7 @@ class LPClient:
                 outcome="performed",
             )
         except Exception as e:
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="unsubscribe",
                 target=target,
@@ -243,7 +274,7 @@ class LPClient:
                 f"Set '{name}' status to Incomplete (was {task.status})."
             )
             if decision != "perform":
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -255,7 +286,7 @@ class LPClient:
             try:
                 task.transitionToStatus(status="Incomplete")
                 changed[name] = "Incomplete"
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -264,7 +295,7 @@ class LPClient:
                     detail="Incomplete",
                 )
             except Exception as e:
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -325,7 +356,7 @@ class LPClient:
                 f"Set '{name}' status to Fix Released (was {task.status})."
             )
             if decision != "perform":
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -337,7 +368,7 @@ class LPClient:
             try:
                 task.transitionToStatus(status="Fix Released")
                 changed[name] = "Fix Released"
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -346,7 +377,7 @@ class LPClient:
                     detail="Fix Released",
                 )
             except Exception as e:
-                self.audit.record(
+                self._record_write(
                     url=target,
                     action="set_status",
                     target=name,
@@ -385,7 +416,7 @@ class LPClient:
             logger.info(
                 "  [dedup] identical bot comment already present on Launchpad; skipping."
             )
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="comment",
                 target=target,
@@ -398,7 +429,7 @@ class LPClient:
         vote_suffix = f" (vote={vote})" if vote else ""
         decision = self._decide(f"Post this comment{vote_suffix}:\n---\n{message}\n---")
         if decision != "perform":
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="comment",
                 target=target,
@@ -416,7 +447,7 @@ class LPClient:
                     lp_obj.createComment(content=message, vote=vote)
                 else:
                     lp_obj.createComment(content=message)
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="comment",
                 target=target,
@@ -425,7 +456,7 @@ class LPClient:
                 detail=detail,
             )
         except Exception as e:
-            self.audit.record(
+            self._record_write(
                 url=target,
                 action="comment",
                 target=target,

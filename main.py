@@ -21,7 +21,9 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     # scan can be attributed to a specific check/lookup instead of guessed at.
     t_start = time.monotonic()
     try:
-        return _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start)
+        return _triage_url(
+            url, state_manager, lp_client, llm_reviewer, force, item, t_start
+        )
     except Exception:
         # Several launchpadlib attribute reads in facts.build_facts and the
         # checks (queue_status, bug_tasks, target_git_path, ...) have no
@@ -84,6 +86,26 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # couldn't determine this run would never get re-checked.
     inconclusive = False
 
+    # Facts must also not be persisted when an intended write didn't actually
+    # take effect (dry-run, declined at [y/N], no TTY, or an error). Otherwise
+    # a --dry-run pass would cache every bounce-worthy item as handled, and a
+    # later --interactive/--yes run would skip them all at the facts-unchanged
+    # gate -- the writes would silently never happen. LPClient tracks each
+    # write's outcome per item; a declined write is retried (re-prompted) on
+    # the next run, same as a transient failure.
+    lp_client.start_item()
+
+    def persistable_facts():
+        if inconclusive or not lp_client.all_writes_effective():
+            if not lp_client.all_writes_effective():
+                logger.info(
+                    "A write this run was not performed (dry-run/declined/"
+                    "no TTY/error). Facts not persisted; this URL will be "
+                    "re-triaged next run."
+                )
+            return None
+        return new_facts
+
     # Check 1: Administrative
     fired = checks.check_administrative_state(
         url, lp_obj, lp_client, source_package=source_package
@@ -94,7 +116,10 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         inconclusive = True
     elif fired:
         state_manager.update_status(
-            url, "DONE", "Unsubscribed as already fixed/merged.", facts=new_facts
+            url,
+            "DONE",
+            "Unsubscribed as already fixed/merged.",
+            facts=persistable_facts(),
         )
         return
 
@@ -109,7 +134,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "WAITING_ON_CONTRIBUTOR",
             "Bounced: wrong target branch.",
-            facts=new_facts,
+            facts=persistable_facts(),
         )
         return
 
@@ -121,7 +146,10 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         inconclusive = True
     elif fired:
         state_manager.update_status(
-            url, "WAITING_ON_CONTRIBUTOR", "Bounced: merge conflicts.", facts=new_facts
+            url,
+            "WAITING_ON_CONTRIBUTOR",
+            "Bounced: merge conflicts.",
+            facts=persistable_facts(),
         )
         return
 
@@ -133,7 +161,10 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         inconclusive = True
     elif fired:
         state_manager.update_status(
-            url, "DONE", "Closed: empty diff (already landed).", facts=new_facts
+            url,
+            "DONE",
+            "Closed: empty diff (already landed).",
+            facts=persistable_facts(),
         )
         return
 
@@ -148,7 +179,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "WAITING_ON_CONTRIBUTOR",
             "Bounced: changelog cites a bug not reported against this package.",
-            facts=new_facts,
+            facts=persistable_facts(),
         )
         return
 
@@ -165,7 +196,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "WAITING_ON_CONTRIBUTOR",
             "Bounced: proposed version is stale or a duplicate of an existing upload.",
-            facts=new_facts,
+            facts=persistable_facts(),
         )
         return
     elif outcome == "done":
@@ -173,7 +204,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "DONE",
             "Closed: proposed version already uploaded to the archive.",
-            facts=new_facts,
+            facts=persistable_facts(),
         )
         return
     elif outcome == "pending":
@@ -225,7 +256,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "DONE",
             "Closed: already synced (archive check).",
-            facts=None if inconclusive else new_facts,
+            facts=persistable_facts(),
         )
     elif new_status == "INCOMPLETE":
         logger.info(
@@ -242,7 +273,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "WAITING_ON_CONTRIBUTOR",
             "Bounced: LLM rejected (INCOMPLETE); set Incomplete.",
-            facts=None if inconclusive else new_facts,
+            facts=persistable_facts(),
         )
     elif new_status == "READY_FOR_HUMAN":
         logger.info("LLM checks passed (or none applicable). Marking ready for human.")
@@ -250,7 +281,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             url,
             "READY_FOR_HUMAN",
             "Ready for human review.",
-            facts=None if inconclusive else new_facts,
+            facts=persistable_facts(),
         )
 
 

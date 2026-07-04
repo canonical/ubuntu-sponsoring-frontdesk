@@ -328,6 +328,18 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     worth an admin Matrix/Mattermost notification (same not-yet-built hook
     as #30/#25).
 
+18. **Facts persist only when writes actually took effect (DONE, 2026-07-04).**
+    See design_journal.md #36. Found in a design review: a `--dry-run` pass
+    persisted facts for every fired check, so a later `--interactive`/`--yes`
+    run skipped those items at the facts-unchanged gate and the bounces would
+    never be posted. Confirmed live: ~86 items in `state.db` were cached that
+    way from prior dry runs (repaired -- facts cleared for everything without
+    a `performed` write in `audit.jsonl`). `LPClient` now tracks per-item
+    write outcomes; `main` persists facts only when all attempted writes
+    ended `performed`/`skipped-duplicate` (and the pass wasn't inconclusive,
+    now enforced on the deterministic branches too, not just the LLM ones).
+    A declined `[y/N]` re-prompts next run rather than dropping the item.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

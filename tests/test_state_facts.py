@@ -111,6 +111,50 @@ def test_unexpected_exception_does_not_crash_the_run(tmp_path, caplog):
     assert sm.get_status(URL) is None
 
 
+def test_dry_run_bounce_does_not_persist_facts_so_a_real_run_still_writes(tmp_path):
+    # A --dry-run pass must not cache a bounce-worthy item as handled:
+    # persisting facts would make a later --interactive/--yes run skip it at
+    # the facts-unchanged gate and the bounce would silently never be posted.
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(
+        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        write_outcome="dry-run",
+    )
+    llm = FakeLLM()
+
+    main.triage_url(URL, sm, lp, llm)
+    assert len(lp.comments) == 1  # the intended (not performed) write
+    assert sm.get_facts(URL) is None  # not cached as handled
+
+    # The "real" run against the unchanged MP re-triages and writes for real.
+    lp.write_outcome = "performed"
+    main.triage_url(URL, sm, lp, llm)
+    assert len(lp.comments) == 2
+    assert sm.get_facts(URL) is not None  # now handled, cache it
+
+
+def test_declined_write_is_retried_next_run(tmp_path):
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(
+        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        write_outcome="declined",
+    )
+    main.triage_url(URL, sm, lp, FakeLLM())
+    assert sm.get_facts(URL) is None  # declined != handled; re-prompt next run
+
+
+def test_skipped_duplicate_counts_as_handled(tmp_path):
+    # An identical bot comment already on Launchpad means the item IS handled
+    # (e.g. state.db was lost); facts should persist so we stop re-triaging.
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(
+        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        write_outcome="skipped-duplicate",
+    )
+    main.triage_url(URL, sm, lp, FakeLLM())
+    assert sm.get_facts(URL) is not None
+
+
 def test_force_bypasses_facts_gate(tmp_path):
     sm = _state(tmp_path)
     lp = FakeTriageClient(

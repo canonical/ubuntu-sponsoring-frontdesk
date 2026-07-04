@@ -155,10 +155,22 @@ class FakeRoot:
 class FakeTriageClient:
     """Minimal lp_client for exercising main.triage_url end-to-end."""
 
-    def __init__(self, objects):
+    def __init__(self, objects, write_outcome="performed"):
         self.objects = objects  # url -> lp_obj
         self.comments = []
         self.votes = []
+        # Mirrors LPClient's per-item write-outcome tracking: main persists an
+        # item's facts only when every write took effect. Defaults to
+        # "performed" so existing tests behave like a real --yes run;
+        # pass "dry-run"/"declined"/... to exercise the non-persisting paths.
+        self.write_outcome = write_outcome
+        self.write_outcomes = []
+
+    def start_item(self):
+        self.write_outcomes = []
+
+    def all_writes_effective(self):
+        return all(o in ("performed", "skipped-duplicate") for o in self.write_outcomes)
 
     def load_url(self, url):
         return self.objects[url]
@@ -166,9 +178,11 @@ class FakeTriageClient:
     def comment(self, obj, message, vote=None):
         self.comments.append(message)
         self.votes.append(vote)
+        self.write_outcomes.append(self.write_outcome)
 
     def unsubscribe_sponsors(self, obj):
         self.unsubscribed = getattr(self, "unsubscribed", 0) + 1
+        self.write_outcomes.append(self.write_outcome)
 
     def set_bug_tasks_incomplete(self, obj):
         bug = (
@@ -188,6 +202,7 @@ class FakeTriageClient:
             if "(Ubuntu" in task.bug_target_name and task.status not in resolved:
                 task.transitionToStatus(status="Incomplete")
                 changed[task.bug_target_name] = "Incomplete"
+                self.write_outcomes.append(self.write_outcome)
         return changed
 
     def set_bug_tasks_fix_released(self, obj):
@@ -204,6 +219,7 @@ class FakeTriageClient:
                 if task.status not in terminal:
                     task.transitionToStatus(status="Fix Released")
                     changed[name] = "Fix Released"
+                    self.write_outcomes.append(self.write_outcome)
         return changed
 
 
