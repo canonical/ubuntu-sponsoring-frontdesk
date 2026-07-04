@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-05_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
