@@ -1039,13 +1039,17 @@ def check_stale_version(url, lp_obj, lp_client):
             url,
             archive_version,
         )
-        # TODO: set queue_status to Merged here once we've confirmed the
-        # bot's account actually has permission to do so for git-ubuntu MPs.
-        # queue_status writes are rejected in general (see
-        # [[git-ubuntu-mp-status-writes]] / design_journal.md #25), but it's
-        # untested whether "Merged" specifically -- or some other API
-        # surface -- is allowed. Needs live investigation before relying on
-        # it; for now this is comment-only and a human closes the MP out.
+        # TODO: this stays comment-only until the underlying permission gap
+        # is resolved. Confirmed live 2026-07-05 (ipu6-drivers #503576):
+        # seb128's own account (and the bot's) cannot set queue_status on a
+        # git-ubuntu MP, but a role account with dedicated git-ubuntu access
+        # CAN, via the web UI -- so this isn't a hard git-ubuntu API
+        # rejection ([[git-ubuntu-mp-status-writes]] / design_journal.md
+        # #25), it's a permission this bot's (and seb128's normal) account
+        # simply doesn't hold, and it's being worked on at the Launchpad
+        # level. Once the bot authenticates as an account with that access
+        # (see STATUS.md item 2, the ~ubuntu-sponsoring-bot switch), revisit
+        # setting queue_status="Merged" here directly.
         lp_client.comment(lp_obj, comment)
         return "done"
 
