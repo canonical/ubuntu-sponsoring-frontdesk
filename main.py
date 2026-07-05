@@ -80,8 +80,9 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # EXCEPT when a check couldn't fully determine an answer (a lookup/fetch
     # failure, not a genuine "nothing to flag"). Checks signal that by
     # returning None instead of False; `inconclusive` tracks whether any did,
-    # across all 6 checks, so the LLM-phase terminal branches below know not
-    # to persist facts in that case -- persisting would make the top-level
+    # across all 6 checks. An inconclusive pass posts nothing and persists
+    # nothing (design #31's addendum: the aggregated comment must not claim
+    # completeness it doesn't have) -- persisting would make the top-level
     # facts-unchanged gate skip this URL forever, and whatever the check
     # couldn't determine this run would never get re-checked.
     inconclusive = False
@@ -137,37 +138,35 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
-    # Check 2: Target Branch
-    fired = checks.check_target_branch(url, lp_obj, lp_client)
+    # Checks 2-6 no longer stop the pipeline on first fire (design_journal.md
+    # #31): incomplete-tier findings are collected across the whole pass and
+    # posted as ONE aggregated comment at the end, so a contributor learns
+    # about every simultaneous problem in the same round instead of one per
+    # bot run. Closing-tier outcomes (check 1 above, check 4, check 6's
+    # "done"/"pending") still short-circuit -- the item is already resolved,
+    # so any findings collected so far are deliberately dropped: no point
+    # nitpicking a change that already landed (seb128, 2026-07-06).
+    findings = []
+
+    # Check 2: Target Branch (incomplete tier)
+    result = checks.check_target_branch(url, lp_obj, lp_client)
     checkpoint("check_target_branch")
-    logger.debug("check_target_branch -> %s", fired)
-    if fired is None:
+    logger.debug("check_target_branch -> %s", result)
+    if result is None:
         inconclusive = True
-    elif fired:
-        state_manager.update_status(
-            url,
-            "WAITING_ON_CONTRIBUTOR",
-            "Bounced: wrong target branch.",
-            facts=persistable_facts(),
-        )
-        return
+    elif result:
+        findings.append(result)
 
-    # Check 3: MP Conflicts
-    fired = checks.check_mp_conflicts(url, lp_obj, lp_client)
+    # Check 3: MP Conflicts (incomplete tier)
+    result = checks.check_mp_conflicts(url, lp_obj, lp_client)
     checkpoint("check_mp_conflicts")
-    logger.debug("check_mp_conflicts -> %s", fired)
-    if fired is None:
+    logger.debug("check_mp_conflicts -> %s", result)
+    if result is None:
         inconclusive = True
-    elif fired:
-        state_manager.update_status(
-            url,
-            "WAITING_ON_CONTRIBUTOR",
-            "Bounced: merge conflicts.",
-            facts=persistable_facts(),
-        )
-        return
+    elif result:
+        findings.append(result)
 
-    # Check 4: MP Empty Diff
+    # Check 4: MP Empty Diff (closing tier -- short-circuits)
     fired = checks.check_empty_diff(url, lp_obj, lp_client)
     checkpoint("check_empty_diff")
     logger.debug("check_empty_diff -> %s", fired)
@@ -182,37 +181,23 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
-    # Check 5: changelog LP bug reference sanity
-    fired = checks.check_changelog_bug_reference(url, lp_obj, lp_client)
+    # Check 5: changelog LP bug reference sanity (incomplete tier)
+    result = checks.check_changelog_bug_reference(url, lp_obj, lp_client)
     checkpoint("check_changelog_bug_reference")
-    logger.debug("check_changelog_bug_reference -> %s", fired)
-    if fired is None:
+    logger.debug("check_changelog_bug_reference -> %s", result)
+    if result is None:
         inconclusive = True
-    elif fired:
-        state_manager.update_status(
-            url,
-            "WAITING_ON_CONTRIBUTOR",
-            "Bounced: changelog cites a bug not reported against this package.",
-            facts=persistable_facts(),
-        )
-        return
+    elif result:
+        findings.append(result)
 
     # Check 6: proposed version vs. archive (stale / already-uploaded).
-    # Unlike the other checks, a fired result here maps to three different
-    # outcomes, so it returns "needs_fixing"/"done"/"pending" rather than a bool.
+    # Mixed tiers: returns a Finding (incomplete -- stale/duplicate version),
+    # "done"/"pending" (closing -- already landed), False, or None.
     outcome = checks.check_stale_version(url, lp_obj, lp_client)
     checkpoint("check_stale_version")
     logger.debug("check_stale_version -> %s", outcome)
     if outcome is None:
         inconclusive = True
-    elif outcome == "needs_fixing":
-        state_manager.update_status(
-            url,
-            "WAITING_ON_CONTRIBUTOR",
-            "Bounced: proposed version is stale or a duplicate of an existing upload.",
-            facts=persistable_facts(),
-        )
-        return
     elif outcome == "done":
         state_manager.update_status(
             url,
@@ -222,6 +207,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
     elif outcome == "pending":
+        # The change is (almost certainly) already in the archive, just too
+        # recently for git-ubuntu's importer to have auto-closed the MP yet.
+        # Everything stays quiet -- including any findings collected above:
+        # bouncing a contributor over details of a change that already
+        # landed is exactly the noise the closing tier exists to avoid.
         # Deliberately no facts= here: nothing about the MP itself changes
         # while we wait out the grace period, so persisting new_facts would
         # make the top-level facts-unchanged gate skip this URL forever and
@@ -235,16 +225,30 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "deferring in case git-ubuntu's importer auto-closes this MP first.",
         )
         return
+    elif outcome:
+        findings.append(outcome)
 
     if inconclusive:
+        # Design #31's addendum: the aggregated comment presents itself as
+        # the complete list of what to fix this round, so posting it while
+        # any check couldn't determine its result would claim a completeness
+        # it doesn't have. Post nothing, persist nothing, retry next run.
+        # (The LLM phase is skipped too -- its finding would be gated the
+        # same way, so running it would only spend tokens on a pass that
+        # can't act.)
         logger.info(
             "One or more checks couldn't be fully evaluated (a lookup/fetch "
-            "failure). Facts won't be persisted, so this URL is retried next run."
+            "failure). Skipping the LLM phase and posting nothing this run -- "
+            "the aggregated review must not claim to be complete when it "
+            "isn't. Facts won't be persisted, so this URL is retried next run."
         )
+        return
 
-    logger.info("Passed deterministic MVP checks. Moving to LLM review...")
+    logger.info("Deterministic checks evaluated. Moving to LLM review...")
 
-    # LLM Phase
+    # LLM Phase: folds into the same findings pool (design #31) -- SYNCED
+    # stays closing-tier with its own terse path, INCOMPLETE becomes one
+    # incomplete-tier finding in the aggregate.
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type in ("bug", "bug_task"):
         # Pass the bug object to the LLM reviewer
@@ -257,6 +261,10 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     else:
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
     checkpoint("llm_reviewer")
+
+    llm_incomplete = new_status == "INCOMPLETE"
+    if llm_incomplete:
+        findings.append(checks.Finding("incomplete", comment))
 
     if new_status == "SYNCED":
         logger.info(
@@ -272,31 +280,49 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "Closed: already synced (archive check).",
             facts=persistable_facts(),
         )
-    elif new_status == "INCOMPLETE":
+        return
+
+    if findings:
+        aggregated = checks.render_findings_comment(findings)
+        blocking = [f for f in findings if f.tier == "incomplete"]
         logger.info(
-            "LLM determined request is INCOMPLETE. Commenting and setting Incomplete."
+            "Posting the aggregated review comment (%d finding(s), %d blocking).",
+            len(findings),
+            len(blocking),
         )
-        lp_client.comment(lp_obj, comment)
-        # Mark the bug Incomplete (the status for "waiting on the submitter").
-        # We deliberately keep ~ubuntu-sponsors subscribed for visibility. Fold
-        # our own status writes into the persisted facts so the bot's action is
-        # not mistaken for a contributor change on the next run (Fix #2).
-        changed = lp_client.set_bug_tasks_incomplete(lp_obj)
-        new_facts = facts.apply_task_status_changes(new_facts, changed)
-        state_manager.update_status(
-            url,
-            "WAITING_ON_CONTRIBUTOR",
-            "Bounced: LLM rejected (INCOMPLETE); set Incomplete.",
-            facts=persistable_facts(),
+        # A review vote only exists on MPs; bug findings (the LLM's) post as
+        # a plain comment, as the INCOMPLETE path always did.
+        vote = (
+            "Needs Fixing"
+            if blocking and resource_type == "branch_merge_proposal"
+            else None
         )
-    elif new_status == "READY_FOR_HUMAN":
-        logger.info("LLM checks passed (or none applicable). Marking ready for human.")
-        state_manager.update_status(
-            url,
-            "READY_FOR_HUMAN",
-            "Ready for human review.",
-            facts=persistable_facts(),
-        )
+        lp_client.comment(lp_obj, aggregated, vote=vote)
+        if llm_incomplete:
+            # Mark the bug Incomplete (the status for "waiting on the
+            # submitter"). We deliberately keep ~ubuntu-sponsors subscribed
+            # for visibility. Fold our own status writes into the persisted
+            # facts so the bot's action is not mistaken for a contributor
+            # change on the next run (Fix #2).
+            changed = lp_client.set_bug_tasks_incomplete(lp_obj)
+            new_facts = facts.apply_task_status_changes(new_facts, changed)
+        if blocking:
+            state_manager.update_status(
+                url,
+                "WAITING_ON_CONTRIBUTOR",
+                f"Bounced: {len(blocking)} finding(s) need contributor action.",
+                facts=persistable_facts(),
+            )
+            return
+        # question-tier only: advisory, doesn't block a human review.
+
+    logger.info("No blocking findings. Marking ready for human.")
+    state_manager.update_status(
+        url,
+        "READY_FOR_HUMAN",
+        "Ready for human review.",
+        facts=persistable_facts(),
+    )
 
 
 def process_queue(state_manager, lp_client, llm_reviewer, force=False):

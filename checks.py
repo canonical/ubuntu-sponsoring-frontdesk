@@ -1,10 +1,67 @@
 import datetime
 import logging
 import re
+from typing import NamedTuple
 
 import archive_lookup
 
 logger = logging.getLogger(__name__)
+
+
+class Finding(NamedTuple):
+    """
+    One reviewable point a check found (design_journal.md #31). Checks in the
+    `incomplete`/`question` tiers no longer post their own comment; they
+    return a Finding and main.py aggregates every fired Finding from the
+    whole pass into one templated comment (see render_findings_comment).
+    `closing`-tier outcomes (check_administrative_state, check_empty_diff,
+    check_stale_version's "done") keep their own terse comment and
+    short-circuit as before -- they mean "already resolved", not "feedback".
+
+    tier: "incomplete" -- a hard requirement, the contributor must act
+          before this can be sponsored; drives a Needs Fixing vote.
+          "question" -- advisory, never blocks and never votes. Reserved
+          for future soft findings; nothing produces it yet.
+    """
+
+    tier: str
+    message: str
+
+
+def render_findings_comment(findings):
+    """
+    Render the one aggregated comment for a pass's fired findings
+    (design_journal.md #31): a single intro, a "needs fixing" section, an
+    optional "nice to have" section, and a single closing line -- instead
+    of one comment per check. Individual finding messages are bullets and
+    deliberately carry no greeting/sign-off of their own.
+    """
+    incomplete = [f for f in findings if f.tier == "incomplete"]
+    question = [f for f in findings if f.tier == "question"]
+
+    def bullets(items):
+        # Continuation lines are indented so a multi-line message stays
+        # visually attached to its bullet in Launchpad's plain-text renderer.
+        return "\n".join("* " + f.message.replace("\n", "\n  ") for f in items)
+
+    parts = [
+        "Thanks for your contribution! The automated review spotted the "
+        "following points:"
+    ]
+    if incomplete:
+        parts.append(
+            "Needs fixing before this can be sponsored:\n\n" + bullets(incomplete)
+        )
+    if question:
+        parts.append(
+            "Nice to have (non-blocking -- none of these block the upload, "
+            "but you may want to address them now, before a sponsor reviews "
+            "this, or in a future contribution):\n\n" + bullets(question)
+        )
+    if incomplete:
+        parts.append("Once the points above are addressed, please let us know!")
+    return "\n\n".join(parts)
+
 
 # A task that has landed in Ubuntu.
 DONE_STATUSES = ("Fix Released", "Fix Committed")
@@ -216,15 +273,13 @@ def check_mp_conflicts(url, lp_obj, lp_client):
         return None
     logger.debug("check_mp_conflicts: conflicts=%r", conflicts)
     if conflicts:
-        comment = (
-            "Thanks for your contribution! It looks like this Merge Proposal has merge conflicts and cannot be cleanly merged. "
-            "Please rebase your branch, resolve the conflicts, and push the updated branch.\n\n"
-            "Once the conflicts are resolved, please let us know so we can review the updated branch!"
+        logger.info("[%s] has conflicts. Adding an incomplete finding.", url)
+        return Finding(
+            "incomplete",
+            "This Merge Proposal has merge conflicts and cannot be cleanly "
+            "merged. Please rebase your branch, resolve the conflicts, and "
+            "push the updated branch.",
         )
-        logger.info("[%s] has conflicts. Commenting with a Needs Fixing vote.", url)
-        lp_client.comment(lp_obj, comment, vote="Needs Fixing")
-
-        return True
     return False
 
 
@@ -531,22 +586,20 @@ def check_target_branch(url, lp_obj, lp_client):
             if suite
             else "`debian/sid` (or `debian/experimental`, matching the Debian suite you uploaded to)"
         )
-        comment = (
-            "Thanks for your contribution! It looks like this Merge Proposal is a merge (rebase onto a newer "
-            f"Debian revision) but targets `ubuntu/devel`. According to our workflow, merge "
-            f"MPs should target {target_phrase} instead (workaround for LP: #1976112). "
-            "Please update the target branch. See https://ubuntu.com/project/docs/contributors/merging/git-ubuntu-merge-proposal/#merge-git-ubuntu-merge-proposal\n\n"
-            "Once the target branch is updated, please let us know!"
-        )
         logger.info(
-            "[%s] is a merge MP incorrectly targeting %r. Commenting with a "
-            "Needs Fixing vote.",
+            "[%s] is a merge MP incorrectly targeting %r. Adding an "
+            "incomplete finding.",
             url,
             target_branch_name,
         )
-        lp_client.comment(lp_obj, comment, vote="Needs Fixing")
-
-        return True
+        return Finding(
+            "incomplete",
+            "This Merge Proposal is a merge (rebase onto a newer Debian "
+            f"revision) but targets `ubuntu/devel`. According to our workflow, "
+            f"merge MPs should target {target_phrase} instead (workaround for "
+            "LP: #1976112). Please update the target branch. See "
+            "https://ubuntu.com/project/docs/contributors/merging/git-ubuntu-merge-proposal/#merge-git-ubuntu-merge-proposal",
+        )
 
     return False
 
@@ -798,22 +851,19 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
         return False
 
     bug_list = ", ".join(f"LP: #{n}" for n in mismatched)
-    comment = (
-        "Thanks for your contribution! It looks like the bug reference(s) in the "
-        f"changelog ({bug_list}) don't appear to be reported against `{package}`. "
-        "Please double-check the bug number(s) are correct.\n\n"
-        "Once confirmed (or corrected), please let us know!"
-    )
     logger.info(
-        "[%s] changelog cites %s, not reported against %r. Commenting with a "
-        "Needs Fixing vote.",
+        "[%s] changelog cites %s, not reported against %r. Adding an "
+        "incomplete finding.",
         url,
         bug_list,
         package,
     )
-    lp_client.comment(lp_obj, comment, vote="Needs Fixing")
-
-    return True
+    return Finding(
+        "incomplete",
+        f"The bug reference(s) in the changelog ({bug_list}) don't appear to "
+        f"be reported against `{package}`. Please double-check the bug "
+        "number(s) are correct.",
+    )
 
 
 _RECENT_UPLOAD_GRACE = datetime.timedelta(hours=24)
@@ -934,7 +984,9 @@ def check_stale_version(url, lp_obj, lp_client):
       check for that MP the moment main.py persists facts on whatever
       conclusive state the pipeline falls through to.
 
-    Returns "needs_fixing" (2, 3b), "done" (3a, old enough), "pending" (3a,
+    Returns a Finding (2, 3b -- an incomplete-tier "needs rebasing" point
+    for the aggregated comment, design_journal.md #31), "done" (3a, old
+    enough -- closing tier, posts its own terse comment), "pending" (3a,
     too recent -- deliberately deferred), False (1, or a structural
     non-applicability), or None (a lookup/fetch failure) -- unlike every
     other check in this module, a fired result here can mean several
@@ -1028,21 +1080,20 @@ def check_stale_version(url, lp_obj, lp_client):
             # an already-landed change; don't guess either way.
             return None
 
-        comment = (
-            "Thanks for your contribution! The proposed version "
-            f"(`{proposed_version}`) is older than the one already in the archive "
-            f"(`{archive_version}` in {target_series}) and needs to be rebased.\n\n"
-            "Please rebase on top of the current archive version and let us know!"
-        )
         logger.info(
-            "[%s] proposes %r, older than the archive's %r. Commenting with a "
-            "Needs Fixing vote.",
+            "[%s] proposes %r, older than the archive's %r. Adding an "
+            "incomplete finding.",
             url,
             proposed_version,
             archive_version,
         )
-        lp_client.comment(lp_obj, comment, vote="Needs Fixing")
-        return "needs_fixing"
+        return Finding(
+            "incomplete",
+            f"The proposed version (`{proposed_version}`) is older than the "
+            f"one already in the archive (`{archive_version}` in "
+            f"{target_series}). Please rebase on top of the current archive "
+            "version.",
+        )
 
     # cmp == 0: same version already published. Tell "this MP's own change,
     # already uploaded" apart from "an unrelated upload reused the version
@@ -1081,11 +1132,13 @@ def _classify_against_publication(
     is older than the archive, but was itself published and later
     superseded -- design_journal.md #43).
 
-    Returns "done" (matching content -- this MP's change already landed),
-    "needs_fixing" (different content -- a genuine version collision,
-    needs a rebase with a new version number), "pending" (matching content
-    but the publication is too recent -- see _RECENT_UPLOAD_GRACE), or
-    None if the changelog itself couldn't be fetched (retriable).
+    Returns "done" (matching content -- this MP's change already landed;
+    posts its own closing comment), a Finding (different content -- a
+    genuine version collision, needs a rebase with a new version number;
+    contributed to the aggregated comment per design_journal.md #31),
+    "pending" (matching content but the publication is too recent -- see
+    _RECENT_UPLOAD_GRACE), or None if the changelog itself couldn't be
+    fetched (retriable).
     """
     archive_text = archive_lookup.changelog_text(pub)
     if archive_text is None:
@@ -1176,18 +1229,15 @@ def _classify_against_publication(
         lp_client.comment(lp_obj, comment)
         return "done"
 
-    comment = (
-        "Thanks for your contribution! It looks like an upload with the same "
-        f"version (`{version}`) but different content already exists in "
-        "the archive. Your change needs to be rebased (with a new version "
-        "number) and resubmitted."
-    )
     logger.info(
-        "[%s] version %r already published with different content. "
-        "Commenting with a Needs Fixing vote.",
+        "[%s] version %r already published with different content. Adding "
+        "an incomplete finding.",
         url,
         version,
     )
-    lp_client.comment(lp_obj, comment, vote="Needs Fixing")
-
-    return "needs_fixing"
+    return Finding(
+        "incomplete",
+        f"An upload with the same version (`{version}`) but different "
+        "content already exists in the archive. Your change needs to be "
+        "rebased (with a new version number) and resubmitted.",
+    )

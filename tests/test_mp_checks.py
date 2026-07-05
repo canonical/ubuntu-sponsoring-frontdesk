@@ -23,8 +23,10 @@ class _LP:
 def test_conflicts_detected_from_preview_diff():
     mp = FakeMP(diff=FakeDiff("/d/1", 100, conflicts="foo.c\nbar.c"))
     lp = _LP()
-    assert checks.check_mp_conflicts("url", mp, lp) is True
-    assert lp.votes == ["Needs Fixing"]
+    finding = checks.check_mp_conflicts("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert "merge conflicts" in finding.message
+    assert lp.comments == []  # findings are aggregated by main.py, not posted here
 
 
 def test_no_conflicts_when_diff_conflicts_empty():
@@ -122,8 +124,9 @@ def test_target_branch_matches_real_ref_format():
     # source branch is merge-shaped, so this is a merge MP mistargeted.
     mp = FakeMP(target="refs/heads/ubuntu/devel")
     lp = _LP()
-    assert checks.check_target_branch("url", mp, lp) is True
-    assert lp.votes == ["Needs Fixing"]
+    finding = checks.check_target_branch("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert lp.comments == []
 
     ok = FakeMP(target="refs/heads/debian/sid")
     assert checks.check_target_branch("url", ok, _LP()) is False
@@ -150,8 +153,9 @@ def test_merge_detected_via_linked_bug_title_when_branch_isnt_merge_shaped():
         bugs=[FakeBugRef("Merge foo from Debian for stonking cycle")],
     )
     lp = _LP()
-    assert checks.check_target_branch("url", mp, lp) is True
-    assert lp.votes == ["Needs Fixing"]
+    finding = checks.check_target_branch("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert lp.comments == []
 
 
 def test_unrelated_linked_bug_title_does_not_trigger_bounce():
@@ -284,16 +288,16 @@ def test_debian_target_suite_none_when_nothing_resolvable():
 def test_check_target_branch_names_the_specific_suite_when_resolvable():
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="experimental"))
     lp = _LP()
-    assert checks.check_target_branch("url", mp, lp) is True
-    assert "`debian/experimental`" in lp.comments[0]
-    assert "or `debian/experimental`, matching" not in lp.comments[0]
+    finding = checks.check_target_branch("url", mp, lp)
+    assert "`debian/experimental`" in finding.message
+    assert "or `debian/experimental`, matching" not in finding.message
 
 
 def test_check_target_branch_falls_back_to_generic_message_when_unresolvable():
     mp = FakeMP(target="refs/heads/ubuntu/devel")
     lp = _LP()
-    assert checks.check_target_branch("url", mp, lp) is True
-    assert "`debian/sid` (or `debian/experimental`, matching" in lp.comments[0]
+    finding = checks.check_target_branch("url", mp, lp)
+    assert "`debian/sid` (or `debian/experimental`, matching" in finding.message
 
 
 # --- changelog LP bug reference sanity -----------------------------------
@@ -373,10 +377,11 @@ def test_changelog_bug_reference_mismatched_package_warns():
     bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF.format(debian_suite="unstable"))
     lp = _LP(bugs={1234567: bug})
-    assert checks.check_changelog_bug_reference("url", mp, lp) is True
-    assert lp.votes == ["Needs Fixing"]
-    assert "testpkg" in lp.comments[0]
-    assert "#1234567" in lp.comments[0]
+    finding = checks.check_changelog_bug_reference("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert "testpkg" in finding.message
+    assert "#1234567" in finding.message
+    assert lp.comments == []
 
 
 def test_changelog_bug_reference_confirmed_mismatch_fires_even_if_other_lookup_fails():
@@ -386,8 +391,8 @@ def test_changelog_bug_reference_confirmed_mismatch_fires_even_if_other_lookup_f
     mismatched_bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_TWO_BUGS)
     lp = _LP(bugs={7654321: mismatched_bug})
-    assert checks.check_changelog_bug_reference("url", mp, lp) is True
-    assert "#7654321" in lp.comments[0]
+    finding = checks.check_changelog_bug_reference("url", mp, lp)
+    assert "#7654321" in finding.message
 
 
 def test_changelog_bug_reference_returns_none_when_diff_unreadable():
@@ -422,9 +427,9 @@ def test_changelog_bug_reference_partial_mismatch_lists_only_mismatched():
     mismatched_bug = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_TWO_BUGS)
     lp = _LP(bugs={1234567: matching_bug, 7654321: mismatched_bug})
-    assert checks.check_changelog_bug_reference("url", mp, lp) is True
-    assert "#7654321" in lp.comments[0]
-    assert "#1234567" not in lp.comments[0]
+    finding = checks.check_changelog_bug_reference("url", mp, lp)
+    assert "#7654321" in finding.message
+    assert "#1234567" not in finding.message
 
 
 def test_changelog_bug_reference_skips_when_package_undeterminable():
@@ -514,10 +519,11 @@ def test_stale_version_older_than_archive_bounces(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert lp.votes == ["Needs Fixing"]
-    assert "1.2-4" in lp.comments[0]
-    assert "1.2-5" in lp.comments[0]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert "1.2-4" in finding.message
+    assert "1.2-5" in finding.message
+    assert lp.comments == []
 
 
 def test_stale_version_prefers_proposed_pocket_over_release(monkeypatch):
@@ -526,8 +532,8 @@ def test_stale_version_prefers_proposed_pocket_over_release(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-3", "noble-proposed": "1.2-5"})
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert "1.2-5" in lp.comments[0]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert "1.2-5" in finding.message
 
 
 # --- older than archive, but the proposed version was itself once published
@@ -569,9 +575,9 @@ def test_stale_version_older_but_was_itself_published_with_different_content(
     )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert lp.votes == ["Needs Fixing"]
-    assert "different content" in lp.comments[0]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert "different content" in finding.message
 
 
 def test_stale_version_older_with_no_history_bounces_as_before(monkeypatch):
@@ -581,8 +587,8 @@ def test_stale_version_older_with_no_history_bounces_as_before(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert "needs to be rebased" in lp.comments[0]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert "older than the one already in the archive" in finding.message
 
 
 def test_stale_version_older_history_lookup_changelog_fetch_fails_is_none(
@@ -635,8 +641,9 @@ def test_stale_version_same_version_different_content_bounces(monkeypatch):
     )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert lp.votes == ["Needs Fixing"]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert lp.comments == []
 
 
 def test_stale_version_returns_none_when_devel_series_unknown(monkeypatch):
@@ -771,7 +778,7 @@ def test_stale_version_recent_upload_with_different_content_still_bounces(
     )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
+    assert checks.check_stale_version("url", mp, lp).tier == "incomplete"
 
 
 def test_stale_version_missing_date_published_does_not_defer(monkeypatch):
@@ -941,6 +948,7 @@ def test_stale_version_sru_older_than_noble_needs_fixing(monkeypatch):
 
     mp = _sru_mp_with_diff(_SRU_CHANGELOG_DIFF)
     lp = _LP()
-    assert checks.check_stale_version("url", mp, lp) == "needs_fixing"
-    assert "noble" in lp.comments[0]
-    assert "stonking" not in lp.comments[0]
+    finding = checks.check_stale_version("url", mp, lp)
+    assert finding.tier == "incomplete"
+    assert "noble" in finding.message
+    assert "stonking" not in finding.message

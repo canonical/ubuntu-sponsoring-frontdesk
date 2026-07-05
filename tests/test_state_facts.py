@@ -6,6 +6,7 @@ import facts
 import main
 from state import StateManager
 from fakes import (
+    CLEAN_DIFF_TEXT,
     FakeArchive,
     FakeDiff,
     FakeLLM,
@@ -38,7 +39,10 @@ def test_marco_lifecycle(tmp_path):
     llm = FakeLLM()
 
     # 10:00 wrong branch -> one bounce comment
-    lp.objects[URL] = FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/diff/901", 50))
+    lp.objects[URL] = FakeMP(
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/diff/901", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
     main.triage_url(URL, sm, lp, llm)
     assert len(lp.comments) == 1
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
@@ -49,7 +53,10 @@ def test_marco_lifecycle(tmp_path):
     assert len(lp.comments) == 1
 
     # 14:00 retarget + new push -> facts change -> re-triage to human review
-    lp.objects[URL] = FakeMP(target=".../debian/sid", diff=FakeDiff("/diff/902", 50))
+    lp.objects[URL] = FakeMP(
+        target=".../debian/sid",
+        diff=FakeDiff("/diff/902", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
     main.triage_url(URL, sm, lp, llm)
     assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
     assert len(lp.comments) == 1
@@ -69,7 +76,10 @@ def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
     llm = FakeLLM()
 
     main.triage_url(URL, sm, lp, llm)
-    assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
+    # Design #31's addendum: an inconclusive pass posts nothing, skips the
+    # LLM phase, and records nothing -- the aggregated review must not claim
+    # completeness it doesn't have.
+    assert sm.get_status(URL) is None
     assert sm.get_facts(URL) is None  # inconclusive -> not persisted
 
     # A second run against the exact same, unchanged MP object must NOT be
@@ -80,7 +90,7 @@ def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
     with caplog.at_level(logging.INFO):
         main.triage_url(URL, sm, lp, llm)
     assert "Skipping (nothing to do)" not in caplog.text
-    assert "Moving to LLM review" in caplog.text
+    assert "couldn't be fully evaluated" in caplog.text
 
 
 class _RaisesOnQueueStatus:
@@ -126,7 +136,12 @@ def test_dry_run_bounce_does_not_persist_facts_so_a_real_run_still_writes(tmp_pa
     # the facts-unchanged gate and the bounce would silently never be posted.
     sm = _state(tmp_path)
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+            )
+        },
         write_outcome="dry-run",
     )
     llm = FakeLLM()
@@ -145,7 +160,12 @@ def test_dry_run_bounce_does_not_persist_facts_so_a_real_run_still_writes(tmp_pa
 def test_declined_write_is_retried_next_run(tmp_path):
     sm = _state(tmp_path)
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+            )
+        },
         write_outcome="declined",
     )
     main.triage_url(URL, sm, lp, FakeLLM())
@@ -157,7 +177,12 @@ def test_skipped_duplicate_counts_as_handled(tmp_path):
     # (e.g. state.db was lost); facts should persist so we stop re-triaging.
     sm = _state(tmp_path)
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+            )
+        },
         write_outcome="skipped-duplicate",
     )
     main.triage_url(URL, sm, lp, FakeLLM())
@@ -176,7 +201,12 @@ def test_archive_version_is_part_of_the_fingerprint(tmp_path):
     sm = _state(tmp_path)
     archive = FakeArchive(pubs=[FakePublication("1.0-1")])
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+            )
+        },
         lp=_root_with_archive(archive),
     )
     llm = FakeLLM()
@@ -198,13 +228,20 @@ def test_archive_version_is_part_of_the_fingerprint(tmp_path):
 def test_archive_lookup_failure_is_inconclusive_not_cached(tmp_path):
     sm = _state(tmp_path)
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 50))},
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+            )
+        },
         lp=_root_with_archive(FakeArchive(fail=True)),
     )
     main.triage_url(URL, sm, lp, FakeLLM())
-    # the bounce still happens (the check itself didn't need the archive)...
-    assert len(lp.comments) == 1
-    # ...but a failed fingerprint lookup must never be persisted: two
+    # The pass is inconclusive, so the wrong-target-branch finding is NOT
+    # posted (design #31's addendum: an aggregated review that can't be
+    # complete stays silent and retries)...
+    assert lp.comments == []
+    # ...and a failed fingerprint lookup must never be persisted: two
     # consecutive failures would compare equal at the gate and freeze the item.
     assert sm.get_facts(URL) is None
 
@@ -231,7 +268,12 @@ def test_archive_version_lookup_failure_is_none():
 def test_force_bypasses_facts_gate(tmp_path):
     sm = _state(tmp_path)
     lp = FakeTriageClient(
-        objects={URL: FakeMP(target=".../ubuntu/devel", diff=FakeDiff("/d/1", 5))}
+        objects={
+            URL: FakeMP(
+                target=".../ubuntu/devel",
+                diff=FakeDiff("/d/1", 5, diff_text=CLEAN_DIFF_TEXT),
+            )
+        }
     )
     llm = FakeLLM()
 

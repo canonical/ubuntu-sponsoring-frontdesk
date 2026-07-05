@@ -74,7 +74,12 @@ def test_bounce_sets_incomplete_keeps_sponsors_and_is_quiet_next_run(tmp_path):
 
     main.triage_url(URL, sm, lp, llm)
 
-    assert lp.comments == ["Please explain the Ubuntu delta."]
+    # The LLM's INCOMPLETE verdict is one finding in the aggregated review
+    # comment (design #31), not a raw standalone comment anymore.
+    assert len(lp.comments) == 1
+    assert "Please explain the Ubuntu delta." in lp.comments[0]
+    assert "Needs fixing before this can be sponsored:" in lp.comments[0]
+    assert lp.votes == [None]  # votes exist on MPs only, not bugs
     assert bug.bug_tasks[0].status == "Incomplete"  # set Incomplete
     assert getattr(lp, "unsubscribed", 0) == 0  # sponsors kept
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
@@ -82,4 +87,4 @@ def test_bounce_sets_incomplete_keeps_sponsors_and_is_quiet_next_run(tmp_path):
     # Re-run: the only change is the bot's own status write -> facts match ->
     # no re-triage, no second comment.
     main.triage_url(URL, sm, lp, llm)
-    assert lp.comments == ["Please explain the Ubuntu delta."]
+    assert len(lp.comments) == 1

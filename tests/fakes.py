@@ -26,6 +26,14 @@ class FakeHostedFile:
         return self._content
 
 
+# A readable diff touching no debian/changelog: checks 5/6 conclusively find
+# nothing to check (False), rather than "diff unreadable" (None/inconclusive).
+# End-to-end tests exercising a bounce need this since design #31: an
+# inconclusive pass posts nothing at all, so a default FakeDiff (no
+# diff_text) would suppress the very aggregate those tests assert on.
+CLEAN_DIFF_TEXT = "diff --git a/src/foo.c b/src/foo.c\n@@ -1 +1 @@\n-old\n+new\n"
+
+
 class FakeDiff:
     def __init__(self, link, lines, conflicts="", diff_text=None):
         self.self_link = link
