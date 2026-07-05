@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-06_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -231,8 +231,8 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     (Matrix/Mattermost) path for exactly this kind of Launchpad-side
     problem — deliberately not built (needs a new notification backend),
     but this is the spot it would hook into.
-14. **Aggregated findings model: `closing`/`incomplete`/`question` (DESIGNED,
-    not built).** See design_journal.md #31. Today's dispatcher stops at the
+14. **Aggregated findings model: `closing`/`incomplete`/`question` (DONE,
+    2026-07-06).** Designed in design_journal.md #31, implemented as #44. Today's dispatcher stops at the
     first check that fires, so an item with two simultaneous problems only
     ever surfaces one per bot run — slow when the next look (bot or human
     sponsor) can be a week away. Design: every check outcome gets a severity
@@ -251,8 +251,19 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     treatment `inconclusive` already gets for facts persistence, extended to
     gate the write itself, so a partial finding set is never posted as if it
     were a complete review.
-    **Not implemented yet** — this is a refactor of every check's return
-    contract and the `main.py` dispatcher; recorded as a design first.
+    **Implemented 2026-07-06 (design_journal.md #44):** checks return
+    `checks.Finding` objects, `main.py` collects them across the whole pass
+    (LLM `INCOMPLETE` folds in), `checks.render_findings_comment` builds the
+    one comment, one `Needs Fixing` vote (MPs only). Closing-tier and
+    `pending` outcomes drop findings collected earlier (no nitpicking an
+    already-landed change); an inconclusive pass posts nothing and skips
+    the LLM phase. Interactive UX: one `[y/N]` for the whole aggregate.
+    Live-validated on firmware-sof MP #504187 — a real two-finding case
+    (conflicts + bad bug reference) that first-fire-wins had been surfacing
+    one bot run at a time. Still open: LLM-emitted `question`-tier findings
+    (needs an LLM response-format change, deferred); the already-uploaded
+    comment → admin-notification switch once that backend exists. This also
+    unblocks item 17 (#35), whose prerequisite was this tier model.
 15. **Per-check timing + `print()` → `logging` throughout (DONE).** See
     design_journal.md #32. `--verbose` now logs a `[timing]` line after each
     step in `triage_url` (`load_url`, `build_facts`, each of the 6 checks,
