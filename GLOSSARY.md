@@ -66,13 +66,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
 ## Bot-specific architecture and terms
 
 - **Check** — one deterministic Python function in `checks.py`
-  (`check_administrative_state`, `check_target_branch`, `check_mp_conflicts`,
-  `check_empty_diff`, `check_changelog_bug_reference`,
-  `check_stale_version`), run in a fixed order before the LLM phase. See
-  `flow.dot`/`flow.svg`.
+  (`check_administrative_state`, `check_nothing_to_sponsor`,
+  `check_target_branch`, `check_mp_conflicts`, `check_empty_diff`,
+  `check_changelog_bug_reference`, `check_stale_version`), run in a fixed
+  order before the LLM phase. See `flow.dot`/`flow.svg`.
 - **Fires** — a check "fires" when it finds something to flag (returns
-  truthy) and takes its bounce/close action itself. A check that fires
-  short-circuits `triage_url`; later checks don't run.
+  truthy). Since #31/#44, only `closing`-tier outcomes short-circuit
+  `triage_url` (the item is already resolved); `incomplete`-tier outcomes
+  return a Finding and the pipeline keeps evaluating so every simultaneous
+  problem surfaces in the same pass.
 - **The `None` / `False` / truthy return contract** — every check's return
   value means: `False` = definitively checked, nothing to flag (stable, safe
   to cache); truthy = fired; `None` = an external lookup/fetch failed,
@@ -105,8 +107,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   lookup fails, prefer no action / route to a human over guessing and
   auto-rejecting a contributor. Applied throughout (#9, #20 §"Fail-safe
   stance", #26, #28).
-- **LLM phase** — runs only after all deterministic checks pass with nothing
-  to flag; invokes the `opencode` CLI (#4) for qualitative judgment (SRU
+- **LLM phase** — runs after the deterministic checks unless a closing-tier
+  outcome resolved the item or the pass went inconclusive (#44 skips the LLM
+  then, since its finding couldn't be posted anyway); invokes the `opencode`
+  CLI (#4) for qualitative judgment (SRU
   template completeness, sync delta justification) and never holds write
   credentials itself — it returns a recommendation, `main.py` performs the
   write (#9).
@@ -135,16 +139,42 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   covered by unit tests against fakes. Called out explicitly throughout
   `design_journal.md` because fakes have repeatedly encoded wrong assumptions
   that only production data caught (#16, #20, #26, #27, #28).
-- **Finding** — one check's (or the LLM phase's) individual observation: a
-  tier (`closing`/`incomplete`/`question`) plus a message. Distinct from
-  "fires" (above), which is this bot's *current* first-fire-wins model;
-  findings are the *designed-but-not-yet-built* replacement that lets
-  multiple checks contribute to one aggregated comment (#31).
+- **Finding** — one check's (or the LLM phase's) individual observation:
+  `checks.Finding(tier, message)`. Implemented in #44 (designed as #31):
+  `main.py` collects every fired Finding across the whole pass and posts
+  them as ONE aggregated comment (`render_findings_comment`), replacing the
+  old first-fire-wins one-comment-per-check model.
 - **`closing` / `incomplete` / `question`** — the three finding severity
-  tiers (#31), in priority order for picking a run's one status/vote:
-  `closing` (already resolved, short-circuits, terse own comment) >
-  `incomplete` (hard requirement, aggregates into "needs fixing" ) >
-  `question` (non-blocking advisory, never changes status, aggregates into
-  "nice to have"). Named to avoid colliding with the pre-existing, unrelated
-  **inconclusive** (above) — a deliberate naming choice made during design,
-  not an accident.
+  tiers (#31/#44), in priority order for picking a run's one status/vote:
+  `closing` (already resolved, short-circuits with its own terse comment,
+  and *drops* any findings collected earlier — no nitpicking a change that
+  already landed) > `incomplete` (hard requirement, aggregates into "needs
+  fixing", drives the one `Needs Fixing` vote) > `question` (non-blocking
+  advisory, never changes status, aggregates into "nice to have"; nothing
+  produces it yet). Named to avoid colliding with the pre-existing,
+  unrelated **inconclusive** (above) — a deliberate naming choice made
+  during design, not an accident.
+- **Aggregated comment** — the single templated review comment per pass
+  (#44): one intro, a "needs fixing" bullet section, an optional "nice to
+  have" section, one closing line. Individual finding messages carry no
+  greeting/sign-off of their own (the LLM's SRU/sync messages included,
+  #46). An inconclusive pass posts no aggregate at all and skips the LLM —
+  the comment must not claim to be the complete list when it isn't.
+- **Human-engaged suppression** — #45 (designed as #35): if anyone other
+  than the MP's submitter, the bot itself, and known `SERVICE_ACCOUNTS`
+  commented since the current `preview_diff` was created, the whole
+  aggregate is silenced (facts persist; quiet until a new push) — a human
+  review is in progress and the bot must not talk over it. Only ever
+  suppresses findings-tier output; closing-tier outcomes are decided before
+  it is consulted. MPs only so far; the bug-side anchor is an open question.
+- **`SERVICE_ACCOUNTS`** — frozenset in `checks.py` of Launchpad usernames
+  whose comments never count as human engagement (`~ubuntu-sponsoring-bot`,
+  `~git-ubuntu-bot`, `~git-ubuntu-import`, `~janitor`). Empirically
+  future-proofing: no service account had ever commented on a tracked MP
+  (git-ubuntu closes via status change; the janitor posts on bugs).
+- **Nothing to sponsor** — `check_nothing_to_sponsor` (#46), closing tier,
+  bugs only: unsubscribes ~ubuntu-sponsors when the bug's fix is under
+  review on a linked MP (sponsors-as-reviewer or an actual review vote —
+  the bug is a duplicate queue entry) or when there is no patch and no
+  linked MP at all (sync requests exempt — they legitimately carry no
+  patch). Runs before the LLM, so a patch-less bug is never LLM-reviewed.

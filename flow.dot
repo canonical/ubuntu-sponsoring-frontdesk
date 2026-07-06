@@ -15,8 +15,8 @@ digraph SponsoringBot {
 
     // ---- load + facts gate ----
     load    [label="load_url → lp_obj", shape=box, fillcolor="#FFFFFF"];
-    loaderr [label="load fails:\nprint, return", shape=box, fillcolor="#ECEFF1"];
-    facts   [label="build_facts\n(fingerprint contributor signals)", shape=box, fillcolor="#FFFFFF"];
+    loaderr [label="load fails:\nlog, return", shape=box, fillcolor="#ECEFF1"];
+    facts   [label="build_facts\n(fingerprint contributor signals:\nbugs incl. attachments +\nlinked-MP review state -- #46)", shape=box, fillcolor="#FFFFFF"];
     gate    [label="force?  OR\nstored facts ≠ new facts?", shape=diamond, fillcolor="#FFF9C4"];
     skip    [label="Skip\n(nothing changed)", shape=box, fillcolor="#ECEFF1"];
 
@@ -26,68 +26,85 @@ digraph SponsoringBot {
     facts -> gate;
     gate -> skip [label="unchanged"];
 
-    // ---- deterministic checks ----
-    c1 [label="Check 1: administrative_state", shape=box, fillcolor="#FFFFFF"];
-    c2 [label="Check 2: target_branch\n(merge MPs only -- see #20)", shape=box, fillcolor="#FFFFFF"];
-    c2note [label="is this a merge (Debian rebase)?\nsource branch name has \"merge\",\nor a linked bug titled \"Merge …\"\nfix / SRU MPs: skip, no bounce", shape=note, fillcolor="#FFFDE7"];
-    c2 -> c2note [style=dotted, arrowhead=none];
-    c3 [label="Check 3: mp_conflicts", shape=box, fillcolor="#FFFFFF"];
-    c4 [label="Check 4: empty_diff", shape=box, fillcolor="#FFFFFF"];
-    c5 [label="Check 5: changelog_bug_reference\n(see #25)", shape=box, fillcolor="#FFFFFF"];
-    c6 [label="Check 6: stale_version\n(see #27)", shape=box, fillcolor="#FFFFFF"];
-    incnote [label="every check can also return None:\na lookup failed, not \"nothing to flag\"\n-> inconclusive=True, keep going\n(see #28)", shape=note, fillcolor="#FFFDE7"];
+    // ---- closing-tier checks (short-circuit: already resolved) ----
+    c1  [label="Check 1: administrative_state\n(closing)", shape=box, fillcolor="#FFFFFF"];
+    c1b [label="Check 1b: nothing_to_sponsor\n(bugs only, closing -- #46)", shape=box, fillcolor="#FFFFFF"];
+    c1bnote [label="linked MP with ~ubuntu-sponsors\nreviewer or an actual review ->\nreview lives on the MP;\nno MP + no patch (sync exempt) ->\nnothing to review yet", shape=note, fillcolor="#FFFDE7"];
+    c1b -> c1bnote [style=dotted, arrowhead=none];
+
+    // ---- finding-collecting checks (keep evaluating -- #31/#44) ----
+    c2 [label="Check 2: target_branch\n(merge MPs only -- #20)\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c3 [label="Check 3: mp_conflicts\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c4 [label="Check 4: empty_diff\n(closing)", shape=box, fillcolor="#FFFFFF"];
+    c5 [label="Check 5: changelog_bug_reference\n(#25) → incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c6 [label="Check 6: stale_version (#27)\nmixed: closing (done/pending)\nor incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    incnote [label="every check can also return None:\na lookup failed, not \"nothing to flag\"\n-> inconclusive=True, keep going (#28)", shape=note, fillcolor="#FFFDE7"];
     c6 -> incnote [style=dotted, arrowhead=none];
 
     gate -> c1 [label="changed / forced"];
-    c1 -> c2 [label="no / None"];
-    c2 -> c3 [label="no / None"];
+    c1 -> c1b [label="no / None"];
+    c1b -> c2 [label="no / None"];
+    c2 -> c3;
     c3 -> c4 [label="no / None"];
-    c4 -> c5 [label="no / None"];
-    c5 -> c6 [label="no / None"];
+    c4 -> c5;
+    c5 -> c6;
+
+    // ---- inconclusive gate (#31 addendum) ----
+    incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];
+    silent  [label="post NOTHING, skip LLM,\npersist nothing -- the aggregate\nmust not claim completeness (#44)", shape=box, fillcolor="#ECEFF1"];
+    c6 -> incgate;
+    incgate -> silent [label="yes"];
 
     // ---- LLM phase ----
     llm  [label="LLM phase\nresource_type?", shape=diamond, fillcolor="#FFF9C4"];
     tbug [label="triage_bug", shape=box, fillcolor="#FFFFFF"];
     tmp  [label="triage_mp  (stub)", shape=box, fillcolor="#FFFFFF"];
     kind [label="SRU? Sync? neither?", shape=diamond, fillcolor="#FFF9C4"];
-    rev  [label="review_sru_template /\nreview_sync_request\n→ opencode CLI", shape=box, fillcolor="#F8BBD0"];
-    verd [label="_extract_verdict\n(fail-safe to human)", shape=diamond, fillcolor="#FFF9C4"];
+    rev  [label="review_sru_template /\nsync checks → opencode CLI", shape=box, fillcolor="#F8BBD0"];
+    verd [label="_extract_verdict\n(fail-safe to human)\nINCOMPLETE → incomplete Finding", shape=diamond, fillcolor="#FFF9C4"];
 
-    c6 -> llm [label="no"];
+    incgate -> llm [label="no"];
     llm -> tbug [label="bug / bug_task"];
     llm -> tmp  [label="merge_proposal"];
-    llm -> rfh  [label="other type"];
     tbug -> kind;
     kind -> rev [label="SRU / sync"];
-    kind -> rfh [label="neither"];
+    kind -> agg [label="neither"];
     rev -> verd;
-    tmp -> rfh;
+    tmp -> agg;
+    verd -> agg;
+
+    // ---- findings aggregation + human-engaged gate (#44/#45) ----
+    agg     [label="any findings collected?", shape=diamond, fillcolor="#FFF9C4"];
+    engaged [label="human reviewer engaged?\n(MP comment by non-submitter,\nnon-bot, non-service-account\nsince current diff -- #45)", shape=diamond, fillcolor="#FFF9C4"];
+    post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug (LLM INCOMPLETE): tasks → Incomplete", shape=box, fillcolor="#FFE0B2"];
+
+    agg -> engaged [label="yes"];
+    engaged -> post [label="no"];
+    engaged -> rfh  [label="yes: suppress all findings,\nfacts persist (quiet until new push)"];
+    engaged -> silent [label="history unreadable (None)"];
 
     // ---- conclusive states ----
-    done [label="DONE\ncomment + unsubscribe_sponsors\n(MPs: no status write -- see #25)", shape=box, fillcolor="#C8E6C9"];
-    wait [label="WAITING_ON_CONTRIBUTOR\nMP: comment(vote='Needs Fixing')\n(git-ubuntu MPs reject direct\nqueue_status writes -- #25)", shape=box, fillcolor="#FFE0B2"];
-    inc  [label="WAITING_ON_CONTRIBUTOR\ncomment + set tasks Incomplete\n(fold writes into facts)", shape=box, fillcolor="#FFE0B2"];
+    done [label="DONE\ncomment + unsubscribe_sponsors\n(MPs: no status write -- #25)", shape=box, fillcolor="#C8E6C9"];
+    wait [label="WAITING_ON_CONTRIBUTOR", shape=box, fillcolor="#FFE0B2"];
     rfh  [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
-    pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- see #27)", shape=box, fillcolor="#D1C4E9"];
+    pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- #27)", shape=box, fillcolor="#D1C4E9"];
 
-    c1 -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged"];
-    c2 -> wait [label="merge MP not on debian/*"];
-    c3 -> wait [label="has conflicts"];
-    c4 -> done [label="empty diff (landed)"];
-    c5 -> wait [label="changelog bug not\nagainst this package"];
-    c6 -> done [label="version already uploaded,\nold enough (matching content)"];
-    c6 -> pend [label="version already uploaded,\n<24h old (matching content)"];
-    c6 -> wait [label="version stale or a\nduplicate upload"];
-    verd -> inc [label="well-formed fail+reason"];
-    verd -> rfh [label="pass / missing / malformed"];
+    c1  -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged"];
+    c1b -> done [label="review on linked MP /\nno patch to sponsor"];
+    c4  -> done [label="empty diff (landed)\n(drops earlier findings)"];
+    c6  -> done [label="already uploaded, old enough"];
+    c6  -> pend [label="already uploaded, <24h\n(drops earlier findings)"];
+    verd -> done [label="SYNCED: close as\nFix Released"];
+    post -> wait [label="blocking (incomplete) findings"];
+    post -> rfh  [label="question-tier only"];
+    agg  -> rfh  [label="no findings"];
 
     // ---- persist note ----
-    persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend, and any path where\ninconclusive=True (#28) -- both\nomit facts= so the next run retries", shape=note, fillcolor="#FFFDE7"];
+    persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend + silent (retry next run);\nfacts also withheld when a write was\nnot performed (dry-run/declined -- #36)", shape=note, fillcolor="#FFFDE7"];
     done -> persist [style=dotted, arrowhead=none];
     wait -> persist [style=dotted, arrowhead=none];
-    inc  -> persist [style=dotted, arrowhead=none];
     rfh  -> persist [style=dotted, arrowhead=none];
     pend -> persist [style=dotted, arrowhead=none];
 
-    { rank=same; done; wait; inc; rfh; pend; }
+    { rank=same; done; wait; rfh; pend; }
 }

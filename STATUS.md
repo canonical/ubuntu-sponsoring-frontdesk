@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-06_
+_Last updated: 2026-07-07_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -11,6 +11,9 @@ Triages the Ubuntu sponsoring queue (bugs + merge proposals): deterministic
 Python checks first, then an LLM phase (via `opencode`) for qualitative judgment
 (SRU template completeness, sync delta explanation). The LLM only ever produces
 a *recommendation*; the orchestrator performs writes, behind a confirmation gate.
+Everything the pass found is posted as ONE aggregated review comment (#44), and
+that comment is suppressed entirely once a human reviewer is already engaged on
+the item (#45). Current pipeline: `flow.svg`.
 
 ## How to run
 
