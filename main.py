@@ -283,6 +283,42 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         return
 
     if findings:
+        # Design #35: once a human reviewer is engaged (someone other than
+        # the submitter commented since the current diff), suppress the
+        # findings entirely -- the bot's job is early feedback BEFORE a
+        # sponsor spends time here, not talking over an ongoing review.
+        # Checked lazily, only when there is something to suppress: closing
+        # tiers already returned above and are never suppressed. Suppression
+        # silenced output but never skipped evaluation (the #35 amendment) --
+        # all checks and the LLM already ran by this point.
+        engaged = checks.check_human_engaged(lp_obj, lp_client)
+        checkpoint("check_human_engaged")
+        logger.debug("check_human_engaged -> %s", engaged)
+        if engaged is None:
+            logger.info(
+                "Couldn't read the comment history to tell whether a human "
+                "reviewer is engaged. Posting nothing this run; facts won't "
+                "be persisted, so this URL is retried next run."
+            )
+            return
+        if engaged:
+            # A determined, stable state -- persist facts like a clean pass,
+            # so the facts-unchanged gate skips this URL until a genuinely
+            # new push (new diff) changes the fingerprint and real checking
+            # resumes.
+            logger.info(
+                "A human reviewer already commented on the current revision; "
+                "suppressing %d finding(s) and leaving the review to them.",
+                len(findings),
+            )
+            state_manager.update_status(
+                url,
+                "READY_FOR_HUMAN",
+                f"{len(findings)} finding(s) suppressed: "
+                "a human reviewer is already engaged.",
+                facts=persistable_facts(),
+            )
+            return
         aggregated = checks.render_findings_comment(findings)
         blocking = [f for f in findings if f.tier == "incomplete"]
         logger.info(

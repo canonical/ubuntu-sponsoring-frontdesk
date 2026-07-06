@@ -63,6 +63,75 @@ def render_findings_comment(findings):
     return "\n\n".join(parts)
 
 
+def check_human_engaged(lp_obj, lp_client):
+    """
+    True if a human reviewer is already engaged on this item, i.e. someone
+    other than the submitter (and other than the bot itself) commented since
+    the current diff was pushed (design_journal.md #35). main.py uses this to
+    suppress the aggregated incomplete/question findings: the bot exists for
+    early feedback *before* a sponsor spends time on an item, so once one is
+    actively reviewing, a bot bounce is redundant at best and confusing at
+    worst. Only suppresses findings-tier output -- closing-tier outcomes
+    (already resolved) are decided before this is ever consulted.
+
+    Deliberately counts a comment from ANY non-submitter account, not just
+    ~ubuntu-dev members: non-core contributors leave real review feedback
+    too. Other service accounts (git-ubuntu importer, janitor) are NOT
+    excluded yet -- accepted v1 false-negative, revisit if it bites.
+
+    A comment only counts if made after preview_diff.date_created (the same
+    anchor as #30's grace period): a fresh push generates a new diff, so a
+    stale comment on an old revision can't suppress the bot forever on a new,
+    unreviewed push. If the diff carries no timestamp, any qualifying comment
+    counts (erring toward staying quiet).
+
+    MPs only for now: bugs have no diff/push anchor and the right "since
+    current submission" frame is an open #35 question, so bugs always return
+    False (never suppressed) until that's decided.
+
+    Returns True/False, or None if the comment history couldn't be read
+    (per the codebase-wide convention, #28: don't act either way on an
+    infra failure; the caller posts nothing and retries next run).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    lp = getattr(lp_client, "lp", None)
+    me = getattr(getattr(lp, "me", None), "self_link", None)
+    try:
+        submitter = lp_obj.registrant_link
+        diff = lp_obj.preview_diff
+        anchor = getattr(diff, "date_created", None) if diff is not None else None
+        for c in lp_obj.all_comments:
+            if c.author_link in (me, submitter):
+                continue
+            if anchor is not None and getattr(c, "date_created", None) is not None:
+                if c.date_created <= anchor:
+                    logger.debug(
+                        "  [engaged] ignoring comment by %s: predates the "
+                        "current diff (%s <= %s).",
+                        c.author_link,
+                        c.date_created,
+                        anchor,
+                    )
+                    continue
+            logger.info(
+                "  [engaged] human reviewer already engaged: comment by %s "
+                "since the current diff.",
+                c.author_link,
+            )
+            return True
+    except Exception as e:
+        logger.warning(
+            "  [engaged] could not read the comment history (%s); "
+            "cannot tell whether a human is engaged.",
+            e,
+        )
+        return None
+    return False
+
+
 # A task that has landed in Ubuntu.
 DONE_STATUSES = ("Fix Released", "Fix Committed")
 # Statuses that mean "this series no longer needs sponsor action": either it

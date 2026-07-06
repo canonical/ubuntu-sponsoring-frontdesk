@@ -35,10 +35,12 @@ CLEAN_DIFF_TEXT = "diff --git a/src/foo.c b/src/foo.c\n@@ -1 +1 @@\n-old\n+new\n
 
 
 class FakeDiff:
-    def __init__(self, link, lines, conflicts="", diff_text=None):
+    def __init__(self, link, lines, conflicts="", diff_text=None, date_created=None):
         self.self_link = link
         self.diff_lines_count = lines
         self.conflicts = conflicts  # string of conflicting files; empty = none
+        # Anchor for "since the current push" logic (#35 human-engagement).
+        self.date_created = date_created
         if diff_text is not None:
             self.diff_text = FakeHostedFile(diff_text)
 
@@ -84,6 +86,9 @@ class FakeMP:
         # Used by checks._diff_missing_is_still_generating's grace-period
         # check when preview_diff is None.
         self.date_created = date_created
+        # The MP's submitter, excluded (with the bot) by the #35
+        # human-engagement check.
+        self.registrant_link = HUMAN
         self.queue_status = queue_status
         self.self_link = f"https://api.launchpad.net/devel/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
         self.all_comments = []
@@ -134,9 +139,10 @@ class FakeBugMessage:
 
 
 class FakeMPComment:
-    def __init__(self, author_link, message_body):
+    def __init__(self, author_link, message_body, date_created=None):
         self.author_link = author_link
         self.message_body = message_body
+        self.date_created = date_created
 
 
 class FakeSeries:
