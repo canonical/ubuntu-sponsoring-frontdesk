@@ -99,6 +99,28 @@ def build_facts(lp_obj, lp=None):
         facts["task_statuses"] = sorted(
             f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks
         )
+        # What there is to sponsor (check_nothing_to_sponsor) changes when a
+        # patch gets attached or an MP gets linked/reviewed -- without these
+        # in the fingerprint, a bug closed as "nothing to sponsor" would stay
+        # skipped at the facts-unchanged gate even after the contributor
+        # attaches a fix and re-subscribes ~ubuntu-sponsors.
+        facts["attachments"] = sorted(
+            getattr(a, "self_link", "") or "" for a in getattr(bug, "attachments", [])
+        )
+        facts["linked_mps"] = sorted(
+            "{}|{}|{}".format(
+                mp.self_link,
+                mp.queue_status,
+                ",".join(
+                    sorted(
+                        f"{v.reviewer_link.rsplit('/', 1)[-1]}:"
+                        f"{v.comment_link is not None}"
+                        for v in mp.votes
+                    )
+                ),
+            )
+            for mp in getattr(bug, "linked_merge_proposals", [])
+        )
 
     return facts
 

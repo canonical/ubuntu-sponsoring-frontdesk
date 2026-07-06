@@ -5,7 +5,15 @@ import facts
 import main
 from launchpad_client import LPClient
 from state import StateManager
-from fakes import FakeBug, FakeTask, FakeRoot, FakeAudit, FakeTriageClient, FakeLLM
+from fakes import (
+    FakeAttachment,
+    FakeAudit,
+    FakeBug,
+    FakeLLM,
+    FakeRoot,
+    FakeTask,
+    FakeTriageClient,
+)
 
 URL = "https://launchpad.net/bugs/42"
 
@@ -68,7 +76,13 @@ def test_dry_run_changes_nothing():
 
 def test_bounce_sets_incomplete_keeps_sponsors_and_is_quiet_next_run(tmp_path):
     sm = StateManager(db_path=str(tmp_path / "state.db"))
-    bug = FakeBug(tasks=[FakeTask("foo (Ubuntu)", "New")], description="sync me")
+    # A patch must be attached: a bug with nothing to sponsor is closed by
+    # check_nothing_to_sponsor before the LLM ever runs.
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu)", "New")],
+        description="sync me",
+        attachments=[FakeAttachment("fix.debdiff", type="Patch")],
+    )
     lp = FakeTriageClient(objects={URL: bug})
     llm = FakeLLM(bug_result=("INCOMPLETE", "Please explain the Ubuntu delta."))
 

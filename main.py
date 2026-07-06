@@ -138,6 +138,23 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
+    # Check 1b: anything to sponsor at all? (bugs only, closing tier) --
+    # a bug whose fix is under review on a linked MP is a duplicate queue
+    # entry; a bug with no patch and no MP has nothing to review yet.
+    outcome = checks.check_nothing_to_sponsor(url, lp_obj, lp_client)
+    checkpoint("check_nothing_to_sponsor")
+    logger.debug("check_nothing_to_sponsor -> %s", outcome)
+    if outcome is None:
+        inconclusive = True
+    elif outcome:
+        detail = (
+            "Unsubscribed: fix under review on the linked merge proposal."
+            if outcome == "mp_review"
+            else "Unsubscribed: no patch or merge proposal to sponsor yet."
+        )
+        state_manager.update_status(url, "DONE", detail, facts=persistable_facts())
+        return
+
     # Checks 2-6 no longer stop the pipeline on first fire (design_journal.md
     # #31): incomplete-tier findings are collected across the whole pass and
     # posted as ONE aggregated comment at the end, so a contributor learns

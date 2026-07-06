@@ -81,8 +81,11 @@ def test_synced_bug_closed_end_to_end(tmp_path):
     sm = StateManager(db_path=str(tmp_path / "state.db"))
     bug = FakeBug(
         tasks=[FakeTask("foo (Ubuntu)", "New")],
-        description="sync please",
-        title="Sync foo",
+        # Realistic sync-request title/body: sync requests carry no patch,
+        # so they must match the sync detection to get past
+        # check_nothing_to_sponsor.
+        description="Please sync foo from Debian.",
+        title="Sync foo 1.2-3 (main) from Debian unstable",
     )
     lp = FakeTriageClient(objects={URL: bug})
     llm = FakeLLM(bug_result=("SYNCED", "Already synced, closing."))

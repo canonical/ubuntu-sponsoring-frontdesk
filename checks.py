@@ -4,6 +4,7 @@ import re
 from typing import NamedTuple
 
 import archive_lookup
+import llm_reviewer
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,127 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         return True
 
     return False
+
+
+# Attachment filenames that read as a proposed fix even when the submitter
+# forgot to tick Launchpad's "patch" flag.
+_PATCH_FILENAME_RE = re.compile(r"\.(debdiff|diff|patch)(\.gz)?$", re.IGNORECASE)
+
+# Linked MPs in these states are no longer a review venue.
+_INACTIVE_MP_STATUSES = ("Rejected", "Superseded")
+
+
+def check_nothing_to_sponsor(url, lp_obj, lp_client):
+    """
+    Closing-tier check, bugs only: is there actually anything here for the
+    sponsors team to review?
+
+    Two cases (seb128, 2026-07-06, found live on bug #2139024):
+
+    - "mp_review": the bug has a linked merge proposal that either names
+      ~ubuntu-sponsors as a requested reviewer or has already received a
+      review vote. The MP is the better review venue and (in the reviewer
+      case) already its own sponsoring-queue entry -- the bug is a duplicate,
+      so unsubscribe ~ubuntu-sponsors from it and let the review continue on
+      the MP. A linked MP with neither signal proves nothing (it may not be
+      in the queue at all), so it is left for a human.
+
+    - "no_patch": no linked MP and no patch attached (Launchpad's patch flag,
+      or a *.debdiff/*.diff/*.patch filename) -- nothing to sponsor yet, so
+      say so, unsubscribe ~ubuntu-sponsors, and invite re-subscribing once a
+      fix is proposed. Sync requests are exempt: they legitimately carry no
+      patch (the LLM phase reviews those).
+
+    Returns "mp_review"/"no_patch" (handled: commented + unsubscribed),
+    False (a fix is present, or not a bug, or nothing conclusive), or None
+    (a Launchpad lookup failed; retry next run).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return False
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+
+    try:
+        active_mps = [
+            mp
+            for mp in bug.linked_merge_proposals
+            if mp.queue_status not in _INACTIVE_MP_STATUSES
+        ]
+        for mp in active_mps:
+            sponsors_requested = False
+            reviewed = False
+            for vote in mp.votes:
+                if vote.reviewer_link.rsplit("/", 1)[-1] == "~ubuntu-sponsors":
+                    sponsors_requested = True
+                if vote.comment_link is not None:
+                    reviewed = True
+            logger.debug(
+                "check_nothing_to_sponsor: linked MP %s sponsors_requested=%s "
+                "reviewed=%s",
+                mp.web_link,
+                sponsors_requested,
+                reviewed,
+            )
+            if sponsors_requested or reviewed:
+                logger.info(
+                    "[%s] fix is under review on linked MP %s. Unsubscribing "
+                    "~ubuntu-sponsors from the bug.",
+                    url,
+                    mp.web_link,
+                )
+                lp_client.comment(
+                    bug,
+                    f"The fix proposed here is being reviewed on {mp.web_link}, "
+                    "so there is no need for a separate sponsoring-queue entry "
+                    "for this bug. Cleaning up the queue by unsubscribing "
+                    "~ubuntu-sponsors; the review continues on the merge "
+                    "proposal.",
+                )
+                lp_client.unsubscribe_sponsors(bug)
+                return "mp_review"
+        if active_mps:
+            # An MP exists but shows no review signal yet; can't tell which
+            # entry the queue should keep. Leave it for a human.
+            return False
+
+        # Sync requests legitimately have no patch to attach.
+        if llm_reviewer._is_sync(
+            getattr(bug, "title", ""), getattr(bug, "description", "")
+        ):
+            logger.debug("check_nothing_to_sponsor: sync request; no patch expected.")
+            return False
+
+        for attachment in bug.attachments:
+            if attachment.type == "Patch" or _PATCH_FILENAME_RE.search(
+                attachment.title or ""
+            ):
+                logger.debug(
+                    "check_nothing_to_sponsor: found patch attachment %r.",
+                    attachment.title,
+                )
+                return False
+    except Exception as e:
+        logger.warning(
+            "check_nothing_to_sponsor: could not read the bug's linked MPs/"
+            "attachments (%s); skipping, will retry next run.",
+            e,
+        )
+        return None
+
+    logger.info(
+        "[%s] no patch attached and no linked merge proposal: nothing to "
+        "sponsor yet. Unsubscribing ~ubuntu-sponsors.",
+        url,
+    )
+    lp_client.comment(
+        bug,
+        "There doesn't seem to be a patch or merge proposal attached to this "
+        "bug yet, so there is nothing for the sponsors team to review at this "
+        "point. Cleaning up the queue by unsubscribing ~ubuntu-sponsors -- "
+        "please subscribe them again once a proposed fix is available.",
+    )
+    lp_client.unsubscribe_sponsors(bug)
+    return "no_patch"
 
 
 _MISSING_DIFF_GRACE = datetime.timedelta(hours=1)

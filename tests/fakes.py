@@ -64,7 +64,9 @@ class FakeMP:
         package="testpkg",
         date_created=None,
         no_diff=False,
+        votes=None,
     ):
+        self.votes = votes or []
         self.target_git_path = target
         self.source_git_path = source
         # Linked bugs, used as a merge-detection fallback when the source
@@ -91,6 +93,7 @@ class FakeMP:
         self.registrant_link = HUMAN
         self.queue_status = queue_status
         self.self_link = f"https://api.launchpad.net/devel/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
+        self.web_link = f"https://code.launchpad.net/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
         self.all_comments = []
         self.created_comments = []
         self.created_votes = []
@@ -109,14 +112,40 @@ class FakeTask:
         self.status = status
 
 
+class FakeAttachment:
+    def __init__(self, title, type="Unspecified"):
+        self.title = title
+        self.type = type  # Launchpad's patch flag: "Patch" when ticked
+        self.self_link = f"https://api.launchpad.net/devel/bug/1/+attachment/{title}"
+
+
+class FakeVote:
+    """Stand-in for an MP's CodeReviewVoteReference."""
+
+    def __init__(self, reviewer, comment_link=None):
+        self.reviewer_link = f"https://api.launchpad.net/devel/{reviewer}"
+        # Non-None means the reviewer actually reviewed (posted a vote comment).
+        self.comment_link = comment_link
+
+
 class FakeBug:
     resource_type_link = "https://api.launchpad.net/devel/#bug"
 
-    def __init__(self, tasks=None, description="", tags=None, title=""):
+    def __init__(
+        self,
+        tasks=None,
+        description="",
+        tags=None,
+        title="",
+        attachments=None,
+        linked_merge_proposals=None,
+    ):
         self.bug_tasks = tasks or []
         self.description = description
         self.tags = tags or []
         self.title = title
+        self.attachments = attachments or []
+        self.linked_merge_proposals = linked_merge_proposals or []
         self.self_link = "https://api.launchpad.net/devel/bug/1"
         self.messages = []
         self.new_messages = []
