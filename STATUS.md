@@ -456,6 +456,19 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     collision, not found -> unchanged "needs rebase"). Live-validated on
     the motivating MP: now correctly resolves to `done`.
 
+27. **Nothing-to-sponsor check + LLM bullet wording (DONE, 2026-07-06).**
+    See design_journal.md #46. Found by seb128 on the first interactive run
+    of the new pipeline (bug #2139024, bounced over its SRU template
+    despite having no patch and a linked MP already reviewed):
+    `check_nothing_to_sponsor` (closing tier, bugs only, before the LLM)
+    unsubscribes ~ubuntu-sponsors when the bug's fix is under review on a
+    linked MP (sponsors-as-reviewer or an actual review vote -- the bug is
+    a duplicate queue entry) or when there is no patch and no MP at all
+    (sync requests exempt). Bug facts now fingerprint attachments and
+    linked-MP review state so a closed no-patch bug re-triages once a fix
+    appears. The SRU/sync LLM INCOMPLETE messages also lost their own
+    greeting/sign-off (the aggregated template carries them once).
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
