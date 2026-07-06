@@ -361,10 +361,12 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         detected Ubuntu delta (see _triage_sync)."""
         passed, feedback = self.review_sync_request(description)
         if not passed:
+            # No greeting/sign-off of its own: this becomes one bullet in the
+            # aggregated findings comment (design #31), whose template
+            # already carries both.
             comment = (
-                "Thanks for the sync request! Before we can sponsor this:\n\n"
-                f"{feedback}\n\n"
-                "Please update the description and let us know when it's ready!"
+                "This sync request needs a bit more work before it can be "
+                f"sponsored:\n\n{feedback}"
             )
             return "INCOMPLETE", comment
         return (
@@ -492,10 +494,10 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             description, pkg, req_version, target_suite, debian_versions
         )
         if not passed:
+            # Bullet-style, no greeting/sign-off (design #31, see above).
             comment = (
-                "Thanks for the sync request! Before we can sponsor this:\n\n"
-                f"{feedback}\n\n"
-                "Please update the description and let us know when it's ready!"
+                "This sync request needs a bit more work before it can be "
+                f"sponsored:\n\n{feedback}"
             )
             return "INCOMPLETE", comment
         return (
@@ -524,11 +526,12 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             passed, feedback = self.review_sru_template(description)
 
             if not passed:
+                # Bullet-style, no greeting/sign-off (design #31): the
+                # aggregated comment's template carries both.
                 comment = (
-                    "Thanks for the patch! It looks like this is an SRU, but the "
-                    "bug description template needs a bit more work before we can sponsor it:\n\n"
-                    f"{feedback}\n\n"
-                    "Please update the description and let us know when it's ready!"
+                    "This looks like an SRU, but the bug description template "
+                    "needs a bit more work before it can be sponsored:\n\n"
+                    f"{feedback}"
                 )
                 return "INCOMPLETE", comment
             else:
