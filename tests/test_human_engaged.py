@@ -66,6 +66,21 @@ def test_submitter_and_bot_comments_do_not_count():
     assert checks.check_human_engaged(mp, _client({URL: mp})) is False
 
 
+def test_service_account_comments_do_not_count():
+    # A known automated account (checks.SERVICE_ACCOUNTS) must never silence
+    # the bot -- notably ~ubuntu-sponsoring-bot itself, whose pre-account-
+    # switch comments won't match lp.me once the bot moves off seb128's
+    # personal account.
+    comments = [
+        FakeMPComment(
+            f"https://api.launchpad.net/devel/{acct}", "automated noise", AFTER_DIFF
+        )
+        for acct in checks.SERVICE_ACCOUNTS
+    ]
+    mp = _mp(comments, diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE))
+    assert checks.check_human_engaged(mp, _client({URL: mp})) is False
+
+
 def test_reviewer_comment_on_an_older_push_does_not_count():
     # A fresh push generates a new diff with a new timestamp; a stale comment
     # on the previous revision must not suppress the bot forever.

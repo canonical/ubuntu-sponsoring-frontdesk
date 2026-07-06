@@ -63,6 +63,25 @@ def render_findings_comment(findings):
     return "\n\n".join(parts)
 
 
+# Service accounts whose comments must not count as "a human reviewer is
+# engaged" (design_journal.md #45 follow-up). Checked live (2026-07-06, all
+# 52 tracked MPs): NO service account has ever commented on a sponsoring MP
+# -- git-ubuntu closes MPs via a status change, not a comment -- so today
+# this list is future-proofing, not a fix. ~ubuntu-sponsoring-bot is the
+# entry that matters: once the bot moves off seb128's personal account, its
+# pre-switch comments won't match lp.me anymore. ~janitor comments on BUGS
+# ("This bug was fixed in the package ..."), so it becomes load-bearing when
+# the bug side of #35 ships. Maintained by editing this constant.
+SERVICE_ACCOUNTS = frozenset(
+    {
+        "~ubuntu-sponsoring-bot",
+        "~git-ubuntu-bot",
+        "~git-ubuntu-import",
+        "~janitor",
+    }
+)
+
+
 def check_human_engaged(lp_obj, lp_client):
     """
     True if a human reviewer is already engaged on this item, i.e. someone
@@ -76,8 +95,8 @@ def check_human_engaged(lp_obj, lp_client):
 
     Deliberately counts a comment from ANY non-submitter account, not just
     ~ubuntu-dev members: non-core contributors leave real review feedback
-    too. Other service accounts (git-ubuntu importer, janitor) are NOT
-    excluded yet -- accepted v1 false-negative, revisit if it bites.
+    too. Known service accounts (SERVICE_ACCOUNTS above) are excluded so an
+    automated comment can never silence the bot.
 
     A comment only counts if made after preview_diff.date_created (the same
     anchor as #30's grace period): a fresh push generates a new diff, so a
@@ -105,6 +124,12 @@ def check_human_engaged(lp_obj, lp_client):
         anchor = getattr(diff, "date_created", None) if diff is not None else None
         for c in lp_obj.all_comments:
             if c.author_link in (me, submitter):
+                continue
+            if c.author_link.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
+                logger.debug(
+                    "  [engaged] ignoring comment by %s: known service account.",
+                    c.author_link,
+                )
                 continue
             if anchor is not None and getattr(c, "date_created", None) is not None:
                 if c.date_created <= anchor:
