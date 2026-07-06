@@ -322,8 +322,24 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     one) -- harmless today, but concrete confirmation the addendum matters
     once #31 ships. Full breakdown in design_journal.md #33.
 
-17. **Suppress bounces once a human is already engaged (DESIGNED, not built).**
-    See design_journal.md #35. Found by manually checking real items from a
+17. **Suppress bounces once a human is already engaged (DONE, 2026-07-06 --
+    MP side; bug-side anchor still open).** Implemented per design #35 on
+    top of #31's tier machinery, see design_journal.md #45.
+    `checks.check_human_engaged` (MPs only): a comment by anyone other
+    than the submitter and the bot itself, made since
+    `preview_diff.date_created`, means a human review is in progress --
+    `main.py` then silences the whole aggregated findings comment (no
+    vote, no bounce; facts persist, status `READY_FOR_HUMAN`, quiet until
+    a new push changes the fingerprint). Checked lazily, only when
+    findings are about to post -- closing tiers returned earlier and are
+    never suppressed; per the #35 amendment, suppression never skips
+    evaluation. Unreadable comment history -> None -> post nothing,
+    persist nothing, retry. Bugs always return False until the bug-side
+    "since current submission" anchor question is decided.
+    Live-validated: firmware-sof MP #504187 (the #31 two-finding
+    showcase) is correctly suppressed -- juliank commented since the
+    current diff; hiprand #507756 (no reviewer) still bounces.
+    Original design notes below. Found by manually checking real items from a
     dry run: the bot has no concept today of "a human sponsor already
     commented here," so it can post a redundant/confusing bounce on an item
     someone's actively reviewing -- against the whole point of giving
