@@ -110,10 +110,18 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
 - **LLM phase** — runs after the deterministic checks unless a closing-tier
   outcome resolved the item or the pass went inconclusive (#44 skips the LLM
   then, since its finding couldn't be posted anyway); invokes the `opencode`
-  CLI (#4) for qualitative judgment (SRU
-  template completeness, sync delta justification) and never holds write
-  credentials itself — it returns a recommendation, `main.py` performs the
-  write (#9).
+  CLI (#4) for qualitative judgment (bugs: SRU template completeness, sync
+  delta justification; MPs: the #47 content review, see "MP content review")
+  and never holds write credentials itself — it returns a recommendation,
+  `main.py` performs the write (#9).
+- **MP content review** — `triage_mp` (#47): one LLM call over the new
+  changelog stanza + the `debian/` diff (capped; upstream files listed by
+  path only) judging stanza quality, changelog-vs-diff consistency, and a
+  Feature Freeze classification (feature past FF → "will need an FFe"
+  bullet). All findings advisory (`question` tier, `ADVISORY` status →
+  `Finding("question", ...)` per bullet); malformed LLM output means
+  silence. Skips quietly when the diff is empty or adds no complete new
+  changelog stanza.
 - **Verdict block** — the fenced `yaml` block (`verdict: pass|fail`,
   `reason:`) the LLM is asked to end its reply with; parsed by
   `_extract_verdict`, fails safe to `READY_FOR_HUMAN` on anything missing or
@@ -150,8 +158,8 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   and *drops* any findings collected earlier — no nitpicking a change that
   already landed) > `incomplete` (hard requirement, aggregates into "needs
   fixing", drives the one `Needs Fixing` vote) > `question` (non-blocking
-  advisory, never changes status, aggregates into "nice to have"; nothing
-  produces it yet). Named to avoid colliding with the pre-existing,
+  advisory, never changes status, aggregates into "nice to have"; produced by
+  the #47 MP content review). Named to avoid colliding with the pre-existing,
   unrelated **inconclusive** (above) — a deliberate naming choice made
   during design, not an accident.
 - **Aggregated comment** — the single templated review comment per pass

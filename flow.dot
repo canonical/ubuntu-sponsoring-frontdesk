@@ -58,7 +58,7 @@ digraph SponsoringBot {
     // ---- LLM phase ----
     llm  [label="LLM phase\nresource_type?", shape=diamond, fillcolor="#FFF9C4"];
     tbug [label="triage_bug", shape=box, fillcolor="#FFFFFF"];
-    tmp  [label="triage_mp  (stub)", shape=box, fillcolor="#FFFFFF"];
+    tmp  [label="triage_mp (#47)\nnew changelog stanza + debian/ diff\n→ stanza quality, diff consistency,\nFeature Freeze classification\n→ question Findings (advisory)", shape=box, fillcolor="#F8BBD0"];
     kind [label="SRU? Sync? neither?", shape=diamond, fillcolor="#FFF9C4"];
     rev  [label="review_sru_template /\nsync checks → opencode CLI", shape=box, fillcolor="#F8BBD0"];
     verd [label="_extract_verdict\n(fail-safe to human)\nINCOMPLETE → incomplete Finding", shape=diamond, fillcolor="#FFF9C4"];
@@ -96,7 +96,7 @@ digraph SponsoringBot {
     c6  -> pend [label="already uploaded, <24h\n(drops earlier findings)"];
     verd -> done [label="SYNCED: close as\nFix Released"];
     post -> wait [label="blocking (incomplete) findings"];
-    post -> rfh  [label="question-tier only"];
+    post -> rfh  [label="question-tier only\n(advisory comment, no vote)"];
     agg  -> rfh  [label="no findings"];
 
     // ---- persist note ----

@@ -92,7 +92,19 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
    real -- confirmed both in `audit.jsonl` (`outcome: "performed"`) and
    directly on the MP on Launchpad. First real write this bot has ever
    made outside a smoke test.
-4. **`triage_mp` is a stub** — implement MP LLM triage (e.g. DEP-3 headers).
+4. **MP LLM content review (DONE, 2026-07-07).** See design_journal.md #47.
+   `triage_mp` (formerly a stub) now sends the new changelog stanza + the
+   `debian/` diff (capped, upstream files listed by path only) to the LLM
+   for three judgments: stanza quality, changelog-vs-diff consistency, and
+   a Feature Freeze classification (a feature past FF gets a "will need an
+   FFe" bullet — the foundation for the #19 FFe check). Everything is
+   `question`-tier (advisory: "nice to have" section, no vote, no bounce)
+   until live accuracy is proven — first real producer of that tier. Any
+   parsing doubt means silence, not noise. Reuses the per-item diff memo
+   (now caching the full diff text) so the LLM phase costs no extra
+   librarian fetch. Remaining follow-ups: promote clearly-content-free
+   stanzas to `incomplete` later; DEP-3 headers / patch review still out
+   of scope.
 5. **Tool-using investigation triage** — pull packages, check Debian/upstream
    trackers, git status (the richer roadmap; opencode agent with tools).
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
