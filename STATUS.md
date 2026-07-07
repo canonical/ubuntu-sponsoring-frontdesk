@@ -242,10 +242,9 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     `None` (retriable); past it, `False` (stable, cacheable — safe because
     `facts.build_facts` already fingerprints diff identity, so a
     later-generated real diff still triggers re-triage). Live-validated
-    against the real MP. Backlog: a "notify service maintainer"
-    (Matrix/Mattermost) path for exactly this kind of Launchpad-side
-    problem — deliberately not built (needs a new notification backend),
-    but this is the spot it would hook into.
+    against the real MP. The "notify service maintainer" path for exactly
+    this kind of Launchpad-side problem was built 2026-07-07 as #48 (see
+    item 28): a stuck diff now pings the operator Mattermost channel.
 14. **Aggregated findings model: `closing`/`incomplete`/`question` (DONE,
     2026-07-06).** Designed in design_journal.md #31, implemented as #44. Today's dispatcher stops at the
     first check that fires, so an item with two simultaneous problems only
@@ -275,10 +274,11 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     the LLM phase. Interactive UX: one `[y/N]` for the whole aggregate.
     Live-validated on firmware-sof MP #504187 — a real two-finding case
     (conflicts + bad bug reference) that first-fire-wins had been surfacing
-    one bot run at a time. Still open: LLM-emitted `question`-tier findings
-    (needs an LLM response-format change, deferred); the already-uploaded
-    comment → admin-notification switch once that backend exists. This also
-    unblocks item 17 (#35), whose prerequisite was this tier model.
+    one bot run at a time. Still open at the time, both since built:
+    LLM-emitted `question`-tier findings (#47, item 4) and the
+    already-uploaded comment → admin-notification switch (#48, item 28).
+    This also unblocks item 17 (#35), whose prerequisite was this tier
+    model.
 15. **Per-check timing + `print()` → `logging` throughout (DONE).** See
     design_journal.md #32. `--verbose` now logs a `[timing]` line after each
     step in `triage_url` (`load_url`, `build_facts`, each of the 6 checks,
@@ -373,8 +373,7 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     #30's lpcli attachment-visibility gap). Also surfaced a related backlog
     item: if a version+content match on an `ubuntu/*` MP doesn't get
     auto-closed by git-ubuntu within the existing 24h grace period, that's
-    worth an admin Matrix/Mattermost notification (same not-yet-built hook
-    as #30/#25).
+    worth an admin notification — built 2026-07-07 as #48 (see item 28).
 
 18. **Facts persist only when writes actually took effect (DONE, 2026-07-04).**
     See design_journal.md #36. Found in a design review: a `--dry-run` pass
@@ -483,6 +482,25 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     linked-MP review state so a closed no-patch bug re-triages once a fix
     appears. The SRU/sync LLM INCOMPLETE messages also lost their own
     greeting/sign-off (the aggregated template carries them once).
+
+28. **Operator notifications via Mattermost webhook (DONE, 2026-07-07).**
+    See design_journal.md #48 — the "notify a service maintainer" hook that
+    items 13/14/17 (#30/#25/#43) each asked for. New `notify.py` posts to a
+    Mattermost incoming webhook whose URL lives OUTSIDE the VCS in
+    `~/.config/ubuntu-sponsoring-bot/config.ini` (`[notifications]
+    webhook_url`; `SPONSORING_BOT_CONFIG` overrides the path); missing
+    config = notifications disabled, everything else unaffected. Strictly
+    an operator/admin channel for anomalies the bot can't act on — never a
+    mirror of queue statuses. Round-one triggers: (a) preview diff missing
+    past the generation grace period (fired once per MP from main's LLM
+    phase, not from each of the 4 checks that notice it); (b)
+    `check_stale_version`'s "done" case — git-ubuntu's importer failed to
+    auto-close an already-uploaded MP; when a webhook is configured this
+    replaces the "can be closed" MP comment entirely (#43's agreed switch),
+    otherwise the comment is kept. Dry-run logs "would notify"; posting is
+    best-effort (a failed POST is logged and lost, deliberately not wired
+    into the #36 write-effectiveness retry). Dedup across runs comes free
+    from the facts-unchanged gate.
 
 ## Known residual edges (documented in code)
 

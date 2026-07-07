@@ -63,6 +63,10 @@ digraph SponsoringBot {
     rev  [label="review_sru_template /\nsync checks → opencode CLI", shape=box, fillcolor="#F8BBD0"];
     verd [label="_extract_verdict\n(fail-safe to human)\nINCOMPLETE → incomplete Finding", shape=diamond, fillcolor="#FFF9C4"];
 
+    notifnote [label="operator notifications (#48):\nMattermost webhook, URL outside the VCS\n1) MP diff never generated (post-grace,\nobserved once at the LLM phase)\n2) importer didn't auto-close (check 6 'done';\nreplaces the MP comment when configured)\nbest-effort; dry-run only logs", shape=note, fillcolor="#FFFDE7"];
+    llm -> notifnote [style=dotted, arrowhead=none];
+    c6  -> notifnote [style=dotted, arrowhead=none];
+
     incgate -> llm [label="no"];
     llm -> tbug [label="bug / bug_task"];
     llm -> tmp  [label="merge_proposal"];

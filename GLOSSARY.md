@@ -186,3 +186,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   the bug is a duplicate queue entry) or when there is no patch and no
   linked MP at all (sync requests exempt — they legitimately carry no
   patch). Runs before the LLM, so a patch-less bug is never LLM-reviewed.
+
+- **Operator notifications** — `notify.py` (#48): best-effort pings to a
+  Mattermost incoming webhook, strictly for anomalies the bot detected but
+  can't act on and the contributor can't fix (stuck Launchpad diff
+  generation; git-ubuntu's importer failing to auto-close an
+  already-uploaded MP — the latter replaces the "can be closed" MP comment
+  when configured, per #43's switch). Never a mirror of queue statuses.
+  The webhook URL lives outside the VCS in
+  `~/.config/ubuntu-sponsoring-bot/config.ini` (`[notifications]
+  webhook_url`); unconfigured means disabled. Dry-run logs "would notify".
