@@ -196,3 +196,21 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   The webhook URL lives outside the VCS in
   `~/.config/ubuntu-sponsoring-bot/config.ini` (`[notifications]
   webhook_url`); unconfigured means disabled. Dry-run logs "would notify".
+
+- **Rich history** — the contributor's actual git commits, preserved into
+  the official git-ubuntu packaging branches when an upload's `.changes`
+  carries the `Vcs-Git` / `Vcs-Git-Commit` / `Vcs-Git-Ref` keys pointing at
+  a repo containing them. Without that, the importer synthesizes an
+  "Imported using git-ubuntu import." commit and the MP's history is lost
+  (work that will likely need redoing at the next merge).
+
+- **Rich-history diagnosis** — #49, runs in `check_stale_version`'s "done"
+  case (change already uploaded, MP not auto-closed): reads the uploaded
+  `.changes` and, when the Vcs keys are present, checks *ancestry* (is the
+  MP's proposed commit contained in the uploaded history? --
+  `git_history.commit_contains`, sandboxed scratch fetch; hash equality
+  would false-positive on a sponsor legitimately stacking a fixup commit).
+  Outcomes: missing keys (A) or diverged history (B2) → informational MP
+  comment for the sponsor/uploader + channel ping for the git-ubuntu
+  maintainers; contained (B1) → pure importer/autoclose bug, comment +
+  ping; undeterminable → the plain #48 ping.

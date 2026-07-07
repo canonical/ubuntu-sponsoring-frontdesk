@@ -63,7 +63,7 @@ digraph SponsoringBot {
     rev  [label="review_sru_template /\nsync checks → opencode CLI", shape=box, fillcolor="#F8BBD0"];
     verd [label="_extract_verdict\n(fail-safe to human)\nINCOMPLETE → incomplete Finding", shape=diamond, fillcolor="#FFF9C4"];
 
-    notifnote [label="operator notifications (#48):\nMattermost webhook, URL outside the VCS\n1) MP diff never generated (post-grace,\nobserved once at the LLM phase)\n2) importer didn't auto-close (check 6 'done';\nreplaces the MP comment when configured)\nbest-effort; dry-run only logs", shape=note, fillcolor="#FFFDE7"];
+    notifnote [label="operator notifications (#48):\nMattermost webhook, URL outside the VCS\n1) MP diff never generated (post-grace,\nobserved once at the LLM phase)\n2) importer didn't auto-close (check 6 'done';\nreplaces the MP comment when configured)\nbest-effort; dry-run only logs\n\nrich-history diagnosis (#49) on check 6 'done':\nA) .changes has no Vcs-Git keys -> tooling comment + ping\nB) ancestry of MP tip in uploaded history:\ncontained -> importer-bug comment + ping\ndiverged -> history-dropped comment + ping\nundeterminable -> plain #48 ping", shape=note, fillcolor="#FFFDE7"];
     llm -> notifnote [style=dotted, arrowhead=none];
     c6  -> notifnote [style=dotted, arrowhead=none];
 
