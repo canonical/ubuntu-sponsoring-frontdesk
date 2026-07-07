@@ -223,6 +223,47 @@ def changelog_text(pub):
         return None
 
 
+def changes_file_vcs_keys(pub):
+    """The git-ubuntu rich-history keys (`Vcs-Git`, `Vcs-Git-Commit`,
+    `Vcs-Git-Ref`) from a SourcePackagePublishingHistory's uploaded
+    `.changes` file, as a dict of the keys present. An upload made with
+    git-ubuntu-aware tooling carries all three; without them the importer
+    cannot graft the MP's real commits and synthesizes an import commit
+    instead (design_journal.md #49).
+
+    Returns:
+    - dict (possibly EMPTY -- .changes fetched fine, keys simply absent:
+      the upload genuinely carried no rich-history metadata), or
+    - None: the .changes couldn't be resolved/fetched -- can't diagnose;
+      callers must fall back to their undiagnosed behavior, not treat
+      this as "keys missing".
+
+    Same plain unauthenticated librarian fetch as changelog_text() above,
+    and the same caveat: not yet exercised against a live publication.
+    A signed .changes wraps the fields in a PGP clearsign envelope, which
+    doesn't matter for a line-wise scan.
+    """
+    try:
+        url = pub.changesFileUrl()
+    except Exception as e:
+        logger.warning("could not resolve changesFileUrl(): %s", e)
+        return None
+    if not url:
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            text = resp.read().decode(errors="replace")
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        logger.warning("could not fetch .changes at %s: %s", url, e)
+        return None
+    keys = {}
+    for line in text.splitlines():
+        for key in ("Vcs-Git", "Vcs-Git-Commit", "Vcs-Git-Ref"):
+            if line.startswith(key + ":"):
+                keys[key] = line[len(key) + 1 :].strip()
+    return keys
+
+
 # --- Version comparison (apt_pkg) ---------------------------------------------
 
 

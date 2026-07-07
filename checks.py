@@ -1432,6 +1432,49 @@ def _classify_against_publication(
         # publication.
         pub_url = archive_lookup.published_source_url(package, version)
         comment += f"\n\n{pub_url}"
+
+        # Rich-history diagnosis (#49, round one): the importer not closing
+        # this MP usually correlates with it not grafting the MP's real git
+        # commits either. Cheapest cause first: did the upload's .changes
+        # carry the git-ubuntu Vcs keys at all?
+        vcs_keys = archive_lookup.changes_file_vcs_keys(pub)
+        if vcs_keys is not None and not vcs_keys.get("Vcs-Git-Commit"):
+            # Upload carried no rich-history metadata: the MP's git history
+            # was dropped and will need redoing next merge. Unlike #48's
+            # bare closure housekeeping, this is worth saying ON the MP
+            # (the sponsor learns the tooling, the contributor learns their
+            # history didn't land) -- plus a terser operator ping so the
+            # channel keeps the central tally of how often this happens.
+            # Wording agreed with seb128 (design #49).
+            logger.info(
+                "[%s] version %r was uploaded without Vcs-Git-* headers; "
+                "the MP's git history was dropped. Commenting and "
+                "notifying (#49).",
+                url,
+                version,
+            )
+            lp_client.comment(
+                lp_obj,
+                "Thanks for your contribution! This change was already "
+                f"uploaded to the archive as `{package} {version}` "
+                f"({pub_url}), so this merge proposal can be closed.\n\n"
+                "Note for sponsors: the .changes uploaded didn't include "
+                "the needed Vcs headers for the git commits from this "
+                "merge proposal to be imported in the official packaging "
+                "history (https://ubuntu.com/project/docs/contributors/"
+                "advanced/handle-git-ubuntu-uploads/"
+                "#build-a-git-ubuntu-source-package-branch-for-uploading)",
+            )
+            notify.notify(
+                f":warning: rich history dropped: {package} {version} was "
+                f"uploaded without Vcs-Git-* headers -- {url} did not "
+                "autoclose and the MP's git history was not imported."
+            )
+            return "done"
+        # vcs_keys is None (.changes unfetchable -- can't diagnose) or the
+        # keys are present (whether they match the MP's tip commit is case
+        # B, design pending -- #49): fall through to the undiagnosed #48
+        # behavior below.
         # TODO: closing out stays comment/notification-only until the
         # underlying permission gap is resolved. Confirmed live 2026-07-05
         # (ipu6-drivers #503576): seb128's own account (and the bot's)
