@@ -274,7 +274,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
 
         new_status, comment = llm_reviewer.triage_bug(lp_obj)
     elif resource_type == "branch_merge_proposal":
-        new_status, comment = llm_reviewer.triage_mp(lp_obj)
+        # Reuses the diff fetch checks 2/5/6 already paid for (memoized,
+        # #37/#47); an unfetchable diff went inconclusive before this point.
+        new_status, comment = llm_reviewer.triage_mp(
+            lp_obj, diff_text=checks.diff_text(lp_obj)
+        )
     else:
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
     checkpoint("llm_reviewer")
@@ -282,6 +286,12 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     llm_incomplete = new_status == "INCOMPLETE"
     if llm_incomplete:
         findings.append(checks.Finding("incomplete", comment))
+    elif new_status == "ADVISORY":
+        # The MP content review (#47): a list of advisory bullets, each one
+        # question-tier -- rendered in the aggregate's "nice to have"
+        # section, never blocking, never voting.
+        for message in comment:
+            findings.append(checks.Finding("question", message))
 
     if new_status == "SYNCED":
         logger.info(

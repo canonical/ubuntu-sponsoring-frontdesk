@@ -315,5 +315,5 @@ class FakeLLM:
     def triage_bug(self, obj):
         return self.bug_result
 
-    def triage_mp(self, obj):
+    def triage_mp(self, obj, diff_text=None):
         return self.mp_result

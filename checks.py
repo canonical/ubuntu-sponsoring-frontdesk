@@ -594,84 +594,92 @@ def _source_package_from_mp(lp_obj):
     return None
 
 
-# One-entry memo for _changelog_diff_lines, (diff_self_link, result) or None.
-# Checks 2/5/6 each need the same diff content within a single item's triage;
-# without this they re-fetched it independently -- doubling both the time
-# (the two slowest checks in every timing capture, design_journal.md #33)
-# and the exposure to librarian slow-trickle timeouts (seen live on grub2
-# #507575: check 5's fetch succeeded, check 6's identical re-fetch timed out
-# seconds later, design_journal.md #37). Keyed on the preview diff's
-# self_link -- a stable, hashable string that changes when the contributor
-# pushes (new diff, new link), unlike the launchpadlib Entry itself
-# (unhashable, see #30's reverted lru_cache) or id(lp_obj) (GC reuse risk).
-# One entry only: checks for the same item run consecutively, so memory stays
-# bounded and cross-item reuse is structurally impossible. Failures (None)
-# are cached too, deliberately: the second caller re-attempting a fetch that
-# just failed is exactly the compounding this exists to remove -- the item
-# is inconclusive either way and retries next run (#28).
-_diff_lines_cache = None
+# One-entry memo for diff_text, (diff_self_link, result) or None.
+# Checks 2/5/6 -- and, since #47, the LLM MP review -- each need the same
+# diff content within a single item's triage; without this they re-fetched
+# it independently -- doubling both the time (the two slowest checks in
+# every timing capture, design_journal.md #33) and the exposure to librarian
+# slow-trickle timeouts (seen live on grub2 #507575: check 5's fetch
+# succeeded, check 6's identical re-fetch timed out seconds later,
+# design_journal.md #37). Keyed on the preview diff's self_link -- a stable,
+# hashable string that changes when the contributor pushes (new diff, new
+# link), unlike the launchpadlib Entry itself (unhashable, see #30's
+# reverted lru_cache) or id(lp_obj) (GC reuse risk). One entry only: checks
+# for the same item run consecutively, so memory stays bounded and
+# cross-item reuse is structurally impossible. Failures (None) are cached
+# too, deliberately: the second caller re-attempting a fetch that just
+# failed is exactly the compounding this exists to remove -- the item is
+# inconclusive either way and retries next run (#28). The memo holds the
+# FULL diff text (not the extracted changelog section, as pre-#47) so the
+# LLM phase can reuse the same fetch.
+_diff_text_cache = None
 
 
 def reset_diff_lines_cache():
     """Drop the per-item diff-content memo. Called by main at the start of
     each item (hygiene; distinct real MPs can't share a diff self_link) and
     by the test suite between tests (fakes CAN reuse links like '/d/1')."""
-    global _diff_lines_cache
-    _diff_lines_cache = None
+    global _diff_text_cache
+    _diff_text_cache = None
 
 
-def _changelog_diff_lines(lp_obj):
-    """Memoizing wrapper around _changelog_diff_lines_fetch -- same contract
-    (see that docstring); one fetch per preview diff per item."""
-    global _diff_lines_cache
-    try:
-        diff = getattr(lp_obj, "preview_diff", None)
-        key = getattr(diff, "self_link", None) if diff is not None else None
-    except Exception:
-        key = None
-    if key is not None and _diff_lines_cache and _diff_lines_cache[0] == key:
-        logger.debug("_changelog_diff_lines: reusing already-fetched diff content")
-        return _diff_lines_cache[1]
-    result = _changelog_diff_lines_fetch(lp_obj)
-    if key is not None:
-        _diff_lines_cache = (key, result)
-    return result
+def diff_text(lp_obj):
+    """The full preview-diff text for this MP, memoized per preview diff
+    per item. Costs one extra API call (fetching the diff content itself,
+    beyond the metadata check_mp_conflicts/check_empty_diff already use).
 
-
-def _changelog_diff_lines_fetch(lp_obj):
-    """The unified-diff lines for the debian/changelog hunk in this MP's
-    preview diff. Costs one extra API call (fetching the diff content
-    itself, beyond the metadata check_mp_conflicts/check_empty_diff
-    already use).
-
-    Returns a list of lines, or one of two different falsy values that
-    callers must NOT treat interchangeably:
+    Returns a str, or one of two different falsy values that callers must
+    NOT treat interchangeably:
     - None: the diff itself couldn't be fetched (an exception reading
       diff_text -- typically a network/API failure -- or a missing
       preview_diff that's still within its generation grace period, see
       `_diff_missing_is_still_generating`). This is retriable -- a caller
       must propagate it as "couldn't determine", not as a confirmed negative.
-    - False: the diff was fetched successfully but has no debian/changelog
-      section at all, OR preview_diff has been missing far longer than
-      diff generation should ever take (treated the same way: no diff data
-      to find a changelog section in). Both are stable facts that won't
-      change on retry (barring the contributor pushing new commits, or
+    - False: preview_diff has been missing far longer than diff generation
+      should ever take -- no diff data exists. A stable fact that won't
+      change on retry (barring the contributor pushing new commits or
       Launchpad belatedly generating the diff -- both already caught by the
       facts-change gate, since a new/real diff changes the fingerprinted
       diff_id/diff_lines_count in facts.build_facts).
     """
+    global _diff_text_cache
+    try:
+        diff = getattr(lp_obj, "preview_diff", None)
+        key = getattr(diff, "self_link", None) if diff is not None else None
+    except Exception:
+        key = None
+    if key is not None and _diff_text_cache and _diff_text_cache[0] == key:
+        logger.debug("diff_text: reusing already-fetched diff content")
+        return _diff_text_cache[1]
+    result = _diff_text_fetch(lp_obj)
+    if key is not None:
+        _diff_text_cache = (key, result)
+    return result
+
+
+def _diff_text_fetch(lp_obj):
     diff = getattr(lp_obj, "preview_diff", None)
     if diff is None:
         if _diff_missing_is_still_generating(lp_obj):
             return None
         return False
     try:
-        diff_text = diff.diff_text.open().read().decode(errors="replace")
+        return diff.diff_text.open().read().decode(errors="replace")
     except Exception as e:
-        logger.debug("_changelog_diff_lines: could not fetch diff text: %s", e)
+        logger.debug("diff_text: could not fetch diff text: %s", e)
         return None
 
-    for section in re.split(r"^diff --git a/", diff_text, flags=re.MULTILINE):
+
+def _changelog_diff_lines(lp_obj):
+    """The unified-diff lines for the debian/changelog hunk in this MP's
+    preview diff. Same None/False contract as `diff_text` (which this
+    extracts from), with one addition: False also means the diff was
+    fetched fine but has no debian/changelog section at all."""
+    text = diff_text(lp_obj)
+    if not isinstance(text, str):
+        return text
+
+    for section in re.split(r"^diff --git a/", text, flags=re.MULTILINE):
         if section.startswith("debian/changelog "):
             return section.splitlines()
     logger.debug("_changelog_diff_lines: no debian/changelog section in diff.")
