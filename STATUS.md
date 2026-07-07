@@ -510,6 +510,26 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     trigger on rust-cargo-c MP #507285 posted exactly one message to the
     real channel (trigger (b) unit-tested only, no live instance yet).
 
+29. **Rich-history diagnosis for uploaded-not-autoclosed MPs (#49; A/B1/B2
+    DONE 2026-07-08, round two backlog).** When `check_stale_version` hits
+    "already uploaded but the MP didn't autoclose", diagnose WHY the MP's
+    git history was dropped and tell the right audience (MP comment =
+    sponsor/uploader, channel = git-ubuntu maintainers; this deliberately
+    amends #48's MP silence — that was right only while there was nothing
+    actionable to say). Case A: the `.changes` (via `changesFileUrl()`)
+    carries no Vcs-Git keys → sponsor-tooling comment + "rich history
+    dropped" ping. Case B (keys present): hash equality vs the MP tip is
+    the wrong test (sponsors legitimately stack a fixup and upload from
+    their own repo) — `git_history.commit_contains()` checks *ancestry*
+    via a sandboxed scratch fetch. B1 ancestor → pure importer bug: MP
+    comment ("admins have been notified" only when a webhook exists) +
+    ping. B2 not-an-ancestor → history diverged: comment (teach "base the
+    upload on the contributor's commits") + ping. B3/unfetchable → the
+    plain #48 ping. Nothing live-validated yet (needs a real instance).
+    Round two (backlog): classify the target branch (behind vs synthetic
+    "Imported using git-ubuntu import." commit) + truncated
+    source-vs-target diff comment.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
