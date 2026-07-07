@@ -255,6 +255,60 @@ _PATCH_FILENAME_RE = re.compile(r"\.(debdiff|diff|patch)(\.gz)?$", re.IGNORECASE
 # Linked MPs in these states are no longer a review venue.
 _INACTIVE_MP_STATUSES = ("Rejected", "Superseded")
 
+# A plausible link to a proposed package build/source, for needs-packaging
+# bugs (design_journal.md #50). A brand-new package has no existing branch
+# to attach a patch/debdiff to, so pointing at a PPA (the build) and/or a
+# git repo (the source) is the normal, expected shape of a contribution
+# there -- unlike an ordinary bug, where the same link is unusual enough
+# that guessing at it risks more false "yes, reviewable" positives than it's
+# worth. Deliberately broad (github.com/salsa.debian.org too, not just
+# Launchpad): the goal is "don't wrongly close", not "verify the link is
+# good" -- a human still has to judge it.
+_PROPOSED_SOURCE_LINK_RE = re.compile(
+    r"launchpad\.net/~[\w.+-]+/\+archive"  # PPA
+    r"|launchpad\.net/~[\w.+-]+/\+git"  # LP git repo, non-code. subdomain form
+    r"|code\.launchpad\.net/~[\w.+-]+/\+git"  # LP git repo, code. subdomain form
+    r"|github\.com/[\w.-]+/[\w.-]+"
+    r"|salsa\.debian\.org/[\w.-]+/[\w.-]+",
+    re.IGNORECASE,
+)
+
+
+def _is_needs_packaging(bug):
+    """True if any of the bug's tasks targets plain 'ubuntu' (no package,
+    no series) -- Launchpad's shape for 'this package doesn't exist in
+    Ubuntu yet' requests (STATUS.md's known residual edge). There is, by
+    definition, no existing packaging branch to diff against, so having no
+    patch/debdiff attached is normal here, unlike an ordinary bug."""
+    return any(
+        (task.bug_target_name or "").strip().lower() == "ubuntu"
+        for task in bug.bug_tasks
+    )
+
+
+def _has_proposed_source_link(bug):
+    """Whether the bug's description or any comment mentions what looks
+    like a PPA or git repository -- the usual way a needs-packaging
+    contributor points at their proposed work when there's no packaging
+    branch to attach a patch to. Best-effort text scan, not a fetch/build
+    of anything: false negatives (an unusual hosting choice) just mean the
+    bug is closed as before; false positives (a link that doesn't pan out)
+    just mean a human looks and closes it anyway -- errs toward the
+    cautious side per seb128's live examples (bug #2129955: PPA + git repo
+    named in comment #1, wrongly auto-closed as 'no_patch'; #2142921
+    similarly)."""
+    texts = [getattr(bug, "description", "") or ""]
+    try:
+        for message in bug.messages:
+            texts.append(getattr(message, "content", "") or "")
+    except Exception as e:
+        logger.debug(
+            "_has_proposed_source_link: could not read bug comments (%s); "
+            "scanning the description only.",
+            e,
+        )
+    return any(_PROPOSED_SOURCE_LINK_RE.search(text) for text in texts)
+
 
 def check_nothing_to_sponsor(url, lp_obj, lp_client):
     """
@@ -345,6 +399,21 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
                     attachment.title,
                 )
                 return False
+
+        # needs-packaging bugs have no existing branch to attach a
+        # patch/debdiff to, so a PPA/git-repo link in the description or
+        # comments is the normal shape of a contribution there (unlike an
+        # ordinary bug). Cautious by design (#50): a link just means
+        # "leave it for a human", not "treat it as a real patch" -- no
+        # comment, no unsubscribe, no judgment on whether the link is any
+        # good.
+        if _is_needs_packaging(bug) and _has_proposed_source_link(bug):
+            logger.info(
+                "[%s] needs-packaging bug references a possible PPA/git "
+                "repo; leaving for a human instead of closing as no_patch.",
+                url,
+            )
+            return False
     except Exception as e:
         logger.warning(
             "check_nothing_to_sponsor: could not read the bug's linked MPs/"

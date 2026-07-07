@@ -10,6 +10,7 @@ from state import StateManager
 from fakes import (
     FakeAttachment,
     FakeBug,
+    FakeBugMessage,
     FakeLLM,
     FakeMP,
     FakeTask,
@@ -167,3 +168,69 @@ def test_bug_without_patch_closed_end_to_end(tmp_path):
     bug.attachments.append(FakeAttachment("fix.debdiff", type="Patch"))
     main.triage_url(URL, sm, lp, FakeLLM())
     assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
+
+
+# --- needs-packaging: PPA/git links skip the no_patch close (design #50) ----
+# Found live by seb128: bug #2129955 (comment names a PPA + git repo) and
+# #2142921 (similar) were both wrongly auto-closed as "no_patch".
+
+
+def _needs_packaging_bug(**kwargs):
+    kwargs.setdefault("tasks", [FakeTask("ubuntu", "New")])
+    return FakeBug(**kwargs)
+
+
+def test_needs_packaging_with_ppa_link_in_description_is_left_for_a_human():
+    bug = _needs_packaging_bug(
+        description="I have it building in a PPA at "
+        "https://launchpad.net/~aglinserer/+archive/ubuntu/ub-packaging"
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+    assert getattr(lp, "unsubscribed", 0) == 0
+
+
+def test_needs_packaging_with_git_link_in_a_comment_is_left_for_a_human():
+    bug = _needs_packaging_bug(description="new package request")
+    bug.messages = [
+        FakeBugMessage(
+            "~contrib",
+            "Sources are at https://code.launchpad.net/~aglinserer/+git/vulkan-profiles",
+        )
+    ]
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+
+
+def test_needs_packaging_without_any_link_still_closes():
+    # No PPA/git mention at all: nothing changes from the pre-#50 behavior.
+    bug = _needs_packaging_bug(description="please package this")
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
+
+
+def test_ordinary_bug_with_a_ppa_link_still_closes():
+    # The exemption is scoped to needs-packaging: an ordinary bug pointing
+    # at a PPA in a comment is unusual enough that guessing "reviewable"
+    # would risk more false positives than it prevents (seb128).
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu)", "New")],
+        description="see https://launchpad.net/~someone/+archive/ubuntu/ppa",
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
+
+
+def test_needs_packaging_comment_read_failure_does_not_crash():
+    bug = _needs_packaging_bug(description="new package")
+
+    class BoomMessages:
+        def __iter__(self):
+            raise RuntimeError("timeout")
+
+    bug.messages = BoomMessages()
+    lp = FakeTriageClient(objects={URL: bug})
+    # Falls back to scanning the description alone; no link there -> closes
+    # as before, doesn't propagate the comment-read failure as inconclusive.
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
