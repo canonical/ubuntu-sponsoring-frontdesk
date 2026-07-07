@@ -227,17 +227,34 @@ def test_b1_without_webhook_does_not_claim_admins_were_notified(monkeypatch, pos
     assert posts == []
 
 
-def test_b2_history_diverged_falls_through_for_now(tmp_path, monkeypatch, posts):
-    # contained=False is case B2 -- wording still under discussion, so it
-    # behaves exactly like the undiagnosed #48 case until then.
+def test_b2_history_diverged_comments_and_notifies(tmp_path, monkeypatch, posts):
+    # contained=False is case B2: valid rich history that doesn't build on
+    # the contributor's commits -- their history was dropped.
     _configure_webhook(tmp_path, monkeypatch)
     notify.setup(True)
     mp, _ = _uploaded_with_history(monkeypatch, contained=False)
     lp = test_mp_checks._LP()
     assert checks.check_stale_version("url", mp, lp) == "done"
-    assert lp.comments == []
+    assert len(lp.comments) == 1
+    assert "can be closed" in lp.comments[0]
+    assert "carried its own git history" in lp.comments[0]
+    assert "abc1234" in lp.comments[0]
+    assert "def5678" in lp.comments[0]
+    assert "For sponsors" in lp.comments[0]
     assert len(posts) == 1
-    assert "did not auto-close" in posts[0]
+    assert "rich history diverged" in posts[0]
+    assert "abc1234" in posts[0]
+
+
+def test_b2_comments_even_without_webhook(monkeypatch, posts):
+    # Unlike B1, the B2 comment makes no claim about admins being
+    # notified, so it is identical with or without a webhook.
+    notify.setup(True)
+    mp, _ = _uploaded_with_history(monkeypatch, contained=False)
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert "carried its own git history" in lp.comments[0]
+    assert posts == []
 
 
 def test_b_ancestry_undeterminable_falls_through(tmp_path, monkeypatch, posts):

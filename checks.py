@@ -1529,11 +1529,46 @@ def _classify_against_publication(
                     "autoclose -- likely a git-ubuntu import problem."
                 )
                 return "done"
-            # contained is False: case B2 (history diverged -- the upload
-            # doesn't build on the contributor's commits). Wording under
-            # discussion with seb128; until then it falls through to the
-            # undiagnosed behavior below, same as contained is None
-            # (unfetchable repo / undeterminable ancestry).
+            if contained is False:
+                # B2: the upload carries valid rich history that does NOT
+                # build on the contributor's commits -- their git history
+                # was dropped even though the sponsor used the tooling.
+                # Attribution deliberately neutral ("carried its own git
+                # history"): we can see THAT the histories diverged, not
+                # why. Wording agreed with seb128 (design #49).
+                logger.info(
+                    "[%s] upload's rich history (%r) does not contain the "
+                    "proposed commit %r; the MP's git history was dropped. "
+                    "Commenting and notifying (#49 B2).",
+                    url,
+                    vcs_keys["Vcs-Git-Commit"],
+                    proposed_sha,
+                )
+                lp_client.comment(
+                    lp_obj,
+                    "Thanks for your contribution! This change was already "
+                    f"uploaded to the archive as `{package} {version}` "
+                    f"({pub_url}), so this merge proposal can be closed.\n\n"
+                    "Note: the upload carried its own git history "
+                    f"(Vcs-Git-Commit `{vcs_keys['Vcs-Git-Commit']}`), "
+                    "which doesn't include the commit proposed here "
+                    f"(`{proposed_sha}`). The git commits from this merge "
+                    "proposal were therefore not imported into the official "
+                    "packaging history. For sponsors: basing the upload "
+                    "branch on the contributor's proposed commits (rather "
+                    "than recreating the changes) preserves their git "
+                    "history and lets the merge proposal autoclose.",
+                )
+                notify.notify(
+                    f":warning: rich history diverged: {package} {version}'s "
+                    "uploaded history (Vcs-Git-Commit "
+                    f"`{vcs_keys['Vcs-Git-Commit']}`) does not contain the "
+                    f"commit proposed on {url} (`{proposed_sha}`) -- the "
+                    "MP's git history was not imported."
+                )
+                return "done"
+            # contained is None (B3: unfetchable repo / undeterminable
+            # ancestry): fall through to the undiagnosed #48 behavior.
         # vcs_keys is None (.changes unfetchable -- can't diagnose):
         # fall through to the undiagnosed #48 behavior below.
         # TODO: closing out stays comment/notification-only until the
