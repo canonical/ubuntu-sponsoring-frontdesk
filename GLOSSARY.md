@@ -214,3 +214,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   comment for the sponsor/uploader + channel ping for the git-ubuntu
   maintainers; contained (B1) → pure importer/autoclose bug, comment +
   ping; undeterminable → the plain #48 ping.
+
+- **needs-packaging bug** — a request for a package that doesn't exist in
+  Ubuntu yet; Launchpad shape is a task targeting plain `ubuntu` (no
+  package, no series). Has no existing branch to attach a patch/debdiff
+  to, so `check_nothing_to_sponsor` (#50) treats a PPA/git-repo link in
+  the description or comments as the normal shape of a proposed
+  contribution there and leaves it for a human instead of auto-closing.

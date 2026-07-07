@@ -511,7 +511,7 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     real channel (trigger (b) unit-tested only, no live instance yet).
 
 29. **Rich-history diagnosis for uploaded-not-autoclosed MPs (#49; A/B1/B2
-    DONE 2026-07-08, round two backlog).** When `check_stale_version` hits
+    DONE 2026-07-08, round two parked).** When `check_stale_version` hits
     "already uploaded but the MP didn't autoclose", diagnose WHY the MP's
     git history was dropped and tell the right audience (MP comment =
     sponsor/uploader, channel = git-ubuntu maintainers; this deliberately
@@ -525,10 +525,53 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     comment ("admins have been notified" only when a webhook exists) +
     ping. B2 not-an-ancestor → history diverged: comment (teach "base the
     upload on the contributor's commits") + ping. B3/unfetchable → the
-    plain #48 ping. Nothing live-validated yet (needs a real instance).
-    Round two (backlog): classify the target branch (behind vs synthetic
-    "Imported using git-ubuntu import." commit) + truncated
-    source-vs-target diff comment.
+    plain #48 ping. Round two (target-branch classification + a truncated
+    diff comment) is PARKED, not backlog — build only if live data shows
+    the finer split is needed (see design_journal.md #49's note).
+    **First live signal, 2026-07-08 full-queue dry-run:** fsverity-utils
+    MP #506172 hit the done-case; the `.changes` fetch genuinely timed out
+    (`archive_lookup.changes_file_vcs_keys` → None), and it correctly fell
+    through to the plain #48 ping rather than misdiagnosing. Still no live
+    case with a successfully-fetched `.changes` (cases A/B1/B2 unexercised
+    live).
+30. **needs-packaging bugs: a PPA/git link is not "nothing to sponsor"
+    (#50, DONE 2026-07-08).** Found in the same dry-run: bugs #2129955 and
+    #2142921 were wrongly auto-closed by `check_nothing_to_sponsor`'s
+    no_patch case despite a PPA/git-repo link named in a comment — normal
+    for needs-packaging (task target exactly `ubuntu`, no package/series),
+    since there's no existing branch to attach a patch/debdiff to.
+    `_is_needs_packaging` + a regex scan (`_has_proposed_source_link`,
+    description + all comments, best-effort — Launchpad PPA/git shapes
+    plus github.com/salsa.debian.org) now skip the close (leave for a
+    human) instead; scoped to needs-packaging only, so an ordinary bug
+    with the same link still closes as before. Deliberately minimal first
+    pass: no comment, no unsubscribe, no judgment on the link's quality —
+    richer handling (a question-tier note, or LLM judgment of the link)
+    is a natural round two once live data shows this doesn't over-trigger.
+
+## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
+
+No crashes, no unhandled exceptions (one grep false-positive: an LLM-quoted
+kernel debugging session inside an MP diff contained the string
+"Traceback"). 27 aggregated comments proposed, 0 votes cast (dry-run).
+Notable:
+- **#47's advisory tier fired live for the first time on two MPs**
+  (rocFFT #507900, rocr-runtime #507908, both ROCm SRU backports with
+  unresolved git conflict markers) — worth watching: in both cases the
+  LLM's "nice to have" bullet mostly restates the same fact the
+  deterministic conflict check already flagged as blocking. Not wrong,
+  just redundant; if this pattern repeats, consider suppressing an
+  advisory observation that only re-describes an already-collected
+  `incomplete` finding.
+- **#48/#49's first live signal** — see item 29 (fsverity-utils #506172).
+- **#50's two motivating bugs** (#2129955, #2142921) both still hit the
+  old wrong-close behavior in this run, since the fix landed mid-run —
+  expected, and good corroboration the bug was real. Re-running just
+  those two URLs (or the full queue again) would confirm the fix; not yet
+  done.
+- Next step (not started): re-verify #50 live, then resume the
+  `--interactive`/`--yes` queue run now that #47/#48/#49/#50 all have
+  live queue data behind them.
 
 ## Known residual edges (documented in code)
 
