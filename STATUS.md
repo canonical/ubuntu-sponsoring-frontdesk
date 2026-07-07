@@ -500,7 +500,9 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     otherwise the comment is kept. Dry-run logs "would notify"; posting is
     best-effort (a failed POST is logged and lost, deliberately not wired
     into the #36 write-effectiveness retry). Dedup across runs comes free
-    from the facts-unchanged gate.
+    from the facts-unchanged gate. Live-validated 2026-07-07: the stuck-diff
+    trigger on rust-cargo-c MP #507285 posted exactly one message to the
+    real channel (trigger (b) unit-tested only, no live instance yet).
 
 ## Known residual edges (documented in code)
 
