@@ -35,12 +35,22 @@ CLEAN_DIFF_TEXT = "diff --git a/src/foo.c b/src/foo.c\n@@ -1 +1 @@\n-old\n+new\n
 
 
 class FakeDiff:
-    def __init__(self, link, lines, conflicts="", diff_text=None, date_created=None):
+    def __init__(
+        self,
+        link,
+        lines,
+        conflicts="",
+        diff_text=None,
+        date_created=None,
+        source_revision_id=None,
+    ):
         self.self_link = link
         self.diff_lines_count = lines
         self.conflicts = conflicts  # string of conflicting files; empty = none
         # Anchor for "since the current push" logic (#35 human-engagement).
         self.date_created = date_created
+        # The MP's proposed tip commit sha (#49 case B ancestry check).
+        self.source_revision_id = source_revision_id
         if diff_text is not None:
             self.diff_text = FakeHostedFile(diff_text)
 

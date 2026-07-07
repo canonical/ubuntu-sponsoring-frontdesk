@@ -167,3 +167,98 @@ def test_unfetchable_changes_falls_through_to_undiagnosed_ping(
     assert lp.comments == []
     assert len(posts) == 1
     assert "did not auto-close" in posts[0]
+
+
+# --- case B1: rich history present and containing the MP tip (#49) ----------
+
+
+def _uploaded_with_history(monkeypatch, mp_tip="def5678", contained=True):
+    mp = _already_uploaded_mp(
+        monkeypatch,
+        vcs_keys={
+            "Vcs-Git": "https://git.launchpad.net/~sponsor/ubuntu/+source/testpkg",
+            "Vcs-Git-Commit": "abc1234",
+            "Vcs-Git-Ref": "refs/heads/upload",
+        },
+    )
+    mp.preview_diff.source_revision_id = mp_tip
+    calls = []
+
+    def fake_contains(repo_url, tip, candidate, ref=None):
+        calls.append((repo_url, tip, candidate, ref))
+        return contained
+
+    monkeypatch.setattr(checks.git_history, "commit_contains", fake_contains)
+    return mp, calls
+
+
+def test_b1_history_contains_tip_comments_and_notifies(tmp_path, monkeypatch, posts):
+    _configure_webhook(tmp_path, monkeypatch)
+    notify.setup(True)
+    mp, calls = _uploaded_with_history(monkeypatch, contained=True)
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    # The ancestry question was asked with the .changes' values and the
+    # MP's proposed tip.
+    assert calls == [
+        (
+            "https://git.launchpad.net/~sponsor/ubuntu/+source/testpkg",
+            "abc1234",
+            "def5678",
+            "refs/heads/upload",
+        )
+    ]
+    assert len(lp.comments) == 1
+    assert "can be closed" in lp.comments[0]
+    assert "likely an import problem" in lp.comments[0]
+    assert "admins have been notified" in lp.comments[0]
+    assert len(posts) == 1
+    assert "importer issue" in posts[0]
+    assert "abc1234" in posts[0]
+
+
+def test_b1_without_webhook_does_not_claim_admins_were_notified(monkeypatch, posts):
+    notify.setup(True)
+    mp, _ = _uploaded_with_history(monkeypatch, contained=True)
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert "likely an import problem." in lp.comments[0]
+    assert "admins have been notified" not in lp.comments[0]
+    assert posts == []
+
+
+def test_b2_history_diverged_falls_through_for_now(tmp_path, monkeypatch, posts):
+    # contained=False is case B2 -- wording still under discussion, so it
+    # behaves exactly like the undiagnosed #48 case until then.
+    _configure_webhook(tmp_path, monkeypatch)
+    notify.setup(True)
+    mp, _ = _uploaded_with_history(monkeypatch, contained=False)
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.comments == []
+    assert len(posts) == 1
+    assert "did not auto-close" in posts[0]
+
+
+def test_b_ancestry_undeterminable_falls_through(tmp_path, monkeypatch, posts):
+    _configure_webhook(tmp_path, monkeypatch)
+    notify.setup(True)
+    mp, _ = _uploaded_with_history(monkeypatch, contained=None)
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.comments == []
+    assert len(posts) == 1
+    assert "did not auto-close" in posts[0]
+
+
+def test_b_no_proposed_sha_falls_through(tmp_path, monkeypatch, posts):
+    # The fake diff carries no source_revision_id by default: ancestry
+    # can't even be asked -> undiagnosed behavior.
+    _configure_webhook(tmp_path, monkeypatch)
+    notify.setup(True)
+    mp = _already_uploaded_mp(monkeypatch, vcs_keys={"Vcs-Git-Commit": "abc1234"})
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert lp.comments == []
+    assert len(posts) == 1
+    assert "did not auto-close" in posts[0]

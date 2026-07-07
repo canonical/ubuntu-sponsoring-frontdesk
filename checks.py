@@ -4,6 +4,7 @@ import re
 from typing import NamedTuple
 
 import archive_lookup
+import git_history
 import llm_reviewer
 import notify
 
@@ -1471,10 +1472,70 @@ def _classify_against_publication(
                 "autoclose and the MP's git history was not imported."
             )
             return "done"
-        # vcs_keys is None (.changes unfetchable -- can't diagnose) or the
-        # keys are present (whether they match the MP's tip commit is case
-        # B, design pending -- #49): fall through to the undiagnosed #48
-        # behavior below.
+        if vcs_keys is not None and vcs_keys.get("Vcs-Git-Commit"):
+            # Case B (#49): the upload DOES carry rich-history metadata.
+            # Hash equality against the MP's tip proves nothing (a sponsor
+            # legitimately stacks a fixup commit and uploads from their own
+            # ~sponsor repo); the discriminating question is ancestry --
+            # does the uploaded history CONTAIN the proposed commit?
+            proposed_sha = getattr(
+                getattr(lp_obj, "preview_diff", None), "source_revision_id", None
+            )
+            contained = None
+            if proposed_sha:
+                contained = git_history.commit_contains(
+                    vcs_keys.get("Vcs-Git"),
+                    vcs_keys["Vcs-Git-Commit"],
+                    proposed_sha,
+                    ref=vcs_keys.get("Vcs-Git-Ref"),
+                )
+            if contained is True:
+                # B1: the contributor's history is preserved inside the
+                # upload and the MP STILL didn't autoclose -- nobody did
+                # anything wrong; this isolates an importer/autoclose bug.
+                # Tell the contributor why their merged work shows an open
+                # MP (only claiming the admins were notified when a webhook
+                # actually exists to notify them through), and give the
+                # git-ubuntu maintainers the diagnosis on the channel.
+                # Wording agreed with seb128 (design #49).
+                logger.info(
+                    "[%s] upload's rich history contains the proposed "
+                    "commit %r but the MP didn't autoclose; likely importer "
+                    "bug. Commenting and notifying (#49 B1).",
+                    url,
+                    proposed_sha,
+                )
+                note = (
+                    "Note: the upload correctly included the commits "
+                    "proposed here, but git-ubuntu didn't autoclose this "
+                    "merge proposal -- likely an import problem"
+                )
+                if notify.is_configured():
+                    note += "; the git-ubuntu admins have been notified of the issue."
+                else:
+                    note += "."
+                lp_client.comment(
+                    lp_obj,
+                    "Thanks for your contribution! This change was already "
+                    f"uploaded to the archive as `{package} {version}` "
+                    f"({pub_url}), so this merge proposal can be closed."
+                    f"\n\n{note}",
+                )
+                notify.notify(
+                    f":warning: importer issue: {package} {version} was "
+                    "uploaded with rich history containing the commit "
+                    f"proposed on {url} (Vcs-Git-Commit "
+                    f"`{vcs_keys['Vcs-Git-Commit']}`), but the MP did not "
+                    "autoclose -- likely a git-ubuntu import problem."
+                )
+                return "done"
+            # contained is False: case B2 (history diverged -- the upload
+            # doesn't build on the contributor's commits). Wording under
+            # discussion with seb128; until then it falls through to the
+            # undiagnosed behavior below, same as contained is None
+            # (unfetchable repo / undeterminable ancestry).
+        # vcs_keys is None (.changes unfetchable -- can't diagnose):
+        # fall through to the undiagnosed #48 behavior below.
         # TODO: closing out stays comment/notification-only until the
         # underlying permission gap is resolved. Confirmed live 2026-07-05
         # (ipu6-drivers #503576): seb128's own account (and the bot's)
