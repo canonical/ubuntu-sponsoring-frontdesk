@@ -76,15 +76,21 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
    Before implementing: smoke-test `bug_task.date_incomplete` and
    `bug.attachments[].date_created` exist in the real LP API
    (canonical/lpcli#24 also filed re: attachment visibility in lpcli).
-2. **Bot account.** Currently authenticates as `~seb128`. Before go-live,
-   authorize as `~ubuntu-sponsoring-bot` (confirm the account exists and has
-   queue access) — the self-comment dedup keys on `self.lp.me`.
-   **Switch-day caveat:** comments posted while running as `~seb128` become
-   invisible to the new account's dedup, so previously-bounced items could be
-   re-commented under the new identity. Cheap mitigation at switch time:
-   clear `state.db` facts (forces re-triage, which is correct anyway) and
-   accept the one-time duplicates, or manually skim the handful of items with
-   `performed` comment writes in `audit.jsonl` first.
+2. **Bot account (DONE, 2026-07-07).** The cached OAuth token was swapped;
+   the bot now authenticates as `~ubuntu-sponsoring-bot` (verified live:
+   `lp.me` resolves to it). The pieces that keyed on identity were already
+   prepared: `SERVICE_ACCOUNTS` contains `~ubuntu-sponsoring-bot`, so the
+   bot's own comments can't trigger the #45 human-engaged suppression; and
+   pre-switch `~seb128` bot comments now *count* as human engagement, which
+   is benign-to-correct (already-bounced items stay quiet until a new push
+   resets the diff anchor). Residual switch-day caveats, accepted: (a)
+   `~seb128`-posted comments are invisible to the new account's exact-match
+   dedup, so a re-triaged item could get a one-time duplicate comment; (b)
+   whether the bot account can unsubscribe `~ubuntu-sponsors` from bugs
+   (team unsubscribe may need membership) and whether it holds the
+   git-ubuntu `queue_status` grant (#25) are unverified until the first
+   real writes — watch the first `--interactive` run for "Could not
+   unsubscribe" warnings.
 3. **First real `--interactive` run (DONE, 2026-07-04).** MP #507575
    (grub2, `~sharkcnnnnnn`): `check_stale_version` correctly found the
    proposed version already published with different content, prompted
