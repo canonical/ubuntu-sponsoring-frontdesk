@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 import archive_lookup
 import llm_reviewer
+import notify
 
 logger = logging.getLogger(__name__)
 
@@ -397,11 +398,12 @@ def _diff_missing_is_still_generating(lp_obj):
     could in theory hit the non-generating branch sooner than a fresh MP
     would. Good enough for now; revisit if that turns out to matter.
 
-    TODO(design_journal.md #30, backlog): once the grace period elapses this
-    is exactly the kind of thing a service-maintainer notification (Matrix/
-    Mattermost) should fire for -- a human-actionable Launchpad-side problem,
-    not something the contributor can fix. Not built yet (needs a new
-    notification backend/API token); for now this only logs.
+    The service-maintainer notification #30 asked for here (a human-
+    actionable Launchpad-side problem, not something the contributor can
+    fix) was built as design #48 -- but it fires from main.py's LLM phase
+    (where `diff_text(lp_obj) is False` is observed exactly once per MP),
+    not from this function, precisely because of the not-memoized note
+    below.
 
     NOT memoized: up to four checks (conflicts, empty diff, changelog bug
     reference, stale version) can each hit this same missing-diff path for
@@ -411,10 +413,7 @@ def _diff_missing_is_still_generating(lp_obj):
     `Entry` objects aren't hashable (`TypeError: unhashable type: 'Entry'`,
     caught live before this shipped) and an `id(lp_obj)`-keyed dict risks
     incorrect cache hits from id reuse after garbage collection across a
-    long `--all` run. Repeated printing is harmless today; revisit if/when
-    the maintainer-notification TODO above is built (that one genuinely
-    should fire once per MP, not once per check) -- e.g. by threading an
-    explicit per-triage_url cache down from main.py instead.
+    long `--all` run. Repeated printing is harmless.
     """
     created = getattr(lp_obj, "date_created", None)
     if created is None:
@@ -1433,24 +1432,45 @@ def _classify_against_publication(
         # publication.
         pub_url = archive_lookup.published_source_url(package, version)
         comment += f"\n\n{pub_url}"
-        logger.info(
-            "[%s] version %r already published with matching content. "
-            "Commenting (no status write -- see the code note below).",
-            url,
-            version,
-        )
-        # TODO: this stays comment-only until the underlying permission gap
-        # is resolved. Confirmed live 2026-07-05 (ipu6-drivers #503576):
-        # seb128's own account (and the bot's) cannot set queue_status on a
-        # git-ubuntu MP, but a role account with dedicated git-ubuntu access
-        # CAN, via the web UI -- so this isn't a hard git-ubuntu API
-        # rejection ([[git-ubuntu-mp-status-writes]] / design_journal.md
-        # #25), it's a permission this bot's (and seb128's normal) account
-        # simply doesn't hold, and it's being worked on at the Launchpad
-        # level. Once the bot authenticates as an account with that access
-        # (see STATUS.md item 2, the ~ubuntu-sponsoring-bot switch), revisit
-        # setting queue_status="Merged" here directly.
-        lp_client.comment(lp_obj, comment)
+        # TODO: closing out stays comment/notification-only until the
+        # underlying permission gap is resolved. Confirmed live 2026-07-05
+        # (ipu6-drivers #503576): seb128's own account (and the bot's)
+        # cannot set queue_status on a git-ubuntu MP, but a role account
+        # with dedicated git-ubuntu access CAN, via the web UI -- so this
+        # isn't a hard git-ubuntu API rejection
+        # ([[git-ubuntu-mp-status-writes]] / design_journal.md #25), it's a
+        # permission this bot's (and seb128's normal) account simply doesn't
+        # hold, and it's being worked on at the Launchpad level. Once the
+        # bot authenticates as an account with that access (see STATUS.md
+        # item 2, the ~ubuntu-sponsoring-bot switch), revisit setting
+        # queue_status="Merged" here directly.
+        if notify.is_configured():
+            # Design #43's agreed switch, built as #48: reaching this point
+            # means git-ubuntu's importer failed to auto-close an MP whose
+            # change is already in the archive -- an admin problem, not
+            # contributor feedback. Stay fully silent on the MP and tell the
+            # operators instead.
+            logger.info(
+                "[%s] version %r already published with matching content. "
+                "Notifying operators (importer failed to auto-close; no MP "
+                "comment -- design #48).",
+                url,
+                version,
+            )
+            notify.notify(
+                f":warning: git-ubuntu's importer did not auto-close {url} "
+                f"even though `{package} {version}` is already published "
+                f"with matching content ({pub_url}). The MP needs to be "
+                "closed manually."
+            )
+        else:
+            logger.info(
+                "[%s] version %r already published with matching content. "
+                "Commenting (no status write -- see the code note above).",
+                url,
+                version,
+            )
+            lp_client.comment(lp_obj, comment)
         return "done"
 
     logger.info(

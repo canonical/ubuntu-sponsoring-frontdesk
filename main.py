@@ -10,6 +10,7 @@ from launchpad_client import LPClient
 from audit import AuditLog
 import checks
 import facts
+import notify
 from llm_reviewer import LLMReviewer
 
 logger = logging.getLogger(__name__)
@@ -276,9 +277,24 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif resource_type == "branch_merge_proposal":
         # Reuses the diff fetch checks 2/5/6 already paid for (memoized,
         # #37/#47); an unfetchable diff went inconclusive before this point.
-        new_status, comment = llm_reviewer.triage_mp(
-            lp_obj, diff_text=checks.diff_text(lp_obj)
-        )
+        diff_text = checks.diff_text(lp_obj)
+        if diff_text is False:
+            # Launchpad never generated the preview diff and gave up long
+            # ago (post-grace, see _diff_missing_is_still_generating) --
+            # nothing the bot or the contributor can do; ping the operators
+            # (#30 -> #48). Fired here, once per MP, rather than inside the
+            # up-to-four checks that each notice the same missing diff.
+            # Fires once per anomaly, not per run: this path lands in
+            # READY_FOR_HUMAN, which persists facts, so the next run skips
+            # the URL at the facts-unchanged gate.
+            created = getattr(lp_obj, "date_created", None)
+            since = f" (missing since {created:%Y-%m-%d})" if created else ""
+            notify.notify(
+                f":warning: Launchpad never generated the preview diff for "
+                f"{url}{since} -- the bot cannot review it; a human should "
+                "look at the MP directly."
+            )
+        new_status, comment = llm_reviewer.triage_mp(lp_obj, diff_text=diff_text)
     else:
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
     checkpoint("llm_reviewer")
@@ -451,6 +467,17 @@ def main():
         mode = "interactive"
     else:
         mode = "dry-run"
+
+    # Operator notifications (design #48) follow the same dry-run gate as LP
+    # writes, but without the interactive [y/N] prompt -- they're the
+    # operator talking to themselves, not contributor-visible output.
+    notify.setup(enabled=(mode != "dry-run"))
+    if mode != "dry-run" and not notify.is_configured():
+        logger.info(
+            "No operator webhook configured (%s); anomaly notifications "
+            "will only be logged.",
+            "[notifications] webhook_url in ~/.config/ubuntu-sponsoring-bot/config.ini",
+        )
 
     if shutil.which("opencode") is None:
         logger.warning(
