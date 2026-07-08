@@ -548,6 +548,36 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     pass: no comment, no unsubscribe, no judgment on the link's quality —
     richer handling (a question-tier note, or LLM judgment of the link)
     is a natural round two once live data shows this doesn't over-trigger.
+    **Re-verified live 2026-07-09:** re-ran both #2129955 and #2142921
+    individually against the fixed code; both now log the skip and land
+    READY_FOR_HUMAN. Confirmed fixed.
+31. **Log readability: URL at conclusion + blank-line separator (#51,
+    DONE 2026-07-09).** `triage_url`'s `finally` block now also logs
+    `"--- Finished triage for: <url> ---"` plus a trailing blank line, so
+    a long `--all` log doesn't require scrolling back up to find which
+    URL a block of output belongs to, and items are visually separated.
+32. **Skip the Feature-Freeze classification question pre-freeze (#52,
+    DONE 2026-07-09).** `triage_mp` used to always ask the LLM to
+    classify for FF purposes even though the resulting bullet only ever
+    surfaces `is_after_feature_freeze()`-gated — wasted tokens/latency on
+    every MP pre-freeze. The FF paragraph + `feature:` yaml field are now
+    built empty when not past freeze; the diff/consistency review (needed
+    regardless of freeze) is unaffected.
+33. **MP review: "verify" vs "advisory" question-tier split + YAML-quoting
+    fix (#53, DONE 2026-07-09).** Found live on rust-sudo-rs MP #508055:
+    an unquoted observation containing "LP: #2156983" got misparsed by
+    YAML (colon-space starts a mapping, `#` starts a comment), posting a
+    garbage bullet (`{'The stanza claims LP': None}`). Fixed by having
+    the model double-quote bullets and dropping (not stringifying) any
+    non-string list item. Separately, `checks.Finding` gained a `kind`
+    field (`advisory`/`verify`): "advisory" is for findings we're
+    confident really don't block (vague stanza bullets); "verify" is for
+    findings that WOULD block if true but the LLM's confidence isn't
+    enough to vote on automatically (stanza/diff mismatches, the FFe
+    bullet) — these now render in their own "Please verify" comment
+    section instead of "Nice to have (non-blocking)". Live-verified same
+    day against the trigger MP: two correctly-quoted mismatches, no
+    garbage. 282 tests, lint clean.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
@@ -569,9 +599,24 @@ Notable:
   expected, and good corroboration the bug was real. Re-running just
   those two URLs (or the full queue again) would confirm the fix; not yet
   done.
-- Next step (not started): re-verify #50 live, then resume the
-  `--interactive`/`--yes` queue run now that #47/#48/#49/#50 all have
-  live queue data behind them.
+- #50 re-verified live 2026-07-09 (see item 30). `--interactive` run
+  started 2026-07-09 and is in progress/resuming.
+
+## First `--interactive` run, 2026-07-09 (in progress)
+
+- **Bot account permission gap found:** `~ubuntu-sponsoring-bot` posted a
+  comment fine but got HTTP 401 "does not have permission to unsubscribe
+  Ubuntu Sponsors" on bug #2143088 (the linked-MP-under-review path of
+  `check_nothing_to_sponsor`). seb128 added the bot account to the
+  `~ubuntu-sponsors` team as a fix; not yet re-verified live (watch the
+  next unsubscribe attempt). See [[bot-account-switch]].
+- Three live findings fed straight into fixes the same day: log
+  readability (#51), FF-classification token waste (#52), and the
+  YAML-quoting/verify-vs-advisory split (#53) — see items 31–33 above.
+- Next step: resume the `--interactive` run, watch for the unsubscribe
+  permission fix taking effect, and watch for any further `question`-tier
+  MP review output now that it's split into "Please verify"/"Nice to
+  have".
 
 ## Known residual edges (documented in code)
 

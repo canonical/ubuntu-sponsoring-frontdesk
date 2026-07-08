@@ -116,12 +116,19 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `main.py` performs the write (#9).
 - **MP content review** — `triage_mp` (#47): one LLM call over the new
   changelog stanza + the `debian/` diff (capped; upstream files listed by
-  path only) judging stanza quality, changelog-vs-diff consistency, and a
+  path only) judging stanza quality (`observations`, `kind="advisory"`),
+  changelog-vs-diff consistency (`mismatches`, `kind="verify"`, #53), and a
   Feature Freeze classification (feature past FF → "will need an FFe"
-  bullet). All findings advisory (`question` tier, `ADVISORY` status →
-  `Finding("question", ...)` per bullet); malformed LLM output means
-  silence. Skips quietly when the diff is empty or adds no complete new
-  changelog stanza.
+  bullet, `kind="verify"`; the classification question itself is skipped
+  in the prompt entirely pre-freeze, #52, since the bullet can never fire
+  before then). All findings advisory (`question` tier, `ADVISORY` status
+  → `[(kind, bullet), ...]` → one `Finding("question", bullet, kind=kind)`
+  per pair); malformed LLM output means silence. Skips quietly when the
+  diff is empty or adds no complete new changelog stanza. Bullets must be
+  double-quoted in the YAML the model returns — an unquoted bullet
+  containing ": #" (a bug reference like "LP: #123") gets misparsed as a
+  YAML mapping-key-plus-comment, which is dropped defensively rather than
+  posted as garbage (#53).
 - **Verdict block** — the fenced `yaml` block (`verdict: pass|fail`,
   `reason:`) the LLM is asked to end its reply with; parsed by
   `_extract_verdict`, fails safe to `READY_FOR_HUMAN` on anything missing or
@@ -148,23 +155,35 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `design_journal.md` because fakes have repeatedly encoded wrong assumptions
   that only production data caught (#16, #20, #26, #27, #28).
 - **Finding** — one check's (or the LLM phase's) individual observation:
-  `checks.Finding(tier, message)`. Implemented in #44 (designed as #31):
-  `main.py` collects every fired Finding across the whole pass and posts
-  them as ONE aggregated comment (`render_findings_comment`), replacing the
-  old first-fire-wins one-comment-per-check model.
+  `checks.Finding(tier, message, kind="advisory")`. Implemented in #44
+  (designed as #31); `kind` added in #53. `main.py` collects every fired
+  Finding across the whole pass and posts them as ONE aggregated comment
+  (`render_findings_comment`), replacing the old first-fire-wins
+  one-comment-per-check model.
 - **`closing` / `incomplete` / `question`** — the three finding severity
   tiers (#31/#44), in priority order for picking a run's one status/vote:
   `closing` (already resolved, short-circuits with its own terse comment,
   and *drops* any findings collected earlier — no nitpicking a change that
   already landed) > `incomplete` (hard requirement, aggregates into "needs
   fixing", drives the one `Needs Fixing` vote) > `question` (non-blocking
-  advisory, never changes status, aggregates into "nice to have"; produced by
-  the #47 MP content review). Named to avoid colliding with the pre-existing,
-  unrelated **inconclusive** (above) — a deliberate naming choice made
-  during design, not an accident.
+  advisory, never changes status, aggregates into "please verify" or "nice
+  to have" depending on `kind`; produced by the #47 MP content review).
+  Named to avoid colliding with the pre-existing, unrelated
+  **inconclusive** (above) — a deliberate naming choice made during
+  design, not an accident.
+- **`kind: "advisory" | "verify"`** — sub-classification within the
+  `question` tier only (#53). `"advisory"` is for findings the check is
+  confident really don't matter (e.g. a terse-but-adequate changelog
+  bullet) — renders in "Nice to have (non-blocking)". `"verify"` is for
+  findings that WOULD block if true, but the check (typically an LLM
+  judgment) isn't confident enough to vote/bounce on automatically (a
+  stanza/diff mismatch, or the Feature-Freeze-Exception classification) —
+  renders in its own "Please verify (not confirmed...)" section instead,
+  read as an assertion to double-check rather than an optional nicety.
 - **Aggregated comment** — the single templated review comment per pass
-  (#44): one intro, a "needs fixing" bullet section, an optional "nice to
-  have" section, one closing line. Individual finding messages carry no
+  (#44, `kind`-aware sectioning added #53): one intro, a "needs fixing"
+  bullet section, an optional "please verify" section, an optional "nice
+  to have" section, one closing line. Individual finding messages carry no
   greeting/sign-off of their own (the LLM's SRU/sync messages included,
   #46). An inconclusive pass posts no aggregate at all and skips the LLM —
   the comment must not claim to be the complete list when it isn't.

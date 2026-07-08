@@ -39,6 +39,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
         return None
     finally:
         logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
+        logger.info("--- Finished triage for: %s ---\n", url)
 
 
 def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start):
@@ -303,11 +304,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if llm_incomplete:
         findings.append(checks.Finding("incomplete", comment))
     elif new_status == "ADVISORY":
-        # The MP content review (#47): a list of advisory bullets, each one
-        # question-tier -- rendered in the aggregate's "nice to have"
-        # section, never blocking, never voting.
-        for message in comment:
-            findings.append(checks.Finding("question", message))
+        # The MP content review (#47): a list of (kind, bullet) pairs, each
+        # one question-tier -- rendered in the aggregate's "please verify"
+        # or "nice to have" section per kind, never blocking, never voting.
+        for kind, message in comment:
+            findings.append(checks.Finding("question", message, kind=kind))
 
     if new_status == "SYNCED":
         logger.info(

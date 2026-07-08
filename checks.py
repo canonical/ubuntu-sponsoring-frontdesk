@@ -25,10 +25,18 @@ class Finding(NamedTuple):
           before this can be sponsored; drives a Needs Fixing vote.
           "question" -- advisory, never blocks and never votes. Reserved
           for future soft findings; nothing produces it yet.
+
+    kind: only meaningful within tier "question" (seb128, 2026-07-09):
+          "advisory" -- genuinely optional, address whenever or never.
+          "verify" -- if true this would actually be a problem, but the
+          check isn't confident enough (an LLM judgment) to vote/block
+          on it -- ask the sponsor/contributor to double-check instead.
+          Ignored by "incomplete"/"closing" findings.
     """
 
     tier: str
     message: str
+    kind: str = "advisory"
 
 
 def render_findings_comment(findings):
@@ -40,7 +48,8 @@ def render_findings_comment(findings):
     deliberately carry no greeting/sign-off of their own.
     """
     incomplete = [f for f in findings if f.tier == "incomplete"]
-    question = [f for f in findings if f.tier == "question"]
+    verify = [f for f in findings if f.tier == "question" and f.kind == "verify"]
+    advisory = [f for f in findings if f.tier == "question" and f.kind == "advisory"]
 
     def bullets(items):
         # Continuation lines are indented so a multi-line message stays
@@ -55,11 +64,17 @@ def render_findings_comment(findings):
         parts.append(
             "Needs fixing before this can be sponsored:\n\n" + bullets(incomplete)
         )
-    if question:
+    if verify:
+        parts.append(
+            "Please verify (not confirmed -- if any of these are real they'd "
+            "need fixing, but the automated review isn't confident enough to "
+            "block on them):\n\n" + bullets(verify)
+        )
+    if advisory:
         parts.append(
             "Nice to have (non-blocking -- none of these block the upload, "
             "but you may want to address them now, before a sponsor reviews "
-            "this, or in a future contribution):\n\n" + bullets(question)
+            "this, or in a future contribution):\n\n" + bullets(advisory)
         )
     if incomplete:
         parts.append("Once the points above are addressed, please let us know!")

@@ -57,11 +57,13 @@ testpkg (1.2-3ubuntu1) stonking; urgency=medium
  -- Marco <marco@example.com>  Mon, 06 Jul 2026 10:00:00 +0200"""
 
 
-def _reply(verdict="pass", feature="no", observations=None):
+def _reply(verdict="pass", feature="no", observations=None, mismatches=None):
     obs = "".join(f"  - {o}\n" for o in (observations or []))
+    mis = "".join(f"  - {m}\n" for m in (mismatches or []))
     return (
         "Some analysis prose.\n\n```yaml\n"
-        f"verdict: {verdict}\nfeature: {feature}\nobservations:\n{obs}```\n"
+        f"verdict: {verdict}\nfeature: {feature}\n"
+        f"observations:\n{obs}mismatches:\n{mis}```\n"
     )
 
 
@@ -119,16 +121,37 @@ def test_parse_pass_yields_no_observations():
 
 
 def test_parse_fail_yields_observations_and_feature():
-    obs, feature = ScriptedReviewer("")._extract_mp_review(
+    bullets, feature = ScriptedReviewer("")._extract_mp_review(
         _reply(verdict="fail", feature="yes", observations=["First.", "Second."])
     )
-    assert obs == ["First.", "Second."]
+    assert bullets == [("advisory", "First."), ("advisory", "Second.")]
     assert feature is True
 
 
+def test_parse_fail_yields_mismatches_as_verify_kind():
+    bullets, _ = ScriptedReviewer("")._extract_mp_review(
+        _reply(verdict="fail", mismatches=["Diff doesn't match stanza."])
+    )
+    assert bullets == [("verify", "Diff doesn't match stanza.")]
+
+
 def test_parse_fail_without_observations_is_silent():
-    obs, _ = ScriptedReviewer("")._extract_mp_review(_reply(verdict="fail"))
-    assert obs == []
+    bullets, _ = ScriptedReviewer("")._extract_mp_review(_reply(verdict="fail"))
+    assert bullets == []
+
+
+def test_parse_fail_drops_unquoted_colon_hash_observation():
+    # An unquoted bullet like "The stanza claims LP: #123 removes ..." gets
+    # misparsed by YAML: "LP:" becomes a mapping key and "#123..." becomes a
+    # comment, so the list item comes back as a dict, not a string. That
+    # must be dropped, not stringified into a garbage bullet.
+    text = (
+        "```yaml\nverdict: fail\nobservations:\n"
+        "  - The stanza claims LP: #123 removes something.\n"
+        '  - "This one is fine."\n```\n'
+    )
+    bullets, _ = ScriptedReviewer("")._extract_mp_review(text)
+    assert bullets == [("advisory", "This one is fine.")]
 
 
 def test_parse_missing_or_malformed_block_is_silent():
@@ -156,7 +179,16 @@ def test_advisory_returns_observation_list():
     r = ScriptedReviewer(_reply(verdict="fail", observations=["Vague bullet."]))
     status, payload = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
     assert status == "ADVISORY"
-    assert payload == ["Vague bullet."]
+    assert payload == [("advisory", "Vague bullet.")]
+
+
+def test_advisory_returns_mismatch_as_verify_kind():
+    r = ScriptedReviewer(
+        _reply(verdict="fail", mismatches=["Stanza claims X but diff shows Y."])
+    )
+    status, payload = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
+    assert status == "ADVISORY"
+    assert payload == [("verify", "Stanza claims X but diff shows Y.")]
 
 
 def test_empty_or_unfetchable_diff_skips_without_llm_call():
@@ -194,7 +226,9 @@ def test_feature_after_freeze_adds_ffe_bullet(monkeypatch):
     status, payload = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
     assert status == "ADVISORY"
     assert len(payload) == 1
-    assert "Feature Freeze Exception" in payload[0]
+    kind, message = payload[0]
+    assert kind == "verify"
+    assert "Feature Freeze Exception" in message
 
 
 def test_feature_before_freeze_stays_quiet(monkeypatch):
@@ -219,7 +253,12 @@ def test_advisory_posts_nice_to_have_comment_no_vote(tmp_path):
     sm = _state(tmp_path)
     mp = FakeMP(diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT))
     lp = FakeTriageClient(objects={URL: mp})
-    llm = FakeLLM(mp_result=("ADVISORY", ["Soft observation one.", "Two."]))
+    llm = FakeLLM(
+        mp_result=(
+            "ADVISORY",
+            [("advisory", "Soft observation one."), ("advisory", "Two.")],
+        )
+    )
 
     main.triage_url(URL, sm, lp, llm)
 
@@ -227,6 +266,26 @@ def test_advisory_posts_nice_to_have_comment_no_vote(tmp_path):
     assert "Nice to have" in lp.comments[0]
     assert "* Soft observation one." in lp.comments[0]
     assert "* Two." in lp.comments[0]
+    assert "Needs fixing" not in lp.comments[0]
+    assert "Please verify" not in lp.comments[0]
+    assert lp.votes == [None]
+    assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
+
+
+def test_advisory_verify_kind_posts_please_verify_comment_no_vote(tmp_path):
+    sm = _state(tmp_path)
+    mp = FakeMP(diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT))
+    lp = FakeTriageClient(objects={URL: mp})
+    llm = FakeLLM(
+        mp_result=("ADVISORY", [("verify", "Stanza claims X but diff shows Y.")])
+    )
+
+    main.triage_url(URL, sm, lp, llm)
+
+    assert len(lp.comments) == 1
+    assert "Please verify" in lp.comments[0]
+    assert "* Stanza claims X but diff shows Y." in lp.comments[0]
+    assert "Nice to have" not in lp.comments[0]
     assert "Needs fixing" not in lp.comments[0]
     assert lp.votes == [None]
     assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
@@ -238,7 +297,9 @@ def test_advisory_plus_blocking_finding_split_into_sections(tmp_path):
     # sections, and the vote/status driven by the blocking one.
     mp = FakeMP(diff=FakeDiff("/d/1", 50, conflicts="foo.c", diff_text=CLEAN_DIFF_TEXT))
     lp = FakeTriageClient(objects={URL: mp})
-    llm = FakeLLM(mp_result=("ADVISORY", ["Consider clarifying the stanza."]))
+    llm = FakeLLM(
+        mp_result=("ADVISORY", [("advisory", "Consider clarifying the stanza.")])
+    )
 
     main.triage_url(URL, sm, lp, llm)
 
