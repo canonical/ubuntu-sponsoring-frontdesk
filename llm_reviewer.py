@@ -777,20 +777,30 @@ debian/. Review ONLY these two questions:
    "update package" or "fix bug" with no substance are a problem; terse but
    accurate conventional entries (e.g. "Merge with Debian unstable. Remaining
    changes: ..." listing them) are fine.
-2. Is the stanza consistent with the diff -- does the diff contain roughly
-   what the stanza claims, and does the stanza mention every substantial
-   change visible in the diff? Report any mismatch here under `mismatches`,
-   not `observations` -- it is a different kind of finding (see below).
-   Phrase it affirmatively, stating the mismatch as a fact and asking for
-   verification -- e.g. "The changelog claims <X>, but that change isn't
-   visible in the diff -- please verify whether there's a real issue here."
-   Do not hedge or call it non-blocking; that framing is added separately.
+2. Is the stanza consistent with the diff at the level of *what changed*,
+   not *how it works internally*? A changelog is a concise summary of the
+   visible effect or the bug being fixed -- it is NOT meant to be a
+   complete technical description of every mechanism inside a patch. Flag
+   a mismatch only when the stanza claims something the diff contradicts,
+   or when a substantial, separate change (a different file, a distinct
+   fix, a whole additional patch) is present in the diff but entirely
+   unmentioned. Do NOT flag a stanza for omitting implementation details
+   of a change it already correctly names and attributes (e.g. a stanza
+   naming a patch and its general purpose does not need to enumerate every
+   code path, guard, or side effect that patch happens to touch). Report
+   any real mismatch here under `mismatches`, not `observations` -- it is
+   a different kind of finding (see below). Phrase it affirmatively,
+   stating the mismatch as a fact and asking for verification -- e.g. "The
+   changelog claims <X>, but that change isn't visible in the diff --
+   please verify whether there's a real issue here." Do not hedge or call
+   it non-blocking; that framing is added separately.
 
 Do NOT comment on anything else. Specifically out of scope (already checked
 elsewhere, or not this review's business): the merge target branch or series,
 merge conflicts, whether referenced bug numbers are valid, whether the
 version is outdated, code correctness or style in upstream files, formatting
-nitpicks, and any speculative "did you consider..." advice. Do not
+nitpicks, the technical completeness or accuracy of a named patch's internal
+description, and any speculative "did you consider..." advice. Do not
 second-guess entries attributed to previous uploads -- only the new stanza is
 under review.
 {ff_instruction}
