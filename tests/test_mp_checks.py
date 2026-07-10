@@ -487,6 +487,7 @@ def _patch_archive(
     pub=object(),
     changelog=None,
     historical_pub=None,
+    queued=False,
 ):
     """historical_pub is what an any-status published_source lookup
     (status=None) returns -- design_journal.md #43's cmp<0 check for a
@@ -507,12 +508,34 @@ def _patch_archive(
         ),
     )
     monkeypatch.setattr(archive_lookup, "changelog_text", lambda p: changelog)
+    monkeypatch.setattr(
+        archive_lookup,
+        "upload_in_queue",
+        lambda lp, pkg, series, version: queued,
+    )
 
 
 def test_stale_version_newer_than_archive_is_fine(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-3"})
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     assert checks.check_stale_version("url", mp, _LP()) is False
+
+
+def test_stale_version_newer_but_sitting_in_upload_queue_is_queued(monkeypatch):
+    # Design #55, found live: libp11 MP #507660 -- the SRU was already
+    # uploaded and waiting in noble's Unapproved queue, so there's nothing
+    # left to sponsor; defer silently instead of running the LLM review.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, queued=True)
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    lp = _LP()
+    assert checks.check_stale_version("url", mp, lp) == "queued"
+    assert lp.comments == []
+
+
+def test_stale_version_queue_lookup_failure_is_inconclusive(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, queued=None)
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
 
 
 def test_stale_version_older_than_archive_bounces(monkeypatch):
@@ -931,6 +954,11 @@ def test_stale_version_checks_the_targeted_series_not_devel(monkeypatch):
 
     monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
     monkeypatch.setattr(checks.archive_lookup, "ubuntu_versions", fake_ubuntu_versions)
+    monkeypatch.setattr(
+        checks.archive_lookup,
+        "upload_in_queue",
+        lambda lp, pkg, series, version: False,
+    )
 
     mp = _sru_mp_with_diff(_SRU_CHANGELOG_DIFF)
     assert checks.check_stale_version("url", mp, _LP()) is False

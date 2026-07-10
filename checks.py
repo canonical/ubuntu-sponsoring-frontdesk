@@ -1295,11 +1295,13 @@ def check_stale_version(url, lp_obj, lp_client):
     Returns a Finding (2, 3b -- an incomplete-tier "needs rebasing" point
     for the aggregated comment, design_journal.md #31), "done" (3a, old
     enough -- closing tier, posts its own terse comment), "pending" (3a,
-    too recent -- deliberately deferred), False (1, or a structural
-    non-applicability), or None (a lookup/fetch failure) -- unlike every
-    other check in this module, a fired result here can mean several
-    different outcomes, so the caller (main.py) needs to know which.
-    "pending" and None are both outcomes the caller must NOT persist a
+    too recent -- deliberately deferred), "queued" (already uploaded and
+    waiting in the target series' upload queue for archive review, #55 --
+    deferred silently until it publishes and becomes "done"), False (1, or
+    a structural non-applicability), or None (a lookup/fetch failure) --
+    unlike every other check in this module, a fired result here can mean
+    several different outcomes, so the caller (main.py) needs to know which.
+    "pending", "queued" and None are all outcomes the caller must NOT persist a
     facts snapshot for: nothing about the MP itself changes while we wait
     (out the grace period, or for the next retry), so persisting facts
     here would make the top-level "facts unchanged -> skip" gate
@@ -1355,6 +1357,33 @@ def check_stale_version(url, lp_obj, lp_client):
         cmp,
     )
     if cmp > 0:
+        # Newer than anything published -- but it may already have been
+        # uploaded and be sitting in the series' upload queue (Unapproved /
+        # New / Accepted), where it's invisible to the publication lookups
+        # above. Typical for an SRU awaiting SRU-team review (design #55,
+        # found live: libp11 MP #507660 sat in noble's Unapproved queue
+        # while the bot spent an LLM review concluding "ready for a
+        # sponsor"). At that point sponsoring is done -- queue review isn't
+        # the sponsors' job -- so nothing should be posted and no LLM
+        # tokens spent; once the queue accepts and publishes it, the
+        # cmp == 0 path below closes the MP out as usual.
+        queued = archive_lookup.upload_in_queue(
+            lp_client.lp, package, target_series, proposed_version
+        )
+        if queued is None:
+            logger.debug(
+                "check_stale_version: upload-queue lookup failed; can't determine."
+            )
+            return None
+        if queued:
+            logger.info(
+                "[%s] version %r is already waiting in the %s upload queue; "
+                "nothing left to sponsor while it awaits archive review.",
+                url,
+                proposed_version,
+                target_series,
+            )
+            return "queued"
         return False
 
     if cmp < 0:

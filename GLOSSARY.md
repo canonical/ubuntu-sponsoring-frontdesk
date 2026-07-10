@@ -99,6 +99,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   grace-period deferral (the `"pending"` outcome, #27): a matching upload
   exists in the archive but is <24h old, so git-ubuntu's importer might
   auto-close the MP on its own; the bot waits rather than racing it.
+- **`PENDING_UPLOAD_QUEUE`** — status for `check_stale_version`'s `"queued"`
+  outcome (#55): the proposed version is already uploaded and sitting in the
+  target series' upload queue (Unapproved/New/Accepted — invisible to
+  publication lookups; typical for an SRU awaiting the SRU team). Nothing to
+  sponsor while it waits: silent, LLM phase skipped, no facts persisted, so
+  each run re-triages it until publication flips it to the "done" close-out
+  (or a queue rejection makes it a live sponsoring item again).
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,
@@ -128,7 +135,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   double-quoted in the YAML the model returns — an unquoted bullet
   containing ": #" (a bug reference like "LP: #123") gets misparsed as a
   YAML mapping-key-plus-comment, which is dropped defensively rather than
-  posted as garbage (#53).
+  posted as garbage (#53). The consistency question is scoped to *what
+  changed* (contradicted claims, whole unmentioned files/fixes/patches),
+  not *how it works*: a stanza that correctly names and attributes a patch
+  is never flagged for omitting that patch's internal implementation
+  details (#54).
 - **Verdict block** — the fenced `yaml` block (`verdict: pass|fail`,
   `reason:`) the LLM is asked to end its reply with; parsed by
   `_extract_verdict`, fails safe to `READY_FOR_HUMAN` on anything missing or

@@ -193,6 +193,46 @@ def published_source(lp, package, series_name, version, status="Published"):
         return None
 
 
+def upload_in_queue(lp, package, series_name, version):
+    """Whether `package` == `version` is sitting in `series_name`'s upload
+    queue awaiting archive review -- uploaded, but not yet published, so
+    invisible to getPublishedSources/madison. Typical for an SRU waiting on
+    the SRU team in the Unapproved queue (design_journal.md #55).
+
+    Tri-state: True (in queue), False (not in queue), None (lookup failed --
+    the caller must not treat a failed lookup as "not queued")."""
+    try:
+        series = lp.distributions["ubuntu"].getSeries(name_or_version=series_name)
+        # Unapproved first: it's where SRUs (and freeze-time devel uploads)
+        # wait, so the common hit short-circuits the other two lookups.
+        # Accepted is included to cover the window between queue acceptance
+        # and actual publication.
+        for status in ("Unapproved", "New", "Accepted"):
+            uploads = series.getPackageUploads(
+                name=package, version=version, exact_match=True, status=status
+            )
+            for upload in uploads:
+                logger.debug(
+                    "upload_in_queue: %s %s found in %s queue %r (pocket=%s)",
+                    package,
+                    version,
+                    series_name,
+                    status,
+                    getattr(upload, "pocket", "?"),
+                )
+                return True
+        return False
+    except Exception as e:
+        logger.warning(
+            "Launchpad lookup failed (upload queue for %s %s in %s): %s",
+            package,
+            version,
+            series_name,
+            e,
+        )
+        return None
+
+
 def changelog_text(pub):
     """Plain-text contents of a SourcePackagePublishingHistory's changelog
     file (`pub.changelogUrl()`), or None if it can't be resolved or fetched.

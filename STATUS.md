@@ -578,6 +578,27 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     section instead of "Nice to have (non-blocking)". Live-verified same
     day against the trigger MP: two correctly-quoted mismatches, no
     garbage. 282 tests, lint clean.
+34. **MP review question 2 scoped to "what changed", not "how it works"
+    (#54, DONE 2026-07-09).** Found live on qca2 MP #507745: the LLM
+    flagged a "mismatch" because a stanza naming a patch and its purpose
+    didn't also describe an internal SSL v3 guard inside that same patch.
+    Per seb128, a changelog describes the visible effect or the bug fixed,
+    not every mechanism inside a patch. Question 2's prompt now only flags
+    contradicted claims or whole unmentioned changes (a separate
+    file/fix/patch); implementation completeness of an
+    already-named-and-attributed patch is explicitly out of scope.
+    Live-verified twice on the trigger MP: `verdict: pass`.
+35. **SRU already in the upload queue → skip review, defer (#55, DONE
+    2026-07-10).** Found live on libp11 MP #507660: an SRU already
+    uploaded and waiting in noble's Unapproved queue (invisible to all
+    publication-based lookups) got a full LLM review despite there being
+    nothing left to sponsor. New `archive_lookup.upload_in_queue()`
+    (Unapproved/New/Accepted, tri-state); `check_stale_version`'s
+    previously-unconditional "clean" branch now returns `"queued"` →
+    `PENDING_UPLOAD_QUEUE`: silent, no LLM, no facts persisted, re-triaged
+    each run until publication flips it to the existing "done" close-out.
+    284 tests. Backlog: SRU bug-template check, version-collision vs later
+    series, skip the FF question for SRU targets.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
@@ -610,9 +631,10 @@ Notable:
   `check_nothing_to_sponsor`). seb128 added the bot account to the
   `~ubuntu-sponsors` team as a fix; not yet re-verified live (watch the
   next unsubscribe attempt). See [[bot-account-switch]].
-- Three live findings fed straight into fixes the same day: log
-  readability (#51), FF-classification token waste (#52), and the
-  YAML-quoting/verify-vs-advisory split (#53) — see items 31–33 above.
+- Five live findings fed straight into fixes: log readability (#51),
+  FF-classification token waste (#52), the YAML-quoting/verify-vs-advisory
+  split (#53), the over-scoped stanza/diff consistency question (#54), and
+  the SRU-already-in-upload-queue gap (#55) — see items 31–35 above.
 - Next step: resume the `--interactive` run, watch for the unsubscribe
   permission fix taking effect, and watch for any further `question`-tier
   MP review output now that it's split into "Please verify"/"Nice to

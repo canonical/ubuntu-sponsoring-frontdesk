@@ -162,7 +162,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # posted as ONE aggregated comment at the end, so a contributor learns
     # about every simultaneous problem in the same round instead of one per
     # bot run. Closing-tier outcomes (check 1 above, check 4, check 6's
-    # "done"/"pending") still short-circuit -- the item is already resolved,
+    # "done"/"pending"/"queued") still short-circuit -- the item is already resolved,
     # so any findings collected so far are deliberately dropped: no point
     # nitpicking a change that already landed (seb128, 2026-07-06).
     findings = []
@@ -211,7 +211,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
 
     # Check 6: proposed version vs. archive (stale / already-uploaded).
     # Mixed tiers: returns a Finding (incomplete -- stale/duplicate version),
-    # "done"/"pending" (closing -- already landed), False, or None.
+    # "done"/"pending" (closing -- already landed), "queued" (uploaded,
+    # waiting in the series' upload queue -- deferred, #55), False, or None.
     outcome = checks.check_stale_version(url, lp_obj, lp_client)
     checkpoint("check_stale_version")
     logger.debug("check_stale_version -> %s", outcome)
@@ -242,6 +243,23 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "PENDING_ARCHIVE_IMPORT",
             "Version matches the archive but was published recently; "
             "deferring in case git-ubuntu's importer auto-closes this MP first.",
+        )
+        return
+    elif outcome == "queued":
+        # Already uploaded, waiting in the target series' upload queue
+        # (typically an SRU awaiting the SRU team, design #55). Sponsoring
+        # is done; queue review isn't the sponsors' job -- but the MP isn't
+        # resolved either (a queue rejection would make it actionable
+        # again), so stay silent, skip the LLM phase, and -- like "pending"
+        # above -- persist no facts, so the next run re-triages it. Once
+        # the queue accepts and the version publishes, the "done" path
+        # takes over and closes it out.
+        state_manager.update_status(
+            url,
+            "PENDING_UPLOAD_QUEUE",
+            "Proposed version is already uploaded and waiting in the target "
+            "series' upload queue for archive review; nothing to sponsor "
+            "while it waits.",
         )
         return
     elif outcome:
