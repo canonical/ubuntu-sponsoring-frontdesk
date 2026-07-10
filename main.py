@@ -82,7 +82,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # EXCEPT when a check couldn't fully determine an answer (a lookup/fetch
     # failure, not a genuine "nothing to flag"). Checks signal that by
     # returning None instead of False; `inconclusive` tracks whether any did,
-    # across all 6 checks. An inconclusive pass posts nothing and persists
+    # across checks 1-6 (check 7 runs after the gate and handles its own
+    # None the same way). An inconclusive pass posts nothing and persists
     # nothing (design #31's addendum: the aggregated comment must not claim
     # completeness it doesn't have) -- persisting would make the top-level
     # facts-unchanged gate skip this URL forever, and whatever the check

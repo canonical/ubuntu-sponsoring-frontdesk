@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-07_
+_Last updated: 2026-07-10_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -9,7 +9,8 @@ rationale lives in `design_journal.md`.
 
 Triages the Ubuntu sponsoring queue (bugs + merge proposals): deterministic
 Python checks first, then an LLM phase (via `opencode`) for qualitative judgment
-(SRU template completeness, sync delta explanation). The LLM only ever produces
+(SRU template completeness, sync delta explanation, MP changelog/diff content
+review, SRU newer-series coverage). The LLM only ever produces
 a *recommendation*; the orchestrator performs writes, behind a confirmation gate.
 Everything the pass found is posted as ONE aggregated review comment (#44), and
 that comment is suppressed entirely once a human reviewer is already engaged on
@@ -631,6 +632,16 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     wasted tokens. Live-probed on trigger MP #507660 (libp11/noble):
     mechanical layer right first try, prompt iterated twice for the
     codename-ordering gap. 307 tests.
+
+39. **SRU checks backlog (discussed 2026-07-10, not built).** From the
+    libp11 deep-dive (journal #55/#58): (a) SRU bug-template check --
+    [Impact]/[Test Plan]/[Where problems could occur] present and
+    substantive in the linked bug (a real "needs fixing", regex presence
+    + possibly LLM substance -- note `review_sru_template` exists but is
+    bug-side only); (b) version-collision check vs later series
+    (`ubuntu1` where the SRU convention wants `ubuntu0.1`); (c) skip the
+    Feature-Freeze classification for SRU-targeted MPs regardless of
+    date (FF is a devel-series concept; #52's gate is date-only).
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
