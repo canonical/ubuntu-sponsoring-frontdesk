@@ -670,6 +670,15 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     A proper contribution needs a changelog entry; design as its own
     small check (seb128, 2026-07-11: "that's for tomorrow").
 
+43. **Backlog: Check 8 for debdiff attachments on bugs (seb128,
+    2026-07-11).** The direct-source-edit rule applies equally to a
+    debdiff attached to a bug, but `check_direct_source_edit` is
+    MP-only and nothing reads attachment *content* today (bug-side
+    checks only look at titles/flags; launchpadlib can fetch the bytes
+    via `attachment.data`, unlike lpcli -- see item 1's canonical/lpcli#23
+    note). Needs: fetch the debdiff, parse changed paths, reuse the
+    same exemptions (native, new upstream version).
+
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
 No crashes, no unhandled exceptions (one grep false-positive: an LLM-quoted
