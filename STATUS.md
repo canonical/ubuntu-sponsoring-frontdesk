@@ -652,6 +652,24 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     looked up. Not observable live until Feature Freeze; covered by
     tests. 309 tests.
 
+41. **Direct source edits must be debian/patches patches (#60, DONE
+    2026-07-11).** New deterministic Check 8 `check_direct_source_edit`
+    (incomplete tier): files changed outside debian/ on a fix MP get a
+    "provide this as a patch under debian/patches" bounce, citing
+    https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/.
+    Exempt (silently): merge MPs, new upstream versions (upstream
+    component changed vs the changelog entry below), native packages
+    (version without a Debian revision -- from the stanza, else from
+    the archive when the MP has no stanza, the trigger nux #508190's
+    shape). Proper nativeness classification (debian/source/format) is
+    backlog. Live-verified on the trigger MP. 320 tests.
+
+42. **Backlog: missing debian/changelog stanza on a fix MP.** The nux
+    trigger MP changed no debian/ file at all -- no changelog entry, so
+    the LLM content review skips and nothing flags the absence itself.
+    A proper contribution needs a changelog entry; design as its own
+    small check (seb128, 2026-07-11: "that's for tomorrow").
+
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
 No crashes, no unhandled exceptions (one grep false-positive: an LLM-quoted

@@ -266,6 +266,17 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif outcome:
         findings.append(outcome)
 
+    # Check 8: upstream source edited directly instead of via
+    # debian/patches (#60). Deterministic, so it runs with checks 1-6
+    # before the inconclusive gate.
+    result = checks.check_direct_source_edit(url, lp_obj, lp_client)
+    checkpoint("check_direct_source_edit")
+    logger.debug("check_direct_source_edit -> %s", result)
+    if result is None:
+        inconclusive = True
+    elif result:
+        findings.append(result)
+
     if inconclusive:
         # Design #31's addendum: the aggregated comment presents itself as
         # the complete list of what to fix this round, so posting it while

@@ -48,11 +48,13 @@ digraph SponsoringBot {
     c3 -> c4 [label="no / None"];
     c4 -> c5;
     c5 -> c6;
+    c8 [label="Check 8: direct_source_edit (#60)\nupstream files edited, not patched\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c6 -> c8;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];
     silent  [label="post NOTHING, skip LLM,\npersist nothing -- the aggregate\nmust not claim completeness (#44)", shape=box, fillcolor="#ECEFF1"];
-    c6 -> incgate;
+    c8 -> incgate;
     incgate -> silent [label="yes"];
 
     // ---- LLM phase ----

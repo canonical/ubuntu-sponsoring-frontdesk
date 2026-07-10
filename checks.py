@@ -2037,3 +2037,157 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         "uploaded to the newer series before this update.",
         kind="advisory",
     )
+
+
+def _upstream_component(version):
+    """The upstream part of a Debian version ('1:1.2-3ubuntu1' -> '1.2').
+    None for a native version (no Debian revision separator) -- which is
+    exactly the 'native package' exception to the patches-only rule
+    (design #60; proper classification via debian/source/format is
+    backlog)."""
+    v = version.split(":", 1)[-1]
+    if "-" not in v:
+        return None
+    return v.rsplit("-", 1)[0]
+
+
+def _old_changelog_version(lp_obj):
+    """The version of the changelog entry the MP's new stanza sits on top
+    of, read from the debian/changelog hunk's context/removed lines. None
+    when it isn't visible in the diff (short context) or there is no
+    changelog hunk at all."""
+    lines = _changelog_diff_lines(lp_obj)
+    if not isinstance(lines, list):
+        return None
+    for line in lines:
+        if not line or line[0] not in " -":
+            continue
+        match = _CHANGELOG_HEADER_RE.match(line[1:])
+        if match:
+            return match.group("version")
+    return None
+
+
+def check_direct_source_edit(url, lp_obj, lp_client):
+    """
+    Check 8: upstream source files edited directly (design_journal.md #60).
+
+    Ubuntu packaging policy requires changes to upstream files to be
+    provided as patches under debian/patches, not as direct edits of the
+    source tree (https://ubuntu.com/project/docs/contributors/bug-fix/
+    apply-the-fix/) -- a common feedback case (trigger: nux MP #508190,
+    which edited a .cpp directly and carried no changelog stanza at all).
+
+    Detection: the preview diff touches files outside debian/. Silent
+    skips, each erring toward not bouncing:
+    - merge MPs (_is_merge_proposal): merges import upstream changes
+      wholesale, that's their job;
+    - a new upstream version (the stanza's upstream component differs
+      from the entry below it in the diff): the diff naturally carries
+      upstream changes;
+    - native packages (no Debian revision in the version, from the new
+      stanza when present, else from the version currently published in
+      the target series): upstream and packaging aren't separate there.
+      Proper nativeness classification (debian/source/format) is backlog.
+
+    Returns an incomplete Finding, False (clean/skipped), or None (diff,
+    merge-detection, or archive lookup failed -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    text = diff_text(lp_obj)
+    if text is None:
+        logger.debug("check_direct_source_edit: diff unreadable; can't determine.")
+        return None
+    if text is False or not text.strip():
+        # Missing/empty diff is check 4's (and #48's) problem, not ours.
+        return False
+
+    _debian_part, other_files = llm_reviewer._split_debian_diff(text)
+    if not other_files:
+        logger.debug("check_direct_source_edit: all changes under debian/; clean.")
+        return False
+
+    merge = _is_merge_proposal(lp_obj)
+    if merge is None:
+        return None
+    if merge:
+        logger.debug(
+            "check_direct_source_edit: merge MP; upstream changes expected. Skipping."
+        )
+        return False
+
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    proposed_version = None
+    if stanza:
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        proposed_version = header.group("version") if header else None
+    if proposed_version is None:
+        # No (parseable) new changelog stanza -- the trigger MP's shape.
+        # Nativeness has to come from what the archive currently publishes.
+        package = _source_package_from_mp(lp_obj)
+        if not package:
+            logger.debug(
+                "check_direct_source_edit: no version and no source package; "
+                "skipping."
+            )
+            return False
+        target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
+        if target_series is None:
+            return None
+        versions = archive_lookup.ubuntu_versions(
+            lp_client.lp, package, series_names=[target_series]
+        )
+        if versions is None:
+            return None
+        proposed_version = _max_published_version(versions)
+        if proposed_version is None:
+            logger.debug(
+                "check_direct_source_edit: nothing published in %s; can't "
+                "classify native vs non-native. Skipping.",
+                target_series,
+            )
+            return False
+
+    upstream = _upstream_component(proposed_version)
+    if upstream is None:
+        logger.debug(
+            "check_direct_source_edit: %r looks like a native package "
+            "version; direct source edits are legitimate there. Skipping.",
+            proposed_version,
+        )
+        return False
+
+    old_version = _old_changelog_version(lp_obj)
+    if (
+        stanza
+        and old_version is not None
+        and _upstream_component(old_version) != upstream
+    ):
+        logger.debug(
+            "check_direct_source_edit: upstream version changed (%r -> %r); "
+            "the diff naturally carries upstream changes. Skipping.",
+            old_version,
+            proposed_version,
+        )
+        return False
+
+    shown = ", ".join(f"`{p}`" for p in other_files[:5])
+    more = f" (and {len(other_files) - 5} more)" if len(other_files) > 5 else ""
+    logger.info(
+        "[%s] upstream files edited directly (%s%s). Adding an incomplete "
+        "finding.",
+        url,
+        shown,
+        more,
+    )
+    return Finding(
+        "incomplete",
+        f"The changes edit upstream source files directly ({shown}{more}). "
+        "Changes to upstream code must be provided as patches under "
+        "`debian/patches` instead, so they stay visible and survive new "
+        "upstream versions -- see "
+        "https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/",
+    )
