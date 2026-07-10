@@ -8,6 +8,17 @@ from audit import AuditLog
 
 logger = logging.getLogger(__name__)
 
+# Appended to every comment the bot posts (design #57): disclose that it's
+# automated and give readers somewhere to report a bad review. "-- " is the
+# conventional plain-text signature separator; Launchpad auto-links the
+# bare URL (it does NOT render Markdown links).
+FOOTNOTE = (
+    "-- \n"
+    "This is an automated initial review of sponsoring requests. If this "
+    "review seems wrong, please report it at "
+    "https://bugs.launchpad.net/ubuntu-sponsoring"
+)
+
 
 def _target(lp_obj):
     """A stable identifier for the object being written to, for the audit trail."""
@@ -411,7 +422,13 @@ class LPClient:
         a vote-carrying comment is the only way left to signal "needs
         fixing" to a human reviewer. Ignored for bugs (no vote concept
         there).
+
+        Every comment gets FOOTNOTE appended (design #57): readers learn
+        it's automated and where to complain. Appended here, in the one
+        place all comments flow through, so the dedup check compares the
+        same final text that gets posted.
         """
+        message = f"{message}\n\n{FOOTNOTE}"
         resource_type = lp_obj.resource_type_link.split("#")[-1]
 
         if resource_type == "bug_task":

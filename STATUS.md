@@ -608,6 +608,15 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     the MP's stanza (trailer-insensitive, existing normalization): match →
     defer as before; differ → incomplete finding (rebase with a new
     version); unreadable → inconclusive/retry. 290 tests.
+37. **Automated-review footnote on every comment (#57, DONE 2026-07-10).**
+    `LPClient.comment()` appends a `FOOTNOTE` constant (signature
+    separator + "This is an automated initial review of sponsoring
+    requests. If this review seems wrong, please report it
+    at https://bugs.launchpad.net/ubuntu-sponsoring") before the dedup
+    check, so `_already_posted` compares the posted text. Pre-#57
+    comments won't exact-match their footnoted regeneration — accepted
+    one-time double-post risk; the facts gate remains the primary guard.
+    291 tests. Not yet seen on a live write.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 

@@ -3,7 +3,7 @@
 import json
 
 from audit import AuditLog
-from launchpad_client import LPClient
+from launchpad_client import LPClient, FOOTNOTE
 from fakes import FakeRoot, FakeBug, FakeBugMessage, FakeMP, FakeMPComment, BOT, HUMAN
 
 
@@ -32,7 +32,7 @@ def test_yes_writes_and_is_audited(tmp_path):
     c = _client(tmp_path, "yes")
     bug = FakeBug()
     c.comment(bug, "hello")
-    assert bug.new_messages == ["hello"]
+    assert bug.new_messages == [f"hello\n\n{FOOTNOTE}"]
     assert _entries(c)[-1]["outcome"] == "performed"
 
 
@@ -51,7 +51,19 @@ def test_interactive_with_tty_and_yes_writes(tmp_path, monkeypatch):
     c = _client(tmp_path, "interactive")
     bug = FakeBug()
     c.comment(bug, "hello")
-    assert bug.new_messages == ["hello"]
+    assert bug.new_messages == [f"hello\n\n{FOOTNOTE}"]
+
+
+# ---- footnote (design #57) ---------------------------------------------
+
+
+def test_every_comment_carries_the_footnote(tmp_path):
+    c = _client(tmp_path, "yes")
+    bug = FakeBug()
+    c.comment(bug, "Some review outcome.")
+    assert bug.new_messages[-1].endswith(FOOTNOTE)
+    assert "automated" in FOOTNOTE
+    assert "https://bugs.launchpad.net/ubuntu-sponsoring" in FOOTNOTE
 
 
 # ---- dedup against Launchpad as source of truth ------------------------
@@ -60,7 +72,9 @@ def test_interactive_with_tty_and_yes_writes(tmp_path, monkeypatch):
 def test_identical_bot_comment_is_skipped(tmp_path):
     c = _client(tmp_path, "yes")
     bug = FakeBug()
-    bug.messages = [FakeBugMessage(BOT, "Please retarget to debian/sid")]
+    bug.messages = [
+        FakeBugMessage(BOT, f"Please retarget to debian/sid\n\n{FOOTNOTE}")
+    ]
     c.comment(bug, "Please retarget to debian/sid")
     assert bug.new_messages == []  # suppressed
     assert _entries(c)[-1]["outcome"] == "skipped-duplicate"
@@ -71,21 +85,23 @@ def test_different_bot_comment_still_posts(tmp_path):
     bug = FakeBug()
     bug.messages = [FakeBugMessage(BOT, "Please retarget to debian/sid")]
     c.comment(bug, "Now it has conflicts, please rebase")
-    assert bug.new_messages == ["Now it has conflicts, please rebase"]
+    assert bug.new_messages == [f"Now it has conflicts, please rebase\n\n{FOOTNOTE}"]
 
 
 def test_matching_text_from_human_is_not_treated_as_ours(tmp_path):
     c = _client(tmp_path, "yes")
     bug = FakeBug()
-    bug.messages = [FakeBugMessage(HUMAN, "Please retarget to debian/sid")]
+    bug.messages = [
+        FakeBugMessage(HUMAN, f"Please retarget to debian/sid\n\n{FOOTNOTE}")
+    ]
     c.comment(bug, "Please retarget to debian/sid")
-    assert bug.new_messages == ["Please retarget to debian/sid"]
+    assert bug.new_messages == [f"Please retarget to debian/sid\n\n{FOOTNOTE}"]
 
 
 def test_mp_identical_comment_is_skipped(tmp_path):
     c = _client(tmp_path, "yes")
     mp = FakeMP()
-    mp.all_comments = [FakeMPComment(BOT, "This MP has conflicts")]
+    mp.all_comments = [FakeMPComment(BOT, f"This MP has conflicts\n\n{FOOTNOTE}")]
     c.comment(mp, "This MP has conflicts")
     assert mp.created_comments == []
 
@@ -118,7 +134,9 @@ def test_mp_comment_with_vote_is_passed_to_createComment(tmp_path):
     c = _client(tmp_path, "yes")
     mp = FakeMP()
     c.comment(mp, "Please rebase and resolve conflicts.", vote="Needs Fixing")
-    assert mp.created_comments == ["Please rebase and resolve conflicts."]
+    assert mp.created_comments == [
+        f"Please rebase and resolve conflicts.\n\n{FOOTNOTE}"
+    ]
     assert mp.created_votes == ["Needs Fixing"]
 
 
