@@ -599,6 +599,15 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     each run until publication flips it to the existing "done" close-out.
     284 tests. Backlog: SRU bug-template check, version-collision vs later
     series, skip the FF question for SRU targets.
+36. **Queue hit compares changelog content before deferring (#56, DONE
+    2026-07-10).** seb128's review of #55: SRU version increments are
+    convention-fixed, so a same-version queue hit could be someone else's
+    racing SRU — "rebase and bump", not "nothing to do". The queued
+    upload's `.changes` `Changes:` field (publicly fetchable via
+    `changes_file_url`, even Unapproved) is decoded and compared against
+    the MP's stanza (trailer-insensitive, existing normalization): match →
+    defer as before; differ → incomplete finding (rebase with a new
+    version); unreadable → inconclusive/retry. 290 tests.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 

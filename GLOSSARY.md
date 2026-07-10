@@ -105,7 +105,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   publication lookups; typical for an SRU awaiting the SRU team). Nothing to
   sponsor while it waits: silent, LLM phase skipped, no facts persisted, so
   each run re-triages it until publication flips it to the "done" close-out
-  (or a queue rejection makes it a live sponsoring item again).
+  (or a queue rejection makes it a live sponsoring item again). Only fires
+  when the queued upload's `.changes` `Changes:` field matches the MP's
+  stanza (#56 — SRU version increments are convention-fixed, so a
+  same-version queue hit can be an independent racing SRU; different
+  content bounces as "rebase with a new version" instead).
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,

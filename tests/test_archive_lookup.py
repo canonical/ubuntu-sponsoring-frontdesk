@@ -348,3 +348,61 @@ def test_published_source_url_keeps_debian_version_characters_readable():
     # ever get percent-encoded, so the link stays human-readable.
     url = archive_lookup.published_source_url("foo", "1:2.0~exp1+dfsg-1")
     assert url == "https://launchpad.net/ubuntu/+source/foo/1:2.0~exp1+dfsg-1"
+
+
+# --- queue_changes_text (design #56) ------------------------------------------
+
+_CHANGES_FILE = b"""Format: 1.8
+Date: Wed, 07 Jul 2026 22:21:21 +0530
+Source: testpkg
+Version: 1.2-4
+Changes:
+ testpkg (1.2-4) stonking; urgency=medium
+ .
+   * Fix something.
+Checksums-Sha1:
+ deadbeef 1234 testpkg_1.2-4.dsc
+"""
+
+
+class _Upload:
+    changes_file_url = "https://launchpad.net/ubuntu/noble/+upload/1/+files/x.changes"
+
+
+def test_queue_changes_text_decodes_the_changes_field(monkeypatch):
+    import urllib.request
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: _Response(_CHANGES_FILE)
+    )
+    text = archive_lookup.queue_changes_text(_Upload())
+    # One-space continuation prefix stripped, ' .' decoded to a blank line,
+    # field ends at the next non-continuation header.
+    assert text == "testpkg (1.2-4) stonking; urgency=medium\n\n  * Fix something."
+
+
+def test_queue_changes_text_none_on_fetch_failure(monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    def raise_error(*a, **k):
+        raise urllib.error.URLError("boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_error)
+    assert archive_lookup.queue_changes_text(_Upload()) is None
+
+
+def test_queue_changes_text_none_without_changes_field(monkeypatch):
+    import urllib.request
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: _Response(b"Format: 1.8\n")
+    )
+    assert archive_lookup.queue_changes_text(_Upload()) is None
+
+
+def test_queue_changes_text_none_without_url():
+    class NoUrl:
+        changes_file_url = None
+
+    assert archive_lookup.queue_changes_text(NoUrl()) is None

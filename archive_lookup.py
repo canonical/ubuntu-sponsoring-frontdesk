@@ -199,8 +199,11 @@ def upload_in_queue(lp, package, series_name, version):
     invisible to getPublishedSources/madison. Typical for an SRU waiting on
     the SRU team in the Unapproved queue (design_journal.md #55).
 
-    Tri-state: True (in queue), False (not in queue), None (lookup failed --
-    the caller must not treat a failed lookup as "not queued")."""
+    Tri-state: the PackageUpload entry (truthy -- in queue; pass it to
+    queue_changes_text() to see WHOSE upload it is, a same-version race is
+    possible since SRU version increments are convention-fixed), False (not
+    in queue), None (lookup failed -- the caller must not treat a failed
+    lookup as "not queued")."""
     try:
         series = lp.distributions["ubuntu"].getSeries(name_or_version=series_name)
         # Unapproved first: it's where SRUs (and freeze-time devel uploads)
@@ -220,7 +223,7 @@ def upload_in_queue(lp, package, series_name, version):
                     status,
                     getattr(upload, "pocket", "?"),
                 )
-                return True
+                return upload
         return False
     except Exception as e:
         logger.warning(
@@ -302,6 +305,45 @@ def changes_file_vcs_keys(pub):
             if line.startswith(key + ":"):
                 keys[key] = line[len(key) + 1 :].strip()
     return keys
+
+
+def queue_changes_text(upload):
+    """The `Changes:` field of a queued PackageUpload's .changes file,
+    decoded back into changelog-stanza form, or None if it can't be
+    fetched/parsed.
+
+    A PackageUpload exposes `changes_file_url` (an attribute, unlike a
+    publication's changesFileUrl() method), publicly fetchable even for
+    the Unapproved queue (verified live, libp11 noble upload 38582499).
+    The Changes field carries the new changelog stanza(s) in RFC822
+    continuation encoding: every line prefixed with one space, blank
+    lines encoded as ' .'. It has NO ' -- maintainer' trailer line --
+    callers comparing against a debian/changelog stanza must ignore the
+    trailer on their side (design_journal.md #56)."""
+    url = getattr(upload, "changes_file_url", None)
+    if not url:
+        logger.warning("queued upload has no changes_file_url")
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            text = resp.read().decode(errors="replace")
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        logger.warning("could not fetch queue .changes at %s: %s", url, e)
+        return None
+    lines = None
+    for line in text.splitlines():
+        if lines is None:
+            if line.startswith("Changes:"):
+                lines = []
+            continue
+        if not line.startswith(" "):
+            break  # end of the folded field
+        line = line[1:]
+        lines.append("" if line == "." else line)
+    if not lines:
+        logger.warning("no Changes field found in queue .changes at %s", url)
+        return None
+    return "\n".join(lines)
 
 
 # --- Version comparison (apt_pkg) ---------------------------------------------

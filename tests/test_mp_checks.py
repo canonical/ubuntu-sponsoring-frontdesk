@@ -488,6 +488,7 @@ def _patch_archive(
     changelog=None,
     historical_pub=None,
     queued=False,
+    queue_changes=None,
 ):
     """historical_pub is what an any-status published_source lookup
     (status=None) returns -- design_journal.md #43's cmp<0 check for a
@@ -513,6 +514,9 @@ def _patch_archive(
         "upload_in_queue",
         lambda lp, pkg, series, version: queued,
     )
+    monkeypatch.setattr(
+        archive_lookup, "queue_changes_text", lambda upload: queue_changes
+    )
 
 
 def test_stale_version_newer_than_archive_is_fine(monkeypatch):
@@ -521,15 +525,62 @@ def test_stale_version_newer_than_archive_is_fine(monkeypatch):
     assert checks.check_stale_version("url", mp, _LP()) is False
 
 
+# The queue .changes' Changes field: same stanza as _CHANGELOG_DIFF_V124's
+# new entry, but WITHOUT the ' -- maintainer' trailer (a .changes Changes
+# field never carries one -- design #56's trailer-insensitive comparison).
+_QUEUE_CHANGES_MATCHING = """testpkg (1.2-4) stonking; urgency=medium
+
+  * Fix something."""
+
+_QUEUE_CHANGES_DIFFERENT = """testpkg (1.2-4) stonking; urgency=medium
+
+  * A completely different SRU that raced this MP to the same version."""
+
+
 def test_stale_version_newer_but_sitting_in_upload_queue_is_queued(monkeypatch):
     # Design #55, found live: libp11 MP #507660 -- the SRU was already
     # uploaded and waiting in noble's Unapproved queue, so there's nothing
     # left to sponsor; defer silently instead of running the LLM review.
-    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, queued=True)
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-3"},
+        queued=object(),
+        queue_changes=_QUEUE_CHANGES_MATCHING,
+    )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     lp = _LP()
     assert checks.check_stale_version("url", mp, lp) == "queued"
     assert lp.comments == []
+
+
+def test_stale_version_queued_with_different_content_bounces(monkeypatch):
+    # Design #56 (seb128): SRU version increments are convention-fixed, so
+    # an independent SRU racing this MP picks the SAME version number --
+    # a queue hit only means "nothing to do" if the changelog content
+    # matches; otherwise the contributor needs to rebase and bump.
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-3"},
+        queued=object(),
+        queue_changes=_QUEUE_CHANGES_DIFFERENT,
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    finding = checks.check_stale_version("url", mp, _LP())
+    assert finding.tier == "incomplete"
+    assert "1.2-4" in finding.message
+    assert "upload queue" in finding.message
+
+
+def test_stale_version_queued_but_changes_unreadable_is_inconclusive(monkeypatch):
+    # Can't tell WHOSE upload is in the queue -> can't determine, retry.
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-3"},
+        queued=object(),
+        queue_changes=None,
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert checks.check_stale_version("url", mp, _LP()) is None
 
 
 def test_stale_version_queue_lookup_failure_is_inconclusive(monkeypatch):

@@ -1069,6 +1069,16 @@ def _normalize_changelog_entry(text):
     return "\n".join(line.rstrip() for line in text.strip("\n").splitlines())
 
 
+def _strip_changelog_trailer(text):
+    """Drop a stanza's ' -- maintainer <email>  date' trailer line(s). A
+    queued upload's .changes Changes field carries the stanza WITHOUT the
+    trailer, so comparing it against a debian/changelog stanza must ignore
+    the trailer on both sides (design_journal.md #56)."""
+    return "\n".join(
+        line for line in text.splitlines() if not line.startswith(" -- ")
+    )
+
+
 def _bug_targets_package(bug, package):
     """True if any task on `bug` is against `package` -- a bug page can
     legitimately list several packages/projects, so any single match is
@@ -1376,9 +1386,43 @@ def check_stale_version(url, lp_obj, lp_client):
             )
             return None
         if queued:
+            # Same version doesn't prove same upload: SRU version increments
+            # are convention-fixed, so an independent SRU racing this MP
+            # would pick the very same version number (seb128, design #56).
+            # Tell them apart by changelog content, same idea as
+            # _classify_against_publication -- the queue .changes' Changes
+            # field carries the new stanza (sans the ' -- ' trailer, so the
+            # trailer is ignored on both sides).
+            queue_entry = archive_lookup.queue_changes_text(queued)
+            if queue_entry is None:
+                logger.debug(
+                    "check_stale_version: couldn't read the queued upload's "
+                    "Changes field; can't determine whose upload it is."
+                )
+                return None
+            same_content = _normalize_changelog_entry(
+                _strip_changelog_trailer(proposed_entry)
+            ) == _normalize_changelog_entry(_strip_changelog_trailer(queue_entry))
+            if not same_content:
+                logger.info(
+                    "[%s] version %r is waiting in the %s upload queue with "
+                    "DIFFERENT content -- a same-version race. Adding an "
+                    "incomplete finding.",
+                    url,
+                    proposed_version,
+                    target_series,
+                )
+                return Finding(
+                    "incomplete",
+                    f"An upload with the same version (`{proposed_version}`) "
+                    "but different content is already waiting in the "
+                    f"{target_series} upload queue. Your change needs to be "
+                    "rebased (with a new version number) and resubmitted.",
+                )
             logger.info(
-                "[%s] version %r is already waiting in the %s upload queue; "
-                "nothing left to sponsor while it awaits archive review.",
+                "[%s] version %r is already waiting in the %s upload queue "
+                "with matching content; nothing left to sponsor while it "
+                "awaits archive review.",
                 url,
                 proposed_version,
                 target_series,
