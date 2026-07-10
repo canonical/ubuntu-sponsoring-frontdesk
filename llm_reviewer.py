@@ -48,6 +48,13 @@ _SYNC_TITLE_DETAIL_RE = re.compile(
 )
 
 
+# Same shape as checks._TARGET_SERIES_RE (kept in sync by hand -- checks
+# imports this module, so it can't be imported from there): git-ubuntu MP
+# targets are 'ubuntu/<series>-devel' for an SRU, 'ubuntu/devel' for the
+# development series.
+_MP_TARGET_SERIES_RE = re.compile(r"ubuntu/(?P<series>[a-z0-9.]+?)(?:-devel)?$")
+
+
 def _is_sru(tags, description):
     """True if the bug looks like a Stable Release Update."""
     if _SRU_TAGS.intersection(t.lower() for t in (tags or [])):
@@ -774,6 +781,24 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 )
         return bullets, feature
 
+    def _targets_stable_series(self, lp_obj):
+        """
+        True when the MP's target branch names a specific stable Ubuntu
+        series ('ubuntu/noble-devel') -- the SRU shape (design #59).
+        'ubuntu/devel', unparseable targets (Debian merges), and a series
+        that turns out to BE the current devel codename are all False.
+        Fails toward True when the devel codename can't be looked up: an
+        explicitly-named series target is almost always an SRU, and the
+        only cost of a wrong True is skipping an advisory-only question.
+        """
+        target = getattr(lp_obj, "target_git_path", "") or ""
+        match = _MP_TARGET_SERIES_RE.search(target)
+        series = match.group("series") if match else None
+        if not series or series == "devel":
+            return False
+        devel = archive_lookup.devel_codename(self.lp) if self.lp else None
+        return series != devel
+
     def triage_mp(self, lp_obj, diff_text=None):
         """
         Main entrypoint for LLM Merge Proposal triage (design #47).
@@ -823,8 +848,13 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         # The FF classification only ever matters if we're actually past
         # Feature Freeze -- pre-freeze there's no finding it could produce
         # (see the `if feature:` gate below), so skip asking for it and save
-        # the tokens/latency on every other MP in the queue.
-        check_feature = release_schedule.is_after_feature_freeze()
+        # the tokens/latency on every other MP in the queue. It's also a
+        # devel-series concept: an SRU targets an already-released series
+        # where Feature Freeze doesn't apply, so skip it for SRU-targeted
+        # MPs regardless of date (design #59; #52's gate was date-only).
+        check_feature = release_schedule.is_after_feature_freeze() and (
+            not self._targets_stable_series(lp_obj)
+        )
         ff_instruction = (
             """
 Separately, classify the change for Feature Freeze purposes: does it

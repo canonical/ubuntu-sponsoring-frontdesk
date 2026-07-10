@@ -231,6 +231,49 @@ def test_feature_after_freeze_adds_ffe_bullet(monkeypatch):
     assert "Feature Freeze Exception" in message
 
 
+def test_sru_targeted_mp_skips_the_ff_question_even_after_freeze(monkeypatch):
+    # FF is a devel-series concept (#59): an SRU targeting a stable series
+    # must not get the classification question -- or an FFe bullet -- no
+    # matter the date. The model here even answers feature=yes; without a
+    # `feature:` field requested, _extract_mp_review must not act on it.
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, _ = r.triage_mp(
+        FakeMP(target="refs/heads/ubuntu/noble-devel"), diff_text=MERGE_DIFF
+    )
+    assert status == "READY_FOR_HUMAN"
+    assert "Feature Freeze" not in r.prompts[0]
+
+
+def test_devel_series_named_by_codename_still_gets_the_ff_question(monkeypatch):
+    # 'ubuntu/stonking-devel' names a series explicitly, but it IS the
+    # current devel series -- not an SRU, the FF question still applies.
+    import types
+
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+    r = ScriptedReviewer(_reply(feature="yes"))
+    r.lp = types.SimpleNamespace(
+        distributions={
+            "ubuntu": types.SimpleNamespace(
+                current_series=types.SimpleNamespace(name="stonking")
+            )
+        }
+    )
+    status, payload = r.triage_mp(
+        FakeMP(target="refs/heads/ubuntu/stonking-devel"), diff_text=MERGE_DIFF
+    )
+    assert status == "ADVISORY"
+    assert "Feature Freeze Exception" in payload[0][1]
+
+
 def test_feature_before_freeze_stays_quiet(monkeypatch):
     monkeypatch.setattr(
         release_schedule,

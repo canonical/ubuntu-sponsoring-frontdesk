@@ -639,9 +639,18 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     substantive in the linked bug (a real "needs fixing", regex presence
     + possibly LLM substance -- note `review_sru_template` exists but is
     bug-side only); (b) version-collision check vs later series
-    (`ubuntu1` where the SRU convention wants `ubuntu0.1`); (c) skip the
-    Feature-Freeze classification for SRU-targeted MPs regardless of
-    date (FF is a devel-series concept; #52's gate is date-only).
+    (`ubuntu1` where the SRU convention wants `ubuntu0.1`); (c) ~~skip
+    the Feature-Freeze classification for SRU-targeted MPs~~ DONE, see
+    item 40.
+
+40. **FF classification skipped for SRU-targeted MPs (#59, DONE
+    2026-07-11).** `triage_mp`'s `check_feature` gate is now
+    `after_freeze AND not _targets_stable_series(mp)` -- FF is a
+    devel-series concept, so an SRU MP no longer gets the classification
+    question (or an FFe bullet) regardless of date. Fails toward
+    skipping (advisory-only cost) when the devel codename can't be
+    looked up. Not observable live until Feature Freeze; covered by
+    tests. 309 tests.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
