@@ -118,6 +118,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   asks whether the bug text says it's already fixed there (task tables are
   often stale — updating them needs privileges submitters usually lack).
   Always advisory (question tier), never a reject reason.
+- **Direct source-edit check** — Check 8, `check_direct_source_edit`
+  (#60): a fix MP whose diff touches files outside `debian/` gets an
+  incomplete-tier bounce — changes to upstream code must be provided as
+  patches under `debian/patches`
+  (https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/).
+  Silently exempt: merge MPs, new upstream versions, and native packages
+  (no Debian revision in the version — read from the new stanza, or from
+  the archive when the MP carries no stanza at all). MP-only today; the
+  same rule for debdiff attachments on bugs is backlog (STATUS item 43).
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,
@@ -140,7 +149,8 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   Feature Freeze classification (feature past FF → "will need an FFe"
   bullet, `kind="verify"`; the classification question itself is skipped
   in the prompt entirely pre-freeze, #52, since the bullet can never fire
-  before then). All findings advisory (`question` tier, `ADVISORY` status
+  before then, and for SRU-targeted MPs regardless of date, #59, since FF
+  is a devel-series concept). All findings advisory (`question` tier, `ADVISORY` status
   → `[(kind, bullet), ...]` → one `Finding("question", bullet, kind=kind)`
   per pair); malformed LLM output means silence. Skips quietly when the
   diff is empty or adds no complete new changelog stanza. Bullets must be

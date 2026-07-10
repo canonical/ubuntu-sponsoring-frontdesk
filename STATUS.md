@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-10_
+_Last updated: 2026-07-11_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -678,6 +678,21 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     via `attachment.data`, unlike lpcli -- see item 1's canonical/lpcli#23
     note). Needs: fetch the debdiff, parse changed paths, reuse the
     same exemptions (native, new upstream version).
+
+44. **Backlog: bug-attachment content foundation (seb128, 2026-07-11 --
+    "we need to tackle patches attached to bug reports at some point").**
+    Items 42/43 and several older gaps share one missing primitive:
+    fetch a bug's attached patch/debdiff (`attachment.data`, gunzip if
+    needed) and expose the MP path's diff helpers
+    (`_split_debian_diff`, `_new_changelog_stanza`) over it. That
+    unlocks bug-side parity for: Check 8 (item 43), `check_stale_version`
+    (patch's stanza version vs archive -- backlog since #27),
+    `check_changelog_bug_reference`, the missing-stanza check (item 42),
+    and Rule B's "does the new attachment address the bounce" step
+    (item 1). Design questions: which attachment when several (newest
+    patch-flagged?), size caps, graceful skip for non-diff attachments
+    (tarballs). Build as one foundation + small per-check branches, not
+    piecemeal.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
