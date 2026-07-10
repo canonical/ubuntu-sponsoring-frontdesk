@@ -67,7 +67,9 @@ digraph SponsoringBot {
     llm -> notifnote [style=dotted, arrowhead=none];
     c6  -> notifnote [style=dotted, arrowhead=none];
 
-    incgate -> llm [label="no"];
+    c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches, LLM escape hatch\n→ advisory Finding", shape=box, fillcolor="#FFFFFF"];
+    incgate -> c7 [label="no"];
+    c7 -> llm [label="fired / clean\n(None -> silent, like the gate)"];
     llm -> tbug [label="bug / bug_task"];
     llm -> tmp  [label="merge_proposal"];
     tbug -> kind;

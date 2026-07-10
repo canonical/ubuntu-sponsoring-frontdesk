@@ -281,6 +281,24 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
+    # Check 7: SRU "fix newer series first" (#58). Deliberately after the
+    # inconclusive gate, unlike checks 1-6: its escape hatch can spend an
+    # LLM call, which would be wasted on a pass that can't act. Its own
+    # None (a Launchpad or LLM failure) gets the same treatment as the
+    # gate -- post nothing, persist nothing, retry next run.
+    result = checks.check_sru_newer_series(url, lp_obj, lp_client, llm_reviewer)
+    checkpoint("check_sru_newer_series")
+    logger.debug("check_sru_newer_series -> %s", result)
+    if result is None:
+        logger.info(
+            "check_sru_newer_series couldn't be fully evaluated (a lookup/"
+            "LLM failure). Posting nothing this run -- facts won't be "
+            "persisted, so this URL is retried next run."
+        )
+        return
+    if result:
+        findings.append(result)
+
     logger.info("Deterministic checks evaluated. Moving to LLM review...")
 
     # LLM Phase: folds into the same findings pool (design #31) -- SYNCED

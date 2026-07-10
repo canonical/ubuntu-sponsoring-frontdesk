@@ -110,6 +110,14 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   stanza (#56 — SRU version increments are convention-fixed, so a
   same-version queue hit can be an independent racing SRU; different
   content bounces as "rebase with a new version" instead).
+- **SRU "fix newer series first" check** — Check 7, `check_sru_newer_series`
+  (#58): SRU policy requires the fix to land in the development release
+  (and, by extension, every supported series newer than the SRU's target)
+  first. Handled = task Fix Released/Committed, a linked MP targeting that
+  series, or a series-named patch attachment; otherwise one LLM question
+  asks whether the bug text says it's already fixed there (task tables are
+  often stale — updating them needs privileges submitters usually lack).
+  Always advisory (question tier), never a reject reason.
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,

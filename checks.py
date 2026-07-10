@@ -1781,3 +1781,259 @@ def _classify_against_publication(
         "content already exists in the archive. Your change needs to be "
         "rebased (with a new version number) and resubmitted.",
     )
+
+
+# Task shape of a series-specific Ubuntu bug task: 'pkg (Ubuntu Noble)'.
+_SERIES_TASK_RE = re.compile(r"^(?P<pkg>\S+) \(Ubuntu (?P<series>[A-Za-z]+)\)$")
+
+
+def _series_evidence(bug, package, series_name, is_devel, devel_name):
+    """
+    Whether `bug` shows the fix for `package` is handled in `series_name`:
+    its bug task is Fix Released/Committed, a linked (active) MP targets
+    that series, or a patch attachment names it. Purely mechanical -- the
+    'bug text says it's fixed there' case is the LLM's question, not ours.
+    Raises on Launchpad read failures (callers map that to inconclusive).
+    """
+    task_name = f"{package} (Ubuntu)" if is_devel else f"{package} (Ubuntu {series_name.title()})"
+    for task in bug.bug_tasks:
+        if (task.bug_target_name or "").lower() == task_name.lower():
+            if task.status in DONE_STATUSES:
+                return True
+    for mp in bug.linked_merge_proposals:
+        if mp.queue_status in _INACTIVE_MP_STATUSES:
+            continue
+        target = getattr(mp, "target_git_path", "") or ""
+        match = _TARGET_SERIES_RE.search(target)
+        if not match:
+            continue
+        mp_series = match.group("series")
+        if mp_series == series_name or (is_devel and mp_series in ("devel", devel_name)):
+            return True
+    for attachment in bug.attachments:
+        title = (attachment.title or "").lower()
+        if series_name.lower() in title:
+            return True
+    return False
+
+
+def check_sru_newer_series(url, lp_obj, lp_client, llm):
+    """
+    Check 7: SRU 'fix newer series first' (design_journal.md #58).
+
+    SRU policy (https://ubuntu.com/project/docs/SRU/reference/requirements)
+    requires the development release to be fixed before a stable series
+    gets the SRU -- and by extension every supported series newer than the
+    target. We can't verify the fix actually landed in those series (it may
+    have arrived via a refactoring or a newer upstream release), but the
+    bug's own metadata is checkable: for each newer supported series the
+    fix counts as handled when its bug task is Fix Released/Committed, a
+    linked MP targets it, or a patch attachment names it (the common
+    'one bug, three MPs' shape).
+
+    When some newer series looks unhandled mechanically, the LLM gets one
+    focused question -- does the bug text state the issue is already fixed
+    there? (Task tables are often stale: updating them needs privileges
+    most submitters don't have, while the description frequently documents
+    'newer series ship version X which has the fix'.) Yes -> a soft
+    'please update the bug tasks' note; no -> the full advisory. Both are
+    question-tier/advisory: per seb128 this is never a reject reason, the
+    ask is that the bug reflects reality and the fix lands newest-first.
+
+    Returns a Finding ("question"/advisory), False (not an SRU, or all
+    newer series handled), or None (a Launchpad/LLM lookup failed --
+    inconclusive, retry next run; main.py persists no facts).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+
+    # Decide "not an SRU" from the item itself before any Launchpad lookup:
+    # the vast majority of items exit here for free.
+    if resource_type == "branch_merge_proposal":
+        package = _source_package_from_mp(lp_obj)
+        if not package:
+            logger.debug(
+                "check_sru_newer_series: could not determine source package; "
+                "skipping."
+            )
+            return False
+        target = getattr(lp_obj, "target_git_path", "") or ""
+        match = _TARGET_SERIES_RE.search(target)
+        target_series = match.group("series") if match else None
+        if not target_series or target_series == "devel":
+            # Lands via the devel series (see _target_ubuntu_series).
+            logger.debug("check_sru_newer_series: targets devel; not an SRU.")
+            return False
+        devel_name = archive_lookup.devel_codename(lp_client.lp)
+        if devel_name is None:
+            return None
+        if target_series == devel_name:
+            logger.debug("check_sru_newer_series: targets devel; not an SRU.")
+            return False
+        try:
+            bugs = [bug for bug in lp_obj.bugs if _bug_targets_package(bug, package)]
+        except Exception as e:
+            logger.warning(
+                "check_sru_newer_series: couldn't read the MP's linked bugs "
+                "(%s); can't determine.",
+                e,
+            )
+            return None
+        if not bugs:
+            # An SRU MP without a linked bug has bigger problems (the LLM
+            # review flags that); nothing to evaluate here.
+            logger.debug(
+                "check_sru_newer_series: no linked bug targeting %r; skipping.",
+                package,
+            )
+            return False
+    elif resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        bugs = [bug]
+        # SRU shape on the bug side: an open series-specific task. The
+        # OLDEST open stable series is the deepest SRU target -- everything
+        # newer than it must be covered. (A devel-series task nominated by
+        # name rather than the plain 'pkg (Ubuntu)' would land in this list
+        # too, harmlessly: nothing is newer than it, so `newer` comes out
+        # empty below.)
+        open_series = []
+        package = None
+        try:
+            for task in bug.bug_tasks:
+                match = _SERIES_TASK_RE.match(task.bug_target_name or "")
+                if not match:
+                    continue
+                if task.status in CLOSED_STATUSES:
+                    continue
+                open_series.append(match.group("series").lower())
+                package = package or match.group("pkg")
+        except Exception as e:
+            logger.warning(
+                "check_sru_newer_series: couldn't read the bug's tasks (%s); "
+                "can't determine.",
+                e,
+            )
+            return None
+        if not open_series:
+            logger.debug(
+                "check_sru_newer_series: no open series-specific task; not "
+                "an SRU (or nothing left to do)."
+            )
+            return False
+        devel_name = archive_lookup.devel_codename(lp_client.lp)
+        if devel_name is None:
+            return None
+        target_series = None  # resolved against the ordered list below
+    else:
+        return False
+
+    series_order = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_order is None:
+        return None
+    series_names = [name for name, _version in series_order]
+    series_versions = dict(series_order)
+    if resource_type in ("bug", "bug_task"):
+        candidates = [name for name in series_names if name in open_series]
+        if not candidates:
+            # The open series task(s) are for EOL series; a human call.
+            logger.debug(
+                "check_sru_newer_series: open series tasks (%s) aren't in "
+                "the supported set; skipping.",
+                open_series,
+            )
+            return False
+        target_series = candidates[0]
+    if target_series not in series_names:
+        # SRU to an EOL/unknown series -- out of scope for this check.
+        logger.debug(
+            "check_sru_newer_series: target series %r not in the supported "
+            "set; skipping.",
+            target_series,
+        )
+        return False
+
+    newer = series_names[series_names.index(target_series) + 1 :]
+    unhandled = []
+    try:
+        for series_name in newer:
+            is_devel = series_name == devel_name
+            if not any(
+                _series_evidence(bug, package, series_name, is_devel, devel_name)
+                for bug in bugs
+            ):
+                unhandled.append(series_name)
+    except Exception as e:
+        logger.warning(
+            "check_sru_newer_series: couldn't read the bug's tasks/MPs/"
+            "attachments (%s); can't determine.",
+            e,
+        )
+        return None
+
+    logger.debug(
+        "check_sru_newer_series: target=%r newer=%s unhandled=%s",
+        target_series,
+        newer,
+        unhandled,
+    )
+    if not unhandled:
+        return False
+
+    # Escape hatch: the bug text often documents that newer series already
+    # ship the fix even when nobody with the privileges updated the tasks.
+    bug_text = "\n\n".join(
+        f"{getattr(bug, 'title', '') or ''}\n{getattr(bug, 'description', '') or ''}"
+        for bug in bugs
+    )
+    # Label each series with its release version: recent codenames postdate
+    # any LLM's training data, so 'fixed in plucky 25.04+' is only readable
+    # as covering resolute if the prompt says resolute is Ubuntu 26.04
+    # (found on design #58's live probe).
+    labeled = [
+        f"{name} (Ubuntu {series_versions[name]})" for name in unhandled
+    ]
+    stated_fixed = llm.review_fixed_in_newer_series(bug_text, labeled)
+    if stated_fixed is None:
+        logger.debug(
+            "check_sru_newer_series: LLM invocation failed; can't determine."
+        )
+        return None
+
+    series_list = ", ".join(unhandled)
+    if stated_fixed:
+        logger.info(
+            "[%s] SRU to %s: bug text says %s already fixed, tasks don't "
+            "reflect it. Adding a soft advisory finding.",
+            url,
+            target_series,
+            series_list,
+        )
+        return Finding(
+            "question",
+            f"This looks like an SRU targeting {target_series}. The bug "
+            f"text suggests the issue is already fixed in the newer Ubuntu "
+            f"series ({series_list}), but the bug's task table doesn't "
+            "reflect that. Please mark those tasks as fixed (or ask on the "
+            "bug for someone with the permissions to do it) so the SRU "
+            "status is clear to reviewers.",
+            kind="advisory",
+        )
+
+    logger.info(
+        "[%s] SRU to %s with no sign the fix landed in %s first. Adding an "
+        "advisory finding.",
+        url,
+        target_series,
+        series_list,
+    )
+    return Finding(
+        "question",
+        f"This looks like an SRU targeting {target_series}, but there is no "
+        f"indication that the issue is fixed in the newer Ubuntu series "
+        f"({series_list}). Per the SRU requirements "
+        "(https://ubuntu.com/project/docs/SRU/reference/requirements) the "
+        "fix should land in the development release first, and ideally in "
+        "the newer stable series too. If it is already fixed there, please "
+        "update the bug tasks to reflect that; otherwise the fix should be "
+        "uploaded to the newer series before this update.",
+        kind="advisory",
+    )

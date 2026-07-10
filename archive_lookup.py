@@ -104,6 +104,35 @@ def devel_codename(lp):
         return None
 
 
+def supported_series_ordered(lp):
+    """The Ubuntu series a fix can still be expected to land in -- status
+    Supported, Current Stable Release, or Active Development -- as a list
+    of (codename, version) pairs ordered oldest release first (so the
+    current devel series is last). Versions ride along because an LLM
+    can't be assumed to know recent codenames' ordering (design #58's
+    live probe: the model had no idea 'resolute' is 26.04, so 'fixed in
+    plucky 25.04+' didn't read as covering it). Includes ESM-only series
+    (they report 'Supported' too), which is harmless: callers only look
+    at series NEWER than an SRU's target. None on lookup failure
+    (tri-state; a failure must not read as 'no newer series exist')."""
+    try:
+        entries = []
+        for series in lp.distributions["ubuntu"].series:
+            if series.status in (
+                "Supported",
+                "Current Stable Release",
+                "Active Development",
+            ):
+                # '24.04' -> (24, 4): the release version orders series
+                # chronologically; codenames don't.
+                key = tuple(int(part) for part in series.version.split("."))
+                entries.append((key, series.name, series.version))
+        return [(name, version) for _key, name, version in sorted(entries)]
+    except Exception as e:
+        logger.warning("Launchpad lookup failed (supported Ubuntu series): %s", e)
+        return None
+
+
 def ubuntu_versions(lp, package, series_names=None):
     """{suite: version} for `package` currently published in Ubuntu's
     primary archive, restricted to `series_names` (e.g. ['noble']; defaults

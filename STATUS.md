@@ -618,6 +618,20 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     one-time double-post risk; the facts gate remains the primary guard.
     291 tests. Not yet seen on a live write.
 
+38. **SRU "fix newer series first" check (#58, DONE 2026-07-10).** New
+    Check 7 `check_sru_newer_series`: for an SRU (MP targeting a stable
+    series, or bug with an open series task), every newer supported
+    series (devel included) must show the fix handled -- task Fix
+    Released/Committed, a linked MP per series, or a series-named patch.
+    Mechanically unhandled series get one LLM question ("does the bug
+    text say it's fixed there?", series labeled with release versions
+    since codenames postdate LLM training); yes -> soft "update the bug
+    tasks" advisory, no -> full advisory citing the SRU requirements.
+    Never blocks/votes; runs after the inconclusive gate to avoid
+    wasted tokens. Live-probed on trigger MP #507660 (libp11/noble):
+    mechanical layer right first try, prompt iterated twice for the
+    codename-ordering gap. 307 tests.
+
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 
 No crashes, no unhandled exceptions (one grep false-positive: an LLM-quoted

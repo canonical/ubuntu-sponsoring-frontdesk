@@ -185,8 +185,10 @@ class FakeMPComment:
 
 
 class FakeSeries:
-    def __init__(self, name):
+    def __init__(self, name, version=None, status="Supported"):
         self.name = name
+        self.version = version
+        self.status = status
 
 
 class FakePublication:
@@ -210,9 +212,12 @@ class FakeArchive:
 
 
 class FakeDistribution:
-    def __init__(self, devel_series_name="noble", archive=None):
+    def __init__(self, devel_series_name="noble", archive=None, series=None):
         self.current_series = FakeSeries(devel_series_name)
         self.main_archive = archive if archive is not None else FakeArchive()
+        # Full series table (archive_lookup.supported_series_ordered, #58);
+        # empty by default -- only the SRU newer-series tests populate it.
+        self.series = series or []
 
     def getSeries(self, name_or_version):
         return FakeSeries(name_or_version)
@@ -327,3 +332,12 @@ class FakeLLM:
 
     def triage_mp(self, obj, diff_text=None):
         return self.mp_result
+
+    # Check 7's escape hatch (#58): default False = "the bug text doesn't
+    # say it's fixed in newer series", the full-advisory path.
+    fixed_in_newer = False
+
+    def review_fixed_in_newer_series(self, bug_text, series_names):
+        self.newer_series_queries = getattr(self, "newer_series_queries", [])
+        self.newer_series_queries.append((bug_text, list(series_names)))
+        return self.fixed_in_newer
