@@ -629,8 +629,11 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     Released/Committed, a linked MP per series, or a series-named patch.
     Mechanically unhandled series get one LLM question ("does the bug
     text say it's fixed there?", series labeled with release versions
-    since codenames postdate LLM training); yes -> soft "update the bug
-    tasks" advisory, no -> full advisory citing the SRU requirements.
+    since codenames postdate LLM training); yes -> silent skip (since
+    #68: the old "update the bug tasks" advisory asked for series
+    nomination, a restricted action most contributors lack, and the
+    text already informs reviewers -- seen live on bug #2148507),
+    no -> full advisory citing the SRU requirements.
     Never blocks/votes; runs after the inconclusive gate to avoid
     wasted tokens. Live-probed on trigger MP #507660 (libp11/noble):
     mechanical layer right first try, prompt iterated twice for the

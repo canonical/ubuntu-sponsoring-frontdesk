@@ -116,8 +116,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   first. Handled = task Fix Released/Committed, a linked MP targeting that
   series, or a series-named patch attachment; otherwise one LLM question
   asks whether the bug text says it's already fixed there (task tables are
-  often stale — updating them needs privileges submitters usually lack).
-  Always advisory (question tier), never a reject reason.
+  often stale — updating them needs nomination rights submitters usually
+  lack, so a yes skips silently since #68; only "no basis to conclude
+  it's fixed" produces the advisory). Question tier, never a reject
+  reason.
 - **Direct source-edit check** — Check 8, `check_direct_source_edit`
   (#60): a fix MP whose diff touches files outside `debian/` gets an
   incomplete-tier bounce — changes to upstream code must be provided as
