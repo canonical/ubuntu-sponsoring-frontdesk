@@ -63,9 +63,15 @@ def test_sync_request_is_exempt_despite_no_patch():
     assert lp.comments == []
 
 
+# The default FakeMP targets debian/sid (a merge, landing via devel), so
+# qualifying bugs need an open devel ask: the plain '(Ubuntu)' task.
+def _devel_ask_bug(**kwargs):
+    return FakeBug(tasks=[FakeTask("foo (Ubuntu)", "New")], **kwargs)
+
+
 def test_linked_mp_with_sponsors_reviewer_fires_mp_review():
     mp = FakeMP(votes=[FakeVote("~ubuntu-sponsors")])
-    bug = FakeBug(linked_merge_proposals=[mp])
+    bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
     assert len(lp.comments) == 1
@@ -75,7 +81,7 @@ def test_linked_mp_with_sponsors_reviewer_fires_mp_review():
 
 def test_linked_mp_already_reviewed_fires_mp_review():
     mp = FakeMP(votes=[FakeVote("~rr", comment_link="/comments/1")])
-    bug = FakeBug(linked_merge_proposals=[mp])
+    bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
 
@@ -84,10 +90,77 @@ def test_linked_mp_without_review_signal_is_left_for_a_human():
     # An MP exists but has no sponsors reviewer and no review yet: can't tell
     # which queue entry to keep, so don't touch anything.
     mp = FakeMP(votes=[FakeVote("~rr")])
-    bug = FakeBug(linked_merge_proposals=[mp])
+    bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
     assert lp.comments == []
+
+
+# --- the MP must be a sponsoring venue (gnocchi bug #2148798) ------------------
+
+
+def test_team_fork_mp_is_not_a_review_venue():
+    # ~ubuntu-openstack-dev-style fork branches (master, stable/*) are a
+    # team's internal workflow, never sponsoring-queue entries -- however
+    # reviewed. The MP still shields the no_patch close (left for a human).
+    mp = FakeMP(
+        target="refs/heads/master", votes=[FakeVote("~rr", comment_link="/c/1")]
+    )
+    bug = _devel_ask_bug(linked_merge_proposals=[mp])
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+
+
+def test_merged_mp_is_not_a_review_venue():
+    # A Merged MP's review is over; it can't be where the review continues.
+    mp = FakeMP(
+        queue_status="Merged", votes=[FakeVote("~rr", comment_link="/c/1")]
+    )
+    bug = _devel_ask_bug(linked_merge_proposals=[mp])
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+
+
+def test_mp_for_a_series_the_bug_does_not_ask_about_is_ignored():
+    # The MP targets jammy but the bug only has an open noble task.
+    mp = FakeMP(
+        target="refs/heads/ubuntu/jammy-devel",
+        votes=[FakeVote("~rr", comment_link="/c/1")],
+    )
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu Noble)", "In Progress")],
+        linked_merge_proposals=[mp],
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+
+
+def test_mp_matching_an_open_series_task_fires_mp_review():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel",
+        votes=[FakeVote("~rr", comment_link="/c/1")],
+    )
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu Noble)", "In Progress")],
+        linked_merge_proposals=[mp],
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
+
+
+def test_closed_series_task_does_not_qualify_the_mp():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel",
+        votes=[FakeVote("~rr", comment_link="/c/1")],
+    )
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu Noble)", "Fix Released")],
+        linked_merge_proposals=[mp],
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
 
 
 def test_rejected_mp_is_ignored_and_no_patch_fires():

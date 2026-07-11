@@ -285,6 +285,54 @@ _PATCH_FILENAME_RE = attachments.PATCH_FILENAME_RE
 # Linked MPs in these states are no longer a review venue.
 _INACTIVE_MP_STATUSES = ("Rejected", "Superseded")
 
+# A merge MP's target: debian/sid or debian/experimental, which lands via
+# the devel series (see check_target_branch).
+_DEBIAN_MERGE_TARGET_RE = re.compile(r"debian/(sid|experimental)$")
+
+# 'pkg (Ubuntu)' or 'pkg (Ubuntu Noble)' -- the series a bug task asks about.
+_UBUNTU_TASK_SERIES_RE = re.compile(r"\(Ubuntu(?: (?P<series>[A-Za-z]+))?\)$")
+
+# Task statuses that no longer ask for sponsoring in that series.
+_CLOSED_TASK_STATUSES = (
+    "Fix Released",
+    "Fix Committed",
+    "Won't Fix",
+    "Invalid",
+    "Opinion",
+    "Expired",
+)
+
+
+def _bug_sponsoring_venue_series(mp):
+    """The Ubuntu series (codename, or 'devel') an MP would land in if it is
+    a git-ubuntu sponsoring MP -- None when its target branch doesn't follow
+    the git-ubuntu convention at all (e.g. a team packaging fork's master/
+    stable/* branches, which are never sponsoring-queue venues; found live
+    on gnocchi bug #2148798, ~ubuntu-openstack-dev's fork)."""
+    target = getattr(mp, "target_git_path", "") or ""
+    if _DEBIAN_MERGE_TARGET_RE.search(target):
+        return "devel"
+    match = _TARGET_SERIES_RE.search(target)
+    return match.group("series") if match else None
+
+
+def _bug_open_ubuntu_series(bug):
+    """(devel_open, {series codenames with an open task}) -- which series
+    this bug still asks sponsoring for. The plain 'pkg (Ubuntu)' task is
+    the devel ask."""
+    devel_open = False
+    series_open = set()
+    for task in bug.bug_tasks:
+        match = _UBUNTU_TASK_SERIES_RE.search(task.bug_target_name or "")
+        if not match or task.status in _CLOSED_TASK_STATUSES:
+            continue
+        series = match.group("series")
+        if series is None:
+            devel_open = True
+        else:
+            series_open.add(series.lower())
+    return devel_open, series_open
+
 # A plausible link to a proposed package build/source, for needs-packaging
 # bugs (design_journal.md #50). A brand-new package has no existing branch
 # to attach a patch/debdiff to, so pointing at a PPA (the build) and/or a
@@ -353,7 +401,13 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
       case) already its own sponsoring-queue entry -- the bug is a duplicate,
       so unsubscribe ~ubuntu-sponsors from it and let the review continue on
       the MP. A linked MP with neither signal proves nothing (it may not be
-      in the queue at all), so it is left for a human.
+      in the queue at all), so it is left for a human. Qualifying MPs must
+      actually be sponsoring venues (seb128, found live on gnocchi bug
+      #2148798 whose linked MPs were a team packaging fork's): not Merged,
+      target branch following the git-ubuntu convention (`ubuntu/devel`,
+      `ubuntu/<series>[-devel]`, or `debian/sid`/`debian/experimental` for
+      a merge, which lands via devel), and that series still open on the
+      bug (a series task, or the plain Ubuntu task for devel).
 
     - "no_patch": no linked MP and no patch attached (Launchpad's patch flag,
       or a *.debdiff/*.diff/*.patch filename) -- nothing to sponsor yet, so
@@ -376,7 +430,33 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
             for mp in bug.linked_merge_proposals
             if mp.queue_status not in _INACTIVE_MP_STATUSES
         ]
+        devel_open, series_open = _bug_open_ubuntu_series(bug)
         for mp in active_mps:
+            # Only a git-ubuntu MP whose target branch corresponds to a
+            # series this bug still asks sponsoring for is "the review
+            # venue" -- a team fork's master/stable/* MP is not, however
+            # reviewed it is (gnocchi bug #2148798). Merged is also out:
+            # that review is over, it can't be where the review continues.
+            if mp.queue_status == "Merged":
+                continue
+            venue_series = _bug_sponsoring_venue_series(mp)
+            if venue_series is None:
+                continue
+            if venue_series == "devel":
+                if not devel_open:
+                    devel_name = archive_lookup.devel_codename(lp_client.lp)
+                    if devel_name is None:
+                        return None
+                    if devel_name not in series_open:
+                        continue
+            elif venue_series not in series_open:
+                if not devel_open:
+                    continue
+                devel_name = archive_lookup.devel_codename(lp_client.lp)
+                if devel_name is None:
+                    return None
+                if venue_series != devel_name:
+                    continue
             sponsors_requested = False
             reviewed = False
             for vote in mp.votes:
