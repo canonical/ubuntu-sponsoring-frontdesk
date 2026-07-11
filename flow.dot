@@ -29,7 +29,7 @@ digraph SponsoringBot {
     // ---- closing-tier checks (short-circuit: already resolved) ----
     c1  [label="Check 1: administrative_state\n(closing)", shape=box, fillcolor="#FFFFFF"];
     c1b [label="Check 1b: nothing_to_sponsor\n(bugs only, closing -- #46)", shape=box, fillcolor="#FFFFFF"];
-    c1bnote [label="linked MP with ~ubuntu-sponsors\nreviewer or an actual review ->\nreview lives on the MP;\nno MP + no patch (sync exempt) ->\nnothing to review yet", shape=note, fillcolor="#FFFDE7"];
+    c1bnote [label="linked MP with ~ubuntu-sponsors\nreviewer or an actual review ->\nreview lives on the MP\n(#71: only a real venue -- git-ubuntu\nbranch for a series open on the bug,\nnot Merged; team forks don't count);\nno MP + no patch (sync exempt) ->\nnothing to review yet, UNLESS a\nhuman is engaged in the comments (#72)", shape=note, fillcolor="#FFFDE7"];
     c1b -> c1bnote [style=dotted, arrowhead=none];
 
     // ---- finding-collecting checks (keep evaluating -- #31/#44) ----
@@ -73,8 +73,11 @@ digraph SponsoringBot {
     llm -> notifnote [style=dotted, arrowhead=none];
     c6  -> notifnote [style=dotted, arrowhead=none];
 
-    c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches, LLM escape hatch\n→ advisory Finding", shape=box, fillcolor="#FFFFFF"];
-    incgate -> c7 [label="no"];
+    c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches; series without the\npackage exempt (#69); LLM escape hatch\n(bug text says fixed -> skip, #68)\n→ advisory Finding", shape=box, fillcolor="#FFFFFF"];
+    engearly [label="human engaged already? (#73)\n(memoized; skips the\ntoken-spending phases)", shape=diamond, fillcolor="#FFF9C4"];
+    incgate -> engearly [label="no"];
+    engearly -> c7 [label="no / None /\nsync-shaped (SYNCED\nmust stay reachable)"];
+    engearly -> rfh [label="yes: suppress now,\nfacts persist, no LLM spend"];
     c7 -> llm [label="fired / clean\n(None -> silent, like the gate)"];
     llm -> tbug [label="bug / bug_task"];
     llm -> tmp  [label="merge_proposal"];
@@ -87,8 +90,8 @@ digraph SponsoringBot {
 
     // ---- findings aggregation + human-engaged gate (#44/#45) ----
     agg     [label="any findings collected?", shape=diamond, fillcolor="#FFF9C4"];
-    engaged [label="human reviewer engaged?\n(MP comment by non-submitter,\nnon-bot, non-service-account\nsince current diff -- #45)", shape=diamond, fillcolor="#FFF9C4"];
-    post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug (LLM INCOMPLETE): tasks → Incomplete", shape=box, fillcolor="#FFE0B2"];
+    engaged [label="human reviewer engaged? (#45/#72)\ncomment by non-submitter, non-bot,\nnon-service-account since the current\ndiff (MP) / newest usable diff\nattachment (bug; none -> any counts)", shape=diamond, fillcolor="#FFF9C4"];
+    post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug + any blocking finding (#70):\ntasks → Incomplete, closing line says\n\"set it back to New\" when addressed", shape=box, fillcolor="#FFE0B2"];
 
     agg -> engaged [label="yes"];
     engaged -> post [label="no"];
@@ -122,4 +125,7 @@ digraph SponsoringBot {
 
     sweepnote [label="After the queue pass: Rule B sweep (#66)\nbugs in WAITING_ON_CONTRIBUTOR, clock = date_incomplete:\nnew usable diff OR response addresses bounce_reason (LLM)\n-> tasks back to New; 30d silence -> final comment\n+ unsubscribe ~ubuntu-sponsors -> DONE", shape=note, fillcolor="#FFFDE7"];
     wait -> sweepnote [style=dotted, arrowhead=none];
+
+    secnote [label="~ubuntu-security-sponsors items (#72):\ntriaged like any bug (comments + statuses OK);\nthe bot can't unsubscribe that team yet\n(backlog 5b), so they stay in the security queue", shape=note, fillcolor="#FFFDE7"];
+    done -> secnote [style=dotted, arrowhead=none];
 }

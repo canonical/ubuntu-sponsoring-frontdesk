@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-11_
+_Last updated: 2026-07-12_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -16,9 +16,14 @@ stale-version scrutiny as MP diffs, typo'd `LP: #nnn` closers are caught,
 and plain code patches are bounced with "please prepare a debdiff". The LLM
 only ever produces a *recommendation*; the orchestrator performs writes,
 behind a confirmation gate. Everything the pass found is posted as ONE
-aggregated review comment (#44), and that comment is suppressed entirely
-once a human reviewer is already engaged on the item (#45). After the queue
-pass, Rule B (#66) revisits previously bounced bugs: a real response flips
+aggregated review comment (#44); a bug bounce also sets the tasks
+Incomplete and tells the contributor to set them back to New once
+addressed (#70). The whole aggregate is suppressed -- and the LLM phases
+skipped (#73) -- once a human reviewer is already engaged on the item
+(#45 MPs, #72 bugs; the no_patch close respects it too). Security items
+(~ubuntu-security-sponsors) are triaged like any bug; only the team
+unsubscribe is pending membership (backlog 5b). After the queue pass,
+Rule B (#66) revisits previously bounced bugs: a real response flips
 them back into review, a month of silence gets them swept out of the queue.
 Current pipeline: `flow.svg`.
 
@@ -795,6 +800,31 @@ Notable:
   permission fix taking effect, and watch for any further `question`-tier
   MP review output now that it's split into "Please verify"/"Nice to
   have".
+
+## `--interactive` run, 2026-07-11/12 (the #61-#66 write run)
+
+Seven live-found issues, all fixed same-day (journal #67-#73):
+
+- **E2BIG crash on rust-sequoia-sqv** (+merge/502068, 4665 vendored
+  files): the LLM prompt was an argv string; now stdin, and the
+  non-debian path list in the MP prompt is capped at 50 with vendored
+  paths collapsed to a count first (#67).
+- **Check 7's "update the tasks" advisory** asked for series-nomination
+  rights contributors don't have -> text-says-fixed now skips (#68);
+  and a newer series without the package published (removed, e.g.
+  u-boot-nezha after noble) is exempt deterministically (#69).
+- **Deterministic bug bounces didn't set Incomplete** (bug #2145103) --
+  now any blocking finding does, and the closing line explains the way
+  back ("set it back to New") (#70). That bug's tasks were fixed by hand.
+- **The mp_review redirect fired on a Merged team-fork MP** (gnocchi bug
+  #2148798) -> venue qualification (#71); the accurate "already
+  uploaded" close now gets to speak instead.
+- **The no_patch close nearly talked over an active security review**
+  (mapserver bug #2069291) -> bug-side human-engaged (#72), and engaged
+  items skip the token-spending phases entirely (#73).
+- Writes performed this run: #2148798 (gnocchi) closed, #2145103
+  (libfprint) bounced (declined comment on #2069291 predates the #72
+  fix). Remaining queue items to continue through.
 
 ## Known residual edges (documented in code)
 
