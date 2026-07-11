@@ -164,8 +164,18 @@ def test_bug_without_patch_closed_end_to_end(tmp_path):
 
     # Attaching a patch changes the facts fingerprint, so the bug is
     # re-triaged (not skipped at the facts-unchanged gate) once the
-    # contributor re-subscribes ~ubuntu-sponsors.
-    bug.attachments.append(FakeAttachment("fix.debdiff", type="Patch"))
+    # contributor re-subscribes ~ubuntu-sponsors. Content must be
+    # debdiff-shaped (touch debian/) or Check 10 (#64) would bounce it.
+    bug.attachments.append(
+        FakeAttachment(
+            "fix.debdiff",
+            type="Patch",
+            content=(
+                "--- foo-1.0/debian/rules\n+++ foo-1.1/debian/rules\n"
+                "@@ -1 +1 @@\n-a\n+b\n"
+            ),
+        )
+    )
     main.triage_url(URL, sm, lp, FakeLLM())
     assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
 

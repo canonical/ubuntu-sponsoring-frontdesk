@@ -83,7 +83,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # EXCEPT when a check couldn't fully determine an answer (a lookup/fetch
     # failure, not a genuine "nothing to flag"). Checks signal that by
     # returning None instead of False; `inconclusive` tracks whether any did,
-    # across checks 1-6/8/9 (check 7 runs after the gate and handles its own
+    # across checks 1-6/8-10 (check 7 runs after the gate and handles its own
     # None the same way). An inconclusive pass posts nothing and persists
     # nothing (design #31's addendum: the aggregated comment must not claim
     # completeness it doesn't have) -- persisting would make the top-level
@@ -285,6 +285,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     result = checks.check_missing_changelog_stanza(url, lp_obj, lp_client)
     checkpoint("check_missing_changelog_stanza")
     logger.debug("check_missing_changelog_stanza -> %s", result)
+    if result is None:
+        inconclusive = True
+    elif result:
+        findings.append(result)
+
+    # Check 10: a plain code patch on a bug needs to become a debdiff
+    # (#64). Deterministic, pre-gate.
+    result = checks.check_patch_not_debdiff(url, lp_obj, lp_client)
+    checkpoint("check_patch_not_debdiff")
+    logger.debug("check_patch_not_debdiff -> %s", result)
     if result is None:
         inconclusive = True
     elif result:

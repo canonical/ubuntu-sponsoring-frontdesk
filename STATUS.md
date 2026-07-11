@@ -701,15 +701,28 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     `check_changelog_bug_reference` parity (DONE 2026-07-11,
     design_journal.md #63 -- typo'd `LP: #nnn` closers in an attached
     debdiff now bounce; package from the entry's own header; citing the
-    host bug verified without an API call). **Remaining consumers
-    (backlog):** `check_stale_version` for patches (stanza version vs
-    archive -- backlog since #27), Check 9 parity (debdiff missing a
-    changelog entry -- plain patches legitimately have none), Rule B's
-    "does the new attachment address the bounce" step (item 1), SRU
+    host bug verified without an API call). Third consumer: Check 10
+    (item 45). **Remaining consumers (backlog):** `check_stale_version`
+    for patches (stanza version vs archive -- backlog since #27), Rule
+    B's "does the new attachment address the bounce" step (item 1), SRU
     bugs with one debdiff per series (an all-candidates variant of
     `review_target`), and possibly a soft "the debdiff cites no LP bug,
     publication won't auto-close this report" advisory (seen live on
-    #2158304; deliberately left out of #63).
+    #2158304; deliberately left out of #63). The old "Check 9 parity"
+    idea (debdiff missing a changelog entry) is subsumed by Check 10
+    (#64).
+
+45. **Check 10: plain code patches on bugs must become debdiffs (DONE,
+    2026-07-11).** See design_journal.md #64. A plain patch (no debian/
+    file in the diff, including git format-patch output) isn't
+    sponsorable as-is -- sponsors won't write the changelog and do the
+    packaging themselves -- so bounce asking for a debdiff (incomplete
+    tier, seb128 wording, doc link work-with-debian-patches). Exempt:
+    merge bugs, sync requests, needs-packaging bugs, bugs with an
+    active linked MP. Live-swept the full queue (42 bugs, read-only):
+    17 usable diff attachments, all correctly classified as debdiffs,
+    zero fires/false positives; the firing path is test-covered until
+    a plain patch shows up in the queue.
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 

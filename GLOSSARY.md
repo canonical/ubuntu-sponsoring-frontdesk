@@ -137,6 +137,14 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   bug-side content checks; consumers so far: Check 8 (#62) and the
   changelog bug-reference check (#63 -- typo'd `LP: #nnn` closers in an
   attached debdiff bounce the same way they do on an MP).
+- **Plain-patch check** — Check 10, `check_patch_not_debdiff` (#64): a
+  bug whose newest usable diff attachment touches no `debian/` file is
+  a plain code patch (incl. git format-patch output) -- not sponsorable
+  as-is, so it gets an incomplete-tier bounce asking for a debdiff
+  (patch under `debian/patches` + a new changelog entry,
+  https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/).
+  Exempt: merge bugs, sync requests, needs-packaging bugs, bugs with an
+  active linked MP.
 - **Missing changelog-entry check** — Check 9,
   `check_missing_changelog_stanza` (#61): a fix MP whose diff doesn't
   touch `debian/changelog` at all gets an incomplete-tier bounce asking

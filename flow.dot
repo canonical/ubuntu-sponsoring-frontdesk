@@ -50,13 +50,15 @@ digraph SponsoringBot {
     c5 -> c6;
     c8 [label="Check 8: direct_source_edit (#60/#62)\nupstream files edited, not patched\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c9 [label="Check 9: missing_changelog_stanza (#61)\nno debian/changelog entry in the diff\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c10 [label="Check 10: patch_not_debdiff (#64)\nplain code patch on a bug\n→ ask for a debdiff, incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c6 -> c8;
     c8 -> c9;
+    c9 -> c10;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];
     silent  [label="post NOTHING, skip LLM,\npersist nothing -- the aggregate\nmust not claim completeness (#44)", shape=box, fillcolor="#ECEFF1"];
-    c9 -> incgate;
+    c10 -> incgate;
     incgate -> silent [label="yes"];
 
     // ---- LLM phase ----

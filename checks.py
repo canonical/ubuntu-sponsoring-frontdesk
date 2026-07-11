@@ -2476,3 +2476,101 @@ def check_missing_changelog_stanza(url, lp_obj, lp_client):
         "https://ubuntu.com/project/docs/contributors/updating/"
         "commit-changes/#write-the-changelog-entry",
     )
+
+
+def check_patch_not_debdiff(url, lp_obj, lp_client):
+    """
+    Check 10: a plain code patch attached to a bug isn't sponsorable as-is
+    (design_journal.md #64). A patch against the upstream source (including
+    git format-patch output) is a nice step, but sponsors won't turn it
+    into a package update themselves -- that means writing the changelog,
+    doing the packaging change, and verifying the patch applies (seb128).
+    Ask for a debdiff instead.
+
+    Detection: the newest usable diff attachment (attachments.review_target,
+    memoized -- free after Check 8) touches no debian/ file at all. A diff
+    that does touch debian/ is already debdiff-shaped and is judged by
+    Check 8 / the changelog bug-reference check on its merits.
+
+    Silent skips, each erring toward not bouncing: merge bugs, sync
+    requests (no package update expected from the submitter), needs-
+    packaging bugs (no existing package to debdiff against, #50
+    territory), and bugs with an active linked MP (the review lives
+    there; the attachment is supplementary). Returns an incomplete
+    Finding, False, or None (attachment fetch or MP listing failed --
+    retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return False
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+
+    if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
+        logger.debug("check_patch_not_debdiff: merge bug; skipping.")
+        return False
+    if llm_reviewer._is_sync(
+        getattr(bug, "title", ""), getattr(bug, "description", "")
+    ):
+        logger.debug("check_patch_not_debdiff: sync request; skipping.")
+        return False
+    if _is_needs_packaging(bug):
+        logger.debug("check_patch_not_debdiff: needs-packaging bug; skipping.")
+        return False
+    try:
+        has_active_mp = any(
+            mp.queue_status not in _INACTIVE_MP_STATUSES
+            for mp in bug.linked_merge_proposals
+        )
+    except Exception as e:
+        logger.debug(
+            "check_patch_not_debdiff: couldn't read linked MPs (%s); "
+            "can't determine.",
+            e,
+        )
+        return None
+    if has_active_mp:
+        logger.debug(
+            "check_patch_not_debdiff: active linked MP; the review lives "
+            "there. Skipping."
+        )
+        return False
+
+    target = attachments.review_target(bug)
+    if target is None:
+        return None
+    if target is False:
+        return False
+    attachment, text = target
+
+    info = attachments.classify_diff(text)
+    if info["debian_paths"]:
+        logger.debug(
+            "check_patch_not_debdiff: %r touches debian/; debdiff-shaped, "
+            "judged elsewhere.",
+            getattr(attachment, "title", "?"),
+        )
+        return False
+    if not info["other_paths"]:
+        logger.debug(
+            "check_patch_not_debdiff: no file paths recognized in %r; "
+            "skipping.",
+            getattr(attachment, "title", "?"),
+        )
+        return False
+
+    logger.info(
+        "[%s] attachment %r is a plain code patch, not a debdiff. Adding "
+        "an incomplete finding.",
+        url,
+        getattr(attachment, "title", "?"),
+    )
+    return Finding(
+        "incomplete",
+        "The attachment is a plain code patch. Thank you for working on a "
+        "fix! To be ready for sponsoring it needs to be turned into a "
+        "source package update (debdiff): include the patch under "
+        "`debian/patches` and add a new `debian/changelog` entry with an "
+        "incremented version number describing the change -- see "
+        "https://ubuntu.com/project/docs/contributors/updating/"
+        "work-with-debian-patches/",
+    )

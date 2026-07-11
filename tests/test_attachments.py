@@ -259,3 +259,102 @@ def test_bugref_lookup_failure_with_nothing_confirmed_is_inconclusive():
         attachments=[FakeAttachment("fix.debdiff", content=DEBDIFF)],
     )
     assert checks.check_changelog_bug_reference(URL, bug, _LP()) is None
+
+
+# --- plain code patch needs to become a debdiff (#64) ------------------------
+
+FORMAT_PATCH = """\
+From 1234abcd Mon Sep 17 00:00:00 2001
+From: Riku <riku@example.com>
+Date: Fri, 10 Jul 2026 10:00:00 +0200
+Subject: [PATCH] Fix the resize crash
+
+---
+ src/framebuffer.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/framebuffer.cpp b/src/framebuffer.cpp
+--- a/src/framebuffer.cpp
++++ b/src/framebuffer.cpp
+@@ -1 +1 @@
+-int old;
++int fixed;
+"""
+
+
+def test_plain_patch_bounces_asking_for_a_debdiff():
+    bug = _bug([FakeAttachment("fix.patch", type="Patch", content=PLAIN_PATCH)])
+    finding = checks.check_patch_not_debdiff(URL, bug, None)
+    assert finding.tier == "incomplete"
+    assert "plain code patch" in finding.message
+    assert "source package update (debdiff)" in finding.message
+    assert "`debian/patches`" in finding.message
+    assert "`debian/changelog` entry with an incremented version" in finding.message
+    assert "work-with-debian-patches" in finding.message
+
+
+def test_git_format_patch_bounces_the_same_way():
+    bug = _bug([FakeAttachment("0001-fix.patch", content=FORMAT_PATCH)])
+    finding = checks.check_patch_not_debdiff(URL, bug, None)
+    assert finding.tier == "incomplete"
+
+
+def test_debdiff_shaped_attachment_is_not_this_checks_business():
+    bug = _bug([FakeAttachment("fix.debdiff", content=DEBDIFF)])
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_merge_bug_is_exempt():
+    bug = _bug(
+        [FakeAttachment("fix.patch", content=PLAIN_PATCH)],
+        title="Please merge testpkg 1.3-1 from Debian unstable",
+    )
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_sync_request_is_exempt():
+    bug = _bug(
+        [FakeAttachment("fix.patch", content=PLAIN_PATCH)],
+        title="Sync testpkg 1.3-1 (universe) from Debian unstable (main)",
+    )
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_needs_packaging_bug_is_exempt():
+    bug = FakeBug(
+        tasks=[FakeTask("ubuntu", "New")],
+        attachments=[FakeAttachment("fix.patch", content=PLAIN_PATCH)],
+    )
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_active_linked_mp_means_the_review_lives_there():
+    from fakes import FakeMP
+
+    bug = _bug([FakeAttachment("fix.patch", content=PLAIN_PATCH)])
+    bug.linked_merge_proposals = [FakeMP(queue_status="Needs review")]
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_inactive_linked_mp_does_not_shield_the_patch():
+    from fakes import FakeMP
+
+    bug = _bug([FakeAttachment("fix.patch", content=PLAIN_PATCH)])
+    bug.linked_merge_proposals = [FakeMP(queue_status="Rejected")]
+    assert checks.check_patch_not_debdiff(URL, bug, None).tier == "incomplete"
+
+
+def test_patch_fetch_failure_is_inconclusive():
+    bug = _bug([FakeAttachment("fix.patch", fail_fetch=True)])
+    assert checks.check_patch_not_debdiff(URL, bug, None) is None
+
+
+def test_no_usable_attachment_is_clean():
+    assert checks.check_patch_not_debdiff(URL, _bug([]), None) is False
+
+
+def test_mp_resource_is_skipped():
+    mp = types.SimpleNamespace(
+        resource_type_link="https://api.launchpad.net/devel/#branch_merge_proposal"
+    )
+    assert checks.check_patch_not_debdiff(URL, mp, None) is False
