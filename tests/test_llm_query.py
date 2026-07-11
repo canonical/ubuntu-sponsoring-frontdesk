@@ -94,10 +94,11 @@ def test_parse_ndjson_reply_no_text_event_falls_back_to_raw_stdout():
 
 
 def test_query_llm_invokes_opencode_with_json_format(monkeypatch):
-    captured_cmd = {}
+    captured = {}
 
-    def fake_run(cmd, text, capture_output, check):
-        captured_cmd["cmd"] = cmd
+    def fake_run(cmd, input, text, capture_output, check):
+        captured["cmd"] = cmd
+        captured["input"] = input
         stdout = _ndjson(
             _text_event("```yaml\nverdict: pass\nreason:\n```"), _step_finish_event()
         )
@@ -107,15 +108,18 @@ def test_query_llm_invokes_opencode_with_json_format(monkeypatch):
     r = LLMReviewer()
     output = r._query_llm("some prompt")
     assert "verdict: pass" in output
-    assert "--format" in captured_cmd["cmd"]
-    assert "json" in captured_cmd["cmd"]
-    assert "some prompt" in captured_cmd["cmd"]
+    assert "--format" in captured["cmd"]
+    assert "json" in captured["cmd"]
+    # The prompt travels over stdin, never argv: a prompt embedding a huge
+    # MP diff would otherwise exceed the kernel's argument-size limit.
+    assert captured["input"] == "some prompt"
+    assert "some prompt" not in captured["cmd"]
 
 
 def test_query_llm_logs_prompt_reply_and_usage(monkeypatch, caplog):
     import logging
 
-    def fake_run(cmd, text, capture_output, check):
+    def fake_run(cmd, input, text, capture_output, check):
         stdout = _ndjson(
             _text_event("the reply"),
             _step_finish_event(total=42, cost=0.007),
@@ -133,7 +137,7 @@ def test_query_llm_logs_prompt_reply_and_usage(monkeypatch, caplog):
 
 
 def test_query_llm_nonzero_exit_still_fails_safe(monkeypatch):
-    def fake_run(cmd, text, capture_output, check):
+    def fake_run(cmd, input, text, capture_output, check):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -142,7 +146,7 @@ def test_query_llm_nonzero_exit_still_fails_safe(monkeypatch):
 
 
 def test_query_llm_opencode_missing(monkeypatch):
-    def fake_run(cmd, text, capture_output, check):
+    def fake_run(cmd, input, text, capture_output, check):
         raise FileNotFoundError("opencode not found")
 
     monkeypatch.setattr(subprocess, "run", fake_run)

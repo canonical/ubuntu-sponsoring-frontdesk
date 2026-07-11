@@ -97,6 +97,11 @@ def _parse_sync_title(title):
 # not blow up the prompt.
 _MP_DIFF_CAP = 30_000
 
+# Cap on the non-debian/ path listing in the MP prompt. A vendored-tree MP
+# (rust-sequoia-sqv +merge/502068: 4665 files) would otherwise ship hundreds
+# of KB of near-identical paths the LLM gains nothing from.
+_MP_OTHER_FILES_CAP = 50
+
 # The added header line of a changelog stanza in a unified diff:
 # +pkg (version) series; urgency=...
 _ADDED_STANZA_HEADER_RE = re.compile(r"^\+\S+ \([^)]+\) [^;]+; urgency=")
@@ -174,10 +179,13 @@ class LLMReviewer:
         cmd = ["opencode", "run", "--format", "json", "--dangerously-skip-permissions"]
 
         # We can add model selection here if needed, e.g. cmd.extend(["--model", "gpt-4o"])
-        cmd.append(prompt)
-
+        # The prompt goes over stdin, not argv: prompts embedding a large MP
+        # diff can exceed the kernel's argument-size limit (seen live on a
+        # rust-sequoia-sqv MP vendoring 4600+ files -> E2BIG).
         try:
-            proc = subprocess.run(cmd, text=True, capture_output=True, check=False)
+            proc = subprocess.run(
+                cmd, input=prompt, text=True, capture_output=True, check=False
+            )
 
             if proc.returncode != 0:
                 logger.warning(
@@ -895,12 +903,36 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         truncated = len(debian_diff) > _MP_DIFF_CAP
         if truncated:
             debian_diff = debian_diff[:_MP_DIFF_CAP]
-        other_note = (
-            "Files changed outside debian/ (contents not shown):\n"
-            + "\n".join(f"  {p}" for p in other_files)
-            if other_files
-            else "No files changed outside debian/."
-        )
+        if other_files:
+            shown = other_files
+            vendor_note = ""
+            if len(shown) > _MP_OTHER_FILES_CAP:
+                # Vendored trees are the usual reason the list explodes and
+                # their individual paths carry no review signal -- collapse
+                # them to a count first so any interesting stray file still
+                # makes it under the cap.
+                vendored = [p for p in shown if "vendor" in p]
+                if vendored:
+                    shown = [p for p in shown if "vendor" not in p]
+                    vendor_note = (
+                        f"\n  plus {len(vendored)} files under vendored "
+                        "directories (paths containing 'vendor', not listed)."
+                    )
+            hidden = len(shown) - _MP_OTHER_FILES_CAP
+            shown = shown[:_MP_OTHER_FILES_CAP]
+            other_note = "Files changed outside debian/ (contents not shown):\n" + "\n".join(
+                f"  {p}" for p in shown
+            )
+            if hidden > 0:
+                other_note += f"\n  ... and {hidden} more files (not listed)."
+            other_note += vendor_note
+            if hidden > 0 or vendor_note:
+                other_note += (
+                    "\nDo not flag changes as missing or unmentioned on the "
+                    "basis of paths you cannot see."
+                )
+        else:
+            other_note = "No files changed outside debian/."
         truncation_note = (
             "NOTE: the debian/ diff below was TRUNCATED for size; do not "
             "flag changes as missing or undocumented on the basis of what "

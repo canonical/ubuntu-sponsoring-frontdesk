@@ -216,6 +216,52 @@ def test_oversized_debian_diff_is_truncated_with_note(monkeypatch):
     assert EXPECTED_STANZA in prompt
 
 
+def _diff_with_many_upstream_files(paths):
+    sections = "".join(
+        f"diff --git a/{p} b/{p}\nindex 1..2 100644\n--- a/{p}\n+++ b/{p}\n"
+        "@@ -1 +1 @@\n-a\n+b\n"
+        for p in paths
+    )
+    return MERGE_DIFF + sections
+
+
+def test_oversized_path_list_collapses_vendored_files_first(monkeypatch):
+    # rust-sequoia-sqv +merge/502068: 4600+ vendored paths blew the prompt
+    # up for zero review signal. Vendored paths are collapsed to a count so
+    # the interesting stray file still fits under the cap.
+    monkeypatch.setattr(llm_reviewer, "_MP_OTHER_FILES_CAP", 5)
+    paths = [f"rust-vendor/crate{i}/lib.rs" for i in range(20)] + ["src/real_edit.c"]
+    r = ScriptedReviewer(_reply())
+    r.triage_mp(FakeMP(), diff_text=_diff_with_many_upstream_files(paths))
+    prompt = r.prompts[0]
+    assert "src/real_edit.c" in prompt
+    assert "rust-vendor/crate1/lib.rs" not in prompt
+    assert "20 files under vendored directories" in prompt
+    assert "Do not flag changes as missing or unmentioned" in prompt
+
+
+def test_oversized_path_list_without_vendor_is_capped_with_count(monkeypatch):
+    monkeypatch.setattr(llm_reviewer, "_MP_OTHER_FILES_CAP", 5)
+    paths = [f"src/file{i:02d}.c" for i in range(9)]
+    r = ScriptedReviewer(_reply())
+    r.triage_mp(FakeMP(), diff_text=_diff_with_many_upstream_files(paths))
+    prompt = r.prompts[0]
+    assert "src/file00.c" in prompt
+    # MERGE_DIFF's own src/secretcode.c is also in the list, so 10 paths
+    # against a cap of 5 leaves 5 unlisted.
+    assert "... and 5 more files (not listed)." in prompt
+    assert "Do not flag changes as missing or unmentioned" in prompt
+
+
+def test_small_path_list_is_sent_whole_without_notes():
+    r = ScriptedReviewer(_reply())
+    r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
+    prompt = r.prompts[0]
+    assert "src/secretcode.c" in prompt
+    assert "more files" not in prompt
+    assert "vendored" not in prompt
+
+
 def test_feature_after_freeze_adds_ffe_bullet(monkeypatch):
     monkeypatch.setattr(
         release_schedule,
