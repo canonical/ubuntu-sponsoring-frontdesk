@@ -2191,3 +2191,99 @@ def check_direct_source_edit(url, lp_obj, lp_client):
         "upstream versions -- see "
         "https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/",
     )
+
+
+_LP_BUG_REF_RE = re.compile(r"LP:\s*#(\d+)", re.IGNORECASE)
+
+
+def _mp_bug_numbers(lp_obj):
+    """
+    Bug numbers to suggest in a changelog `LP: #nnn` closer: the MP's
+    linked bugs first, else `LP: #nnn` references found in the MP's
+    commit message / description. Empty list when neither has any --
+    changes don't always come with a bug and that's fine (seb128,
+    design_journal.md #61). None when the linked-bugs API call itself
+    failed (retriable, per the checks.py None/False convention).
+    """
+    try:
+        numbers = [str(bug.id) for bug in lp_obj.bugs if getattr(bug, "id", None)]
+    except Exception as e:
+        logger.debug("_mp_bug_numbers: couldn't read linked bugs (%s).", e)
+        return None
+    if numbers:
+        return numbers
+    text = "\n".join(
+        getattr(lp_obj, field, "") or ""
+        for field in ("commit_message", "description")
+    )
+    return list(dict.fromkeys(_LP_BUG_REF_RE.findall(text)))
+
+
+def check_missing_changelog_stanza(url, lp_obj, lp_client):
+    """
+    Check 9: the MP doesn't add a debian/changelog entry (design_journal.md
+    #61). Every upload needs a new changelog entry with an incremented
+    version; the trigger shape (nux MP #508190) touched only source files
+    and would otherwise get feedback about everything except the missing
+    changelog.
+
+    Only fires when debian/changelog is completely absent from the diff.
+    A touched changelog with no *added* header line (e.g. appending bullet
+    points to an existing UNRELEASED entry) is deliberately treated as
+    clean -- erring toward not bouncing.
+
+    Silent skips: missing/empty diff (check 4's problem), merge MPs
+    (reviewed on their own terms and always end with a reconstruct-
+    changelog step). Returns an incomplete Finding, False, or None (diff
+    fetch, merge detection, or linked-bugs lookup failed -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    text = diff_text(lp_obj)
+    if text is None:
+        logger.debug("check_missing_changelog_stanza: diff unreadable.")
+        return None
+    if text is False or not text.strip():
+        return False
+
+    lines = _changelog_diff_lines(lp_obj)
+    if lines is not False:
+        logger.debug("check_missing_changelog_stanza: changelog touched; clean.")
+        return False
+
+    merge = _is_merge_proposal(lp_obj)
+    if merge is None:
+        return None
+    if merge:
+        logger.debug("check_missing_changelog_stanza: merge MP; skipping.")
+        return False
+
+    bug_numbers = _mp_bug_numbers(lp_obj)
+    if bug_numbers is None:
+        return None
+    if bug_numbers:
+        refs = ", ".join(f"`LP: #{n}`" for n in bug_numbers)
+        plural = len(bug_numbers) > 1
+        lp_clause = (
+            f", including {'' if plural else 'an '}{refs} "
+            f"reference{'s' if plural else ''} so the "
+            f"bug{'s are' if plural else ' is'} closed when the package "
+            "is published"
+        )
+    else:
+        lp_clause = ""
+    logger.info(
+        "[%s] no debian/changelog entry in the diff. Adding an incomplete "
+        "finding.",
+        url,
+    )
+    return Finding(
+        "incomplete",
+        "The merge proposal doesn't add a `debian/changelog` entry "
+        "describing the changes. Please add a new changelog entry with an "
+        f"incremented version number{lp_clause} -- see "
+        "https://ubuntu.com/project/docs/contributors/updating/"
+        "commit-changes/#write-the-changelog-entry",
+    )

@@ -127,6 +127,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   (no Debian revision in the version — read from the new stanza, or from
   the archive when the MP carries no stanza at all). MP-only today; the
   same rule for debdiff attachments on bugs is backlog (STATUS item 43).
+- **Missing changelog-entry check** — Check 9,
+  `check_missing_changelog_stanza` (#61): a fix MP whose diff doesn't
+  touch `debian/changelog` at all gets an incomplete-tier bounce asking
+  for a new changelog entry with an incremented version number
+  (https://ubuntu.com/project/docs/contributors/updating/commit-changes/#write-the-changelog-entry).
+  The `LP: #nnn` suggestion appears only when a bug is linked to the MP
+  or referenced in its commit message/description. A touched changelog
+  without a new header (appending to an UNRELEASED entry) is clean;
+  merge MPs are exempt.
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,

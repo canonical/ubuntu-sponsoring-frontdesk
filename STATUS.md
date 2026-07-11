@@ -664,11 +664,18 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     shape). Proper nativeness classification (debian/source/format) is
     backlog. Live-verified on the trigger MP. 320 tests.
 
-42. **Backlog: missing debian/changelog stanza on a fix MP.** The nux
-    trigger MP changed no debian/ file at all -- no changelog entry, so
-    the LLM content review skips and nothing flags the absence itself.
-    A proper contribution needs a changelog entry; design as its own
-    small check (seb128, 2026-07-11: "that's for tomorrow").
+42. **Check 9: missing debian/changelog entry on a fix MP (DONE,
+    2026-07-11).** See design_journal.md #61. `check_missing_changelog_stanza`
+    (incomplete tier, deterministic, pre-gate): fires only when
+    debian/changelog is completely absent from the diff -- a touched
+    changelog with no added header (appending to an UNRELEASED entry)
+    is deliberately clean, erring toward not bouncing. Merge MPs
+    exempt. The bounce suggests an `LP: #nnn` closer only when a bug
+    is linked to the MP or referenced in its commit message/description
+    (seb128: a bug is often a good idea but not mandatory); wording by
+    seb128, doc anchor #write-the-changelog-entry. Live-verified on
+    nux #508190 (now gets both the patches and the changelog bounce).
+    332 tests.
 
 43. **Backlog: Check 8 for debdiff attachments on bugs (seb128,
     2026-07-11).** The direct-source-edit rule applies equally to a
@@ -687,7 +694,7 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     (`_split_debian_diff`, `_new_changelog_stanza`) over it. That
     unlocks bug-side parity for: Check 8 (item 43), `check_stale_version`
     (patch's stanza version vs archive -- backlog since #27),
-    `check_changelog_bug_reference`, the missing-stanza check (item 42),
+    `check_changelog_bug_reference`, Check 9 (item 42, MP-side DONE),
     and Rule B's "does the new attachment address the bounce" step
     (item 1). Design questions: which attachment when several (newest
     patch-flagged?), size caps, graceful skip for non-diff attachments
