@@ -129,6 +129,63 @@ def test_series_named_patch_attachment_counts_as_handled():
     )
 
 
+# --- the removed-package exemption (#69) --------------------------------------
+
+
+class _SeriesArchive:
+    """getPublishedSources honoring distro_series: the package is published
+    only in the given series names."""
+
+    def __init__(self, present):
+        self.present = present
+
+    def getPublishedSources(self, source_name, exact_match, distro_series, status):
+        from fakes import FakePublication
+
+        if distro_series.name in self.present:
+            return [FakePublication("1.0-1")]
+        return []
+
+
+def _lp_with_archive(present):
+    lp = _LP()
+    lp.lp.distributions["ubuntu"].main_archive = _SeriesArchive(present)
+    return lp
+
+
+def _open_sru_bug():
+    return _bug([FakeTask("testpkg (Ubuntu Noble)", "In Progress")])
+
+
+def test_package_removed_from_all_newer_series_skips_silently():
+    # u-boot-nezha (bug #2148507): removed after noble, so no fix can or
+    # need land in resolute/stonking. Deterministic -- no LLM question.
+    llm = FakeLLM()
+    lp = _lp_with_archive({"noble"})
+    assert checks.check_sru_newer_series("url", _sru_mp([_open_sru_bug()]), lp, llm) is False
+    assert getattr(llm, "newer_series_queries", []) == []
+
+
+def test_partial_removal_only_asks_about_remaining_series():
+    # Present in noble and stonking, removed from resolute: only stonking
+    # is still unhandled, and only it reaches the LLM and the advisory.
+    llm = FakeLLM()
+    lp = _lp_with_archive({"noble", "stonking"})
+    finding = checks.check_sru_newer_series("url", _sru_mp([_open_sru_bug()]), lp, llm)
+    assert "stonking" in finding.message
+    assert "resolute" not in finding.message
+    assert llm.newer_series_queries[0][1] == ["stonking (Ubuntu 26.10)"]
+
+
+def test_absence_from_target_series_disables_the_exemption():
+    # Package published nowhere (an introduction, or a lookup blind spot):
+    # absence can't be read as removal, fall through to the LLM path.
+    llm = FakeLLM()
+    lp = _lp_with_archive(set())
+    finding = checks.check_sru_newer_series("url", _sru_mp([_open_sru_bug()]), lp, llm)
+    assert "resolute, stonking" in finding.message
+
+
 # --- unhandled newer series: the LLM escape hatch ------------------------------
 
 

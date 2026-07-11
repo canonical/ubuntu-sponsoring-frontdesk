@@ -2214,6 +2214,43 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     if not unhandled:
         return False
 
+    # Removed-package exemption (design #69): a series where the package
+    # has no current publication needs no fix -- it was removed there
+    # (u-boot-nezha: gone since oracular, so no SRU to resolute/stonking
+    # is ever needed). Only trust absence as removal when the package IS
+    # published in the SRU's target series: a package being introduced to
+    # Ubuntu (rare in an SRU) would be absent from the target too. A
+    # failed lookup just falls through to the existing LLM path.
+    versions = archive_lookup.ubuntu_versions(
+        lp_client.lp, package, [target_series] + unhandled
+    )
+
+    def _present(series_name):
+        return any(
+            suite == series_name or suite.startswith(f"{series_name}-")
+            for suite in versions
+        )
+
+    if versions is not None and _present(target_series):
+        removed = [s for s in unhandled if not _present(s)]
+        if removed:
+            logger.debug(
+                "check_sru_newer_series: %s have no publication of %r "
+                "(removed after %s); exempt.",
+                removed,
+                package,
+                target_series,
+            )
+            unhandled = [s for s in unhandled if s not in removed]
+    if not unhandled:
+        logger.info(
+            "[%s] SRU to %s: the package is not published in any newer "
+            "series; nothing to land first. Skipping.",
+            url,
+            target_series,
+        )
+        return False
+
     # Escape hatch: the bug text often documents that newer series already
     # ship the fix even when nobody with the privileges updated the tasks.
     bug_text = "\n\n".join(

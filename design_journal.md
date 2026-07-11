@@ -669,3 +669,9 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 ## 68. Check 7: "Bug Text Says Fixed" Now Skips Instead of Advising
 **Date:** 2026-07-11
 * First `--interactive` sighting of #58's soft advisory (bug #2148507, u-boot-nezha) showed it asks the submitter to update the newer-series task table -- but nominating a bug to a series is a restricted Launchpad action most contributors can't perform, and the bug text already documents the situation for reviewers. seb128: skip rather than comment. The `stated_fixed` branch now returns False (clean); the "no indication the fix landed in newer series at all" advisory is unchanged -- there the concern is the fix itself, not task bookkeeping.
+
+## 69. Check 7: Removed-Package Exemption
+**Date:** 2026-07-11
+* Follow-up to #68, seb128's observation on the same bug (#2148507, u-boot-nezha): the package was removed after noble, visible in rmadison -- a deterministic way to know no fix can or need land in resolute/stonking, better than relying on the bug text mentioning it. Before the LLM escape hatch, `archive_lookup.ubuntu_versions` is queried for the target series + every mechanically unhandled one; an unhandled series with no current publication drops out.
+* **Introduction guard (seb128):** absence only reads as removal when the package IS published in the SRU's target series -- a package being introduced to Ubuntu (rare in an SRU) would be absent from the target too. Lookup failure or target-absent -> exemption not applied, fall through to the existing LLM path (no new inconclusive path).
+* All newer series exempt -> silent skip, no LLM call; partial -> only the remaining series reach the LLM and the advisory. Live-verified on the trigger bug: both series exempted deterministically, Check 7 -> False. 397 tests (3 new).
