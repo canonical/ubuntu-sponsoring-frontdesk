@@ -136,47 +136,82 @@ def check_human_engaged(lp_obj, lp_client):
     unreviewed push. If the diff carries no timestamp, any qualifying comment
     counts (erring toward staying quiet).
 
-    MPs only for now: bugs have no diff/push anchor and the right "since
-    current submission" frame is an open #35 question, so bugs always return
-    False (never suppressed) until that's decided.
+    Bugs too since #72 (the anchor #35 left open): "since the current
+    submission" is the newest usable diff attachment's upload date (the
+    #62 foundation); a bug without one counts any qualifying comment. The
+    submitter is the bug's reporter. Besides suppressing the findings
+    aggregate, main.py-independent callers use it too:
+    check_nothing_to_sponsor consults it before the no_patch close (an
+    engaged reviewer contradicts "nothing is happening here"), while
+    archive-fact closes (already uploaded/released) stay unaffected.
 
     Returns True/False, or None if the comment history couldn't be read
     (per the codebase-wide convention, #28: don't act either way on an
     infra failure; the caller posts nothing and retries next run).
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
-    if resource_type != "branch_merge_proposal":
-        return False
 
     lp = getattr(lp_client, "lp", None)
     me = getattr(getattr(lp, "me", None), "self_link", None)
     try:
-        submitter = lp_obj.registrant_link
-        diff = lp_obj.preview_diff
-        anchor = getattr(diff, "date_created", None) if diff is not None else None
-        for c in lp_obj.all_comments:
-            if c.author_link in (me, submitter):
+        if resource_type == "branch_merge_proposal":
+            submitter = lp_obj.registrant_link
+            diff = lp_obj.preview_diff
+            anchor = getattr(diff, "date_created", None) if diff is not None else None
+            comments = [
+                (c.author_link, getattr(c, "date_created", None))
+                for c in lp_obj.all_comments
+            ]
+            anchor_desc = "diff"
+        elif resource_type in ("bug", "bug_task"):
+            # Bug-side (#35's open half, built as #72): the anchor is the
+            # current proposed fix -- the newest usable diff attachment's
+            # upload date (the #62 foundation). No attachment or no date
+            # means any qualifying comment counts, erring toward staying
+            # quiet, same as an MP diff without a timestamp.
+            bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+            submitter = getattr(bug, "owner_link", None)
+            target = attachments.review_target(bug)
+            anchor = None
+            if target:
+                attachment, _text = target
+                anchor = getattr(
+                    getattr(attachment, "message", None), "date_created", None
+                )
+            comments = [
+                (m.owner_link, getattr(m, "date_created", None))
+                for m in bug.messages
+                if (m.content or "").strip()
+            ]
+            anchor_desc = "attachment"
+        else:
+            return False
+
+        for author, date in comments:
+            if author in (me, submitter):
                 continue
-            if c.author_link.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
+            if author.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
                 logger.debug(
                     "  [engaged] ignoring comment by %s: known service account.",
-                    c.author_link,
+                    author,
                 )
                 continue
-            if anchor is not None and getattr(c, "date_created", None) is not None:
-                if c.date_created <= anchor:
+            if anchor is not None and date is not None:
+                if date <= anchor:
                     logger.debug(
                         "  [engaged] ignoring comment by %s: predates the "
-                        "current diff (%s <= %s).",
-                        c.author_link,
-                        c.date_created,
+                        "current %s (%s <= %s).",
+                        author,
+                        anchor_desc,
+                        date,
                         anchor,
                     )
                     continue
             logger.info(
                 "  [engaged] human reviewer already engaged: comment by %s "
-                "since the current diff.",
-                c.author_link,
+                "since the current %s.",
+                author,
+                anchor_desc,
             )
             return True
     except Exception as e:
@@ -531,6 +566,20 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
             e,
         )
         return None
+
+    # An engaged reviewer contradicts "nothing is happening here" -- e.g.
+    # security bug #2069291, where the fix was being worked out in the
+    # comments (PPA links, patch lists) with a sponsor participating (#72).
+    engaged = check_human_engaged(bug, lp_client)
+    if engaged is None:
+        return None
+    if engaged:
+        logger.info(
+            "[%s] no patch attached, but a human is engaged in the "
+            "comments; leaving for the ongoing conversation.",
+            url,
+        )
+        return False
 
     logger.info(
         "[%s] no patch attached and no linked merge proposal: nothing to "

@@ -37,6 +37,23 @@ def test_no_patch_no_mp_fires():
     assert lp.unsubscribed == 1
 
 
+def test_no_patch_with_an_engaged_human_is_left_alone():
+    # Security bug #2069291 (#72): no attachment, but the fix was being
+    # worked out in the comments with a sponsor participating -- closing
+    # as "nothing is happening" would talk over that conversation.
+    bug = FakeBug(description="please fix this")
+    bug.messages = [
+        FakeBugMessage(
+            "https://api.launchpad.net/devel/~a-reviewer",
+            "here are the patches to backport",
+        )
+    ]
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+    assert getattr(lp, "unsubscribed", 0) == 0
+
+
 def test_flagged_patch_attachment_means_something_to_sponsor():
     bug = FakeBug(attachments=[FakeAttachment("fix", type="Patch")])
     lp = FakeTriageClient(objects={URL: bug})
@@ -305,7 +322,7 @@ def test_ordinary_bug_with_a_ppa_link_still_closes():
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
 
 
-def test_needs_packaging_comment_read_failure_does_not_crash():
+def test_needs_packaging_comment_read_failure_is_inconclusive():
     bug = _needs_packaging_bug(description="new package")
 
     class BoomMessages:
@@ -314,6 +331,8 @@ def test_needs_packaging_comment_read_failure_does_not_crash():
 
     bug.messages = BoomMessages()
     lp = FakeTriageClient(objects={URL: bug})
-    # Falls back to scanning the description alone; no link there -> closes
-    # as before, doesn't propagate the comment-read failure as inconclusive.
-    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
+    # The link scan tolerates the failure (falls back to the description),
+    # but since #72 the no_patch close also needs the comment history to
+    # rule out an engaged human -- unreadable means retry, not close.
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is None
+    assert lp.comments == []

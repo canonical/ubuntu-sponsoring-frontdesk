@@ -176,6 +176,9 @@ class FakeBug:
         id=1,
     ):
         self.id = id
+        # The bug's reporter -- the submitter for the #72 human-engaged
+        # check, mirroring FakeMP.registrant_link.
+        self.owner_link = HUMAN
         self.bug_tasks = tasks or []
         self.description = description
         self.tags = tags or []

@@ -256,6 +256,24 @@ class LPClient:
                 mode=self.mode,
                 outcome="performed",
             )
+            # Security updates queue via ~ubuntu-security-sponsors, which
+            # the bot cannot unsubscribe yet (not a team member; backlog:
+            # get the bot added once it has proven itself). Surface that
+            # the bug therefore stays in the security queue -- best-effort,
+            # purely informational.
+            try:
+                if any(
+                    s.person_link.rsplit("/", 1)[-1] == "~ubuntu-security-sponsors"
+                    for s in lp_obj.subscriptions
+                ):
+                    logger.info(
+                        "~ubuntu-security-sponsors is also subscribed to %s; "
+                        "the bot cannot unsubscribe that team yet, so the "
+                        "bug stays in the security sponsoring queue.",
+                        target,
+                    )
+            except Exception:
+                pass
         except Exception as e:
             self._record_write(
                 url=target,
