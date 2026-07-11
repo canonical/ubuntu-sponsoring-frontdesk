@@ -702,8 +702,13 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     design_journal.md #63 -- typo'd `LP: #nnn` closers in an attached
     debdiff now bounce; package from the entry's own header; citing the
     host bug verified without an API call). Third consumer: Check 10
-    (item 45). **Remaining consumers (backlog):** `check_stale_version`
-    for patches (stanza version vs archive -- backlog since #27), Rule
+    (item 45). Fourth: `check_stale_version` for debdiffs (DONE
+    2026-07-11, design_journal.md #65 -- verdict core shared via
+    _stale_version_verdict; series from the stanza's suite field;
+    already-landed closes immediately, no grace defer since the LP: #nnn
+    auto-close only runs at the release pocket; live sweep found 5
+    correct hits: 3 already-uploaded closes, 1 version collision, 1
+    stale). **Remaining consumers (backlog):** Rule
     B's "does the new attachment address the bounce" step (item 1), SRU
     bugs with one debdiff per series (an all-candidates variant of
     `review_target`), and possibly a soft "the debdiff cites no LP bug,

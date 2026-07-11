@@ -145,6 +145,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/).
   Exempt: merge bugs, sync requests, needs-packaging bugs, bugs with an
   active linked MP.
+- **Stale-version check (bugs)** — Check 6's bug path (#65): the
+  attached debdiff's stanza gives package, proposed version, and target
+  series (its own suite field, pocket suffixes stripped); the shared
+  verdict core compares against the archive and upload queue. Already
+  landed with matching content → comment + unsubscribe immediately (no
+  grace defer: the `LP: #nnn` auto-close only happens at the release
+  pocket); collision/stale → the usual rebase bounce.
 - **Missing changelog-entry check** — Check 9,
   `check_missing_changelog_stanza` (#61): a fix MP whose diff doesn't
   touch `debian/changelog` at all gets an incomplete-tier bounce asking
