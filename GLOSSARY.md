@@ -134,9 +134,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   decompressed size), `classify_diff` (parses both git-style diffs and
   debdiffs, whose paths carry a version-dir prefix), and `review_target`
   (the newest usable diff attachment, memoized per item). Foundation for
-  bug-side content checks; consumers so far: Check 8 (#62) and the
-  changelog bug-reference check (#63 -- typo'd `LP: #nnn` closers in an
-  attached debdiff bounce the same way they do on an MP).
+  bug-side content checks; consumers so far: Check 8 (#62), the changelog
+  bug-reference check (#63 -- typo'd `LP: #nnn` closers in an attached
+  debdiff bounce the same way they do on an MP), Check 10 (#64), the
+  stale-version bug path (#65), and Rule B's attachment step (#66).
 - **Plain-patch check** — Check 10, `check_patch_not_debdiff` (#64): a
   bug whose newest usable diff attachment touches no `debian/` file is
   a plain code patch (incl. git format-patch output) -- not sponsorable

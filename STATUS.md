@@ -10,11 +10,17 @@ rationale lives in `design_journal.md`.
 Triages the Ubuntu sponsoring queue (bugs + merge proposals): deterministic
 Python checks first, then an LLM phase (via `opencode`) for qualitative judgment
 (SRU template completeness, sync delta explanation, MP changelog/diff content
-review, SRU newer-series coverage). The LLM only ever produces
-a *recommendation*; the orchestrator performs writes, behind a confirmation gate.
-Everything the pass found is posted as ONE aggregated review comment (#44), and
-that comment is suppressed entirely once a human reviewer is already engaged on
-the item (#45). Current pipeline: `flow.svg`.
+review, SRU newer-series coverage). Bug *attachments* are first-class since
+#62 (`attachments.py`): debdiffs get the same direct-source-edit and
+stale-version scrutiny as MP diffs, typo'd `LP: #nnn` closers are caught,
+and plain code patches are bounced with "please prepare a debdiff". The LLM
+only ever produces a *recommendation*; the orchestrator performs writes,
+behind a confirmation gate. Everything the pass found is posted as ONE
+aggregated review comment (#44), and that comment is suppressed entirely
+once a human reviewer is already engaged on the item (#45). After the queue
+pass, Rule B (#66) revisits previously bounced bugs: a real response flips
+them back into review, a month of silence gets them swept out of the queue.
+Current pipeline: `flow.svg`.
 
 ## How to run
 
@@ -23,6 +29,7 @@ make test                       # unit suite (needs pytest, launchpadlib, pyyaml
 make smoke URL=<lp-url>          # read-only attribute check against real Launchpad
 python3 main.py --url <url> [--dry-run|--interactive|--yes] [--verbose]
 python3 main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
+python3 main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#66); --all already includes it
 ```
 
 Write modes: **`--dry-run`** (default; logs intended writes, does nothing),
