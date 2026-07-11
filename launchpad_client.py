@@ -327,6 +327,64 @@ class LPClient:
 
         return changed
 
+    def set_bug_tasks_new(self, lp_obj):
+        """
+        Flip the bug's Incomplete Ubuntu tasks back to New -- Rule B's
+        "the contributor responded to the bounce" transition (design
+        journal #66). Only tasks currently Incomplete are touched: the
+        bot only undoes the state it (or a reviewer) set while waiting,
+        never any other triage. Each transition is gated and audited.
+
+        Returns ``{bug_target_name: 'New'}`` for the tasks actually
+        changed (for folding into a facts snapshot, same invariant as
+        set_bug_tasks_incomplete).
+        """
+        resource_type = lp_obj.resource_type_link.split("#")[-1]
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        target = _target(bug)
+        changed = {}
+
+        for task in bug.bug_tasks:
+            name = task.bug_target_name or ""
+            if "(Ubuntu" not in name:
+                continue
+            if task.status != "Incomplete":
+                continue
+            decision = self._decide(f"Set '{name}' status back to New.")
+            if decision != "perform":
+                self._record_write(
+                    url=target,
+                    action="set_status",
+                    target=name,
+                    mode=self.mode,
+                    outcome=decision,
+                    detail="New",
+                )
+                continue
+            try:
+                task.transitionToStatus(status="New")
+                changed[name] = "New"
+                self._record_write(
+                    url=target,
+                    action="set_status",
+                    target=name,
+                    mode=self.mode,
+                    outcome="performed",
+                    detail="New",
+                )
+            except Exception as e:
+                self._record_write(
+                    url=target,
+                    action="set_status",
+                    target=name,
+                    mode=self.mode,
+                    outcome="error",
+                    detail=f"New: {e}",
+                )
+                logger.warning("Could not set '%s' back to New: %s", name, e)
+
+        return changed
+
     def _devel_series_display_name(self):
         """The current Ubuntu devel series' display name (e.g. 'Noble'), as it
         appears in a bug task's target ('pkg (Ubuntu Noble)'). None if it

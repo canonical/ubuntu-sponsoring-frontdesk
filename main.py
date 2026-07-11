@@ -11,6 +11,7 @@ from audit import AuditLog
 import attachments
 import checks
 import facts
+import sweep
 import notify
 from llm_reviewer import LLMReviewer
 
@@ -463,6 +464,9 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 "WAITING_ON_CONTRIBUTOR",
                 f"Bounced: {len(blocking)} finding(s) need contributor action.",
                 facts=persistable_facts(),
+                # Rule B's sweep (#66) later asks the LLM whether the
+                # contributor's response addresses this feedback.
+                bounce_reason=aggregated,
             )
             return
         # question-tier only: advisory, doesn't block a human review.
@@ -498,6 +502,11 @@ def main():
     group.add_argument("--url", help="The Launchpad Bug or MP URL to triage")
     group.add_argument(
         "--all", action="store_true", help="Process the entire sponsoring queue"
+    )
+    group.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Only run the stale-bounce sweep over previously bounced bugs (#66)",
     )
     parser.add_argument(
         "--force",
@@ -582,8 +591,13 @@ def main():
 
     if args.url:
         triage_url(args.url, state_manager, lp_client, llm_reviewer, force=args.force)
+    elif args.sweep:
+        sweep.sweep_bounced_bugs(state_manager, lp_client, llm_reviewer)
     elif args.all:
         process_queue(state_manager, lp_client, llm_reviewer, force=args.force)
+        # Rule B (#66): after the queue pass, revisit the bugs we bounced
+        # earlier and are still waiting on.
+        sweep.sweep_bounced_bugs(state_manager, lp_client, llm_reviewer)
 
 
 if __name__ == "__main__":

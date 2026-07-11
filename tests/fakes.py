@@ -1,5 +1,7 @@
 """Lightweight stand-ins for launchpadlib objects used across the test suite."""
 
+import types
+
 BOT = "https://api.launchpad.net/devel/~ubuntu-sponsoring-bot"
 HUMAN = "https://api.launchpad.net/devel/~marco"
 DEVEL_SERIES = "Noble"
@@ -118,9 +120,12 @@ class FakeMP:
 
 
 class FakeTask:
-    def __init__(self, name, status):
+    def __init__(self, name, status, date_incomplete=None):
         self.bug_target_name = name
         self.status = status
+        # Launchpad maintains this on transition to Incomplete; the sweep
+        # (#66) uses it as the bounce reference time.
+        self.date_incomplete = date_incomplete
 
     def transitionToStatus(self, status):
         self.status = status
@@ -133,13 +138,19 @@ _DEFAULT_PATCH = "--- a/src/x.c\n+++ b/src/x.c\n@@ -1 +1 @@\n-a\n+b\n"
 
 
 class FakeAttachment:
-    def __init__(self, title, type="Unspecified", content=None, fail_fetch=False):
+    def __init__(
+        self, title, type="Unspecified", content=None, fail_fetch=False,
+        date_created=None,
+    ):
         self.title = title
         self.type = type  # Launchpad's patch flag: "Patch" when ticked
         self.self_link = f"https://api.launchpad.net/devel/bug/1/+attachment/{title}"
         self.data = FakeHostedFile(
             _DEFAULT_PATCH if content is None else content, fail=fail_fetch
         )
+        # Real attachments have no date of their own; their upload
+        # message's date_created is the timestamp (#66).
+        self.message = types.SimpleNamespace(date_created=date_created)
 
 
 class FakeVote:
@@ -187,9 +198,10 @@ class FakeBug:
 
 
 class FakeBugMessage:
-    def __init__(self, owner_link, content):
+    def __init__(self, owner_link, content, date_created=None):
         self.owner_link = owner_link
         self.content = content
+        self.date_created = date_created
 
 
 class FakeMPComment:
@@ -307,6 +319,20 @@ class FakeTriageClient:
                 self.write_outcomes.append(self.write_outcome)
         return changed
 
+    def set_bug_tasks_new(self, obj):
+        bug = (
+            obj.bug
+            if getattr(obj, "resource_type_link", "").endswith("bug_task")
+            else obj
+        )
+        changed = {}
+        for task in bug.bug_tasks:
+            if "(Ubuntu" in task.bug_target_name and task.status == "Incomplete":
+                task.transitionToStatus(status="New")
+                changed[task.bug_target_name] = "New"
+                self.write_outcomes.append(self.write_outcome)
+        return changed
+
     def set_bug_tasks_fix_released(self, obj):
         bug = (
             obj.bug
@@ -351,6 +377,13 @@ class FakeLLM:
     # Check 7's escape hatch (#58): default False = "the bug text doesn't
     # say it's fixed in newer series", the full-advisory path.
     fixed_in_newer = False
+    # Rule B's comment judgment (#66): True/False/None.
+    bounce_addressed = False
+
+    def review_bounce_response(self, bounce_reason, comments):
+        self.bounce_queries = getattr(self, "bounce_queries", [])
+        self.bounce_queries.append((bounce_reason, list(comments)))
+        return self.bounce_addressed
 
     def review_fixed_in_newer_series(self, bug_text, series_names):
         self.newer_series_queries = getattr(self, "newer_series_queries", [])

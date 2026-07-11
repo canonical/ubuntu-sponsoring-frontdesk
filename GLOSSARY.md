@@ -145,6 +145,14 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/).
   Exempt: merge bugs, sync requests, needs-packaging bugs, bugs with an
   active linked MP.
+- **Stale-bounce sweep (Rule B)** — `sweep.py` (#66): after every
+  `--all` pass, bugs the bot bounced get revisited using
+  `bug_task.date_incomplete` as the clock. A new usable-diff attachment
+  or a response the LLM judges as addressing the stored `bounce_reason`
+  flips the Incomplete Ubuntu tasks back to New (re-enters the review
+  queue); 30 days of silence gets a final comment + ~ubuntu-sponsors
+  unsubscribed. Only bugs this bot bounced (WAITING_ON_CONTRIBUTOR in
+  state.db); MPs have their own push-driven lifecycle.
 - **Stale-version check (bugs)** — Check 6's bug path (#65): the
   attached debdiff's stanza gives package, proposed version, and target
   series (its own suite field, pocket suffixes stripped); the shared

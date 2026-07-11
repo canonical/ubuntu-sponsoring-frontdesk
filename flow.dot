@@ -119,4 +119,7 @@ digraph SponsoringBot {
     pend -> persist [style=dotted, arrowhead=none];
 
     { rank=same; done; wait; rfh; pend; }
+
+    sweepnote [label="After the queue pass: Rule B sweep (#66)\nbugs in WAITING_ON_CONTRIBUTOR, clock = date_incomplete:\nnew usable diff OR response addresses bounce_reason (LLM)\n-> tasks back to New; 30d silence -> final comment\n+ unsubscribe ~ubuntu-sponsors -> DONE", shape=note, fillcolor="#FFFDE7"];
+    wait -> sweepnote [style=dotted, arrowhead=none];
 }

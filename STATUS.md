@@ -59,26 +59,20 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
 
 ## Next (resume here)
 
-1. **Rule B — stale-bounce sweep (DESIGNED, not built).** For any bug with an
-   Ubuntu task in `Incomplete`, check activity since `bug_task.date_incomplete`:
-
-   - **New attachment** → flip tasks back to New immediately (attachment
-     content is now readable -- `attachments.review_target`, #62; the old
-     lpcli caveat is moot: deterministic code uses launchpadlib, and
-     canonical/lpcli#23 was resolved 2026-07-10 anyway).
-   - **New comment(s)** → pass comment text to LLM (read via launchpadlib,
-     injected into prompt) + the stored bounce reason; LLM judges whether the
-     response addresses the bounce. Yes → flip to New. No + >30d → sweep.
-     No + <30d → leave (give them more time).
-   - **No activity + >30d** → sweep: post final comment ("no reply in a month,
-     unsubscribing ~ubuntu-sponsors; re-subscribe if you update the bug") +
-     unsubscribe sponsors.
-   - **No activity + <30d** → nothing yet.
-
-   Requires: store `bounce_reason` in `state.db` when setting Incomplete.
-   Before implementing: smoke-test `bug_task.date_incomplete` and
-   `bug.attachments[].date_created` exist in the real LP API
-   (canonical/lpcli#24 also filed re: attachment visibility in lpcli).
+1. **Rule B — stale-bounce sweep (DONE, 2026-07-11).** See
+   design_journal.md #66 and `sweep.py`. Runs after every `--all` pass
+   (or alone via `--sweep`) over the bugs THIS bot bounced (state.db
+   WAITING_ON_CONTRIBUTOR, `+merge/` URLs excluded), keyed on
+   `bug_task.date_incomplete` (smoke-tested live; attachments are dated
+   via their upload message). New usable-diff attachment → tasks back to
+   New (gated `set_bug_tasks_new`), silently -- the next queue pass
+   re-triages the content. New comments → `review_bounce_response`
+   against the stored `bounce_reason` (new state.db column, written at
+   bounce time): addressed → flip to New; not → 30-day timer; LLM
+   failure → retry, never sweep over an unjudged response. Nothing for
+   30 days → final comment + unsubscribe, DONE. Live-validated dry-run
+   (sweep population is 0 today: all current bounces are MPs); watch the
+   first real bug bounce age through it.
 2. **Bot account (DONE, 2026-07-07).** The cached OAuth token was swapped;
    the bot now authenticates as `~ubuntu-sponsoring-bot` (verified live:
    `lp.me` resolves to it). The pieces that keyed on identity were already
