@@ -274,7 +274,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   aggregate is silenced (facts persist; quiet until a new push) — a human
   review is in progress and the bot must not talk over it. Only ever
   suppresses findings-tier output; closing-tier outcomes are decided before
-  it is consulted. MPs only so far; the bug-side anchor is an open question.
+  it is consulted. Bugs too since #72: the anchor is the newest usable
+  diff attachment's upload date (none → any qualifying comment counts),
+  the reporter is the submitter, and `check_nothing_to_sponsor` also
+  consults it before the no_patch close (an engaged reviewer contradicts
+  "nothing is happening here") — archive-fact closes stay unaffected.
 - **`SERVICE_ACCOUNTS`** — frozenset in `checks.py` of Launchpad usernames
   whose comments never count as human engagement (`~ubuntu-sponsoring-bot`,
   `~git-ubuntu-bot`, `~git-ubuntu-import`, `~janitor`). Empirically

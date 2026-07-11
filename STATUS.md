@@ -117,6 +117,12 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    of scope.
 5. **Tool-using investigation triage** â€” pull packages, check Debian/upstream
    trackers, git status (the richer roadmap; opencode agent with tools).
+5b. **Get ~ubuntu-sponsoring-bot added to ~ubuntu-security-sponsors**
+   (seb128 to arrange once the bot has proven itself). Security-sponsored
+   bugs are triaged normally (#72) -- posting and task statuses work --
+   but the bot can't unsubscribe a team it isn't a member of, so
+   security bugs currently stay in the security queue after a close;
+   `unsubscribe_sponsors` logs when that happens.
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by
@@ -347,10 +353,16 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     one) -- harmless today, but concrete confirmation the addendum matters
     once #31 ships. Full breakdown in design_journal.md #33.
 
-17. **Suppress bounces once a human is already engaged (DONE, 2026-07-06 --
-    MP side; bug-side anchor still open).** Implemented per design #35 on
-    top of #31's tier machinery, see design_journal.md #45.
-    `checks.check_human_engaged` (MPs only): a comment by anyone other
+17. **Suppress bounces once a human is already engaged (DONE, 2026-07-06
+    MP side; bug side DONE 2026-07-12, design #72).** Implemented per
+    design #35 on top of #31's tier machinery, see design_journal.md
+    #45 and #72. Bug side: the anchor is the newest usable diff
+    attachment's upload date (the #62 foundation); no attachment means
+    any qualifying comment counts; the reporter is the submitter. Also
+    consulted by `check_nothing_to_sponsor` before the no_patch close
+    (an engaged reviewer contradicts "nothing is happening here" --
+    mapserver security bug #2069291); archive-fact closes unaffected.
+    `checks.check_human_engaged`: a comment by anyone other
     than the submitter and the bot itself, made since
     `preview_diff.date_created`, means a human review is in progress --
     `main.py` then silences the whole aggregated findings comment (no
