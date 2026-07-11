@@ -279,6 +279,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   the reporter is the submitter, and `check_nothing_to_sponsor` also
   consults it before the no_patch close (an engaged reviewer contradicts
   "nothing is happening here") — archive-fact closes stay unaffected.
+  Since #73 the check is memoized per item and consulted right after the
+  deterministic checks: engaged means Check 7's LLM hatch and the whole
+  LLM phase are skipped (sync-shaped bugs exempt — SYNCED is an
+  archive-fact close), suppressing immediately instead of after spending
+  tokens on findings that could never post.
 - **`SERVICE_ACCOUNTS`** — frozenset in `checks.py` of Launchpad usernames
   whose comments never count as human engagement (`~ubuntu-sponsoring-bot`,
   `~git-ubuntu-bot`, `~git-ubuntu-import`, `~janitor`). Empirically

@@ -362,7 +362,11 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     consulted by `check_nothing_to_sponsor` before the no_patch close
     (an engaged reviewer contradicts "nothing is happening here" --
     mapserver security bug #2069291); archive-fact closes unaffected.
-    `checks.check_human_engaged`: a comment by anyone other
+    Since #73 (2026-07-12) the check is memoized per item and consulted
+    right after the deterministic checks: engaged skips Check 7's LLM
+    hatch and the whole LLM phase (sync-shaped bugs exempt -- SYNCED is
+    an archive-fact close) and suppresses immediately, sparing the
+    tokens. `checks.check_human_engaged`: a comment by anyone other
     than the submitter and the bot itself, made since
     `preview_diff.date_created`, means a human review is in progress --
     `main.py` then silences the whole aggregated findings comment (no
