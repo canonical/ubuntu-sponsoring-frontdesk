@@ -162,7 +162,9 @@ class FakeBug:
         title="",
         attachments=None,
         linked_merge_proposals=None,
+        id=1,
     ):
+        self.id = id
         self.bug_tasks = tasks or []
         self.description = description
         self.tags = tags or []

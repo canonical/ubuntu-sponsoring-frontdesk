@@ -186,3 +186,76 @@ def test_check8_bug_side_fetch_failure_is_inconclusive():
 
 def test_check8_bug_side_no_attachments_is_clean():
     assert checks.check_direct_source_edit(URL, _bug([]), None) is False
+
+
+# --- changelog bug-reference parity (#63) -----------------------------------
+# DEBDIFF's new entry cites LP: #2000001 against package "testpkg".
+
+import types
+
+from fakes import FakeTask
+
+
+class _LP:
+    def __init__(self, bugs=None):
+        self.lp = types.SimpleNamespace(bugs=bugs or {})
+
+
+def test_bugref_self_reference_is_clean_without_a_lookup():
+    # The host bug is #2000001 itself and targets testpkg: verified against
+    # the object we already hold -- the empty lp.bugs map proves no load.
+    bug = FakeBug(
+        id=2000001,
+        tasks=[FakeTask("testpkg (Ubuntu)", "New")],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", content=DEBDIFF)],
+    )
+    assert checks.check_changelog_bug_reference(URL, bug, _LP()) is False
+
+
+def test_bugref_mismatched_citation_fires():
+    cited = FakeBug(tasks=[FakeTask("otherpkg (Ubuntu)", "New")])
+    bug = FakeBug(
+        id=999,
+        attachments=[FakeAttachment("fix.debdiff", content=DEBDIFF)],
+    )
+    finding = checks.check_changelog_bug_reference(URL, bug, _LP({2000001: cited}))
+    assert finding.tier == "incomplete"
+    assert "attached debdiff's changelog" in finding.message
+    assert "#2000001" in finding.message
+    assert "`testpkg`" in finding.message
+
+
+def test_bugref_citation_targeting_the_package_is_clean():
+    cited = FakeBug(tasks=[FakeTask("testpkg (Ubuntu Noble)", "New")])
+    bug = FakeBug(
+        id=999,
+        attachments=[FakeAttachment("fix.debdiff", content=DEBDIFF)],
+    )
+    assert (
+        checks.check_changelog_bug_reference(URL, bug, _LP({2000001: cited}))
+        is False
+    )
+
+
+def test_bugref_plain_patch_has_no_entry_and_skips():
+    bug = FakeBug(attachments=[FakeAttachment("fix.patch", content=PLAIN_PATCH)])
+    assert checks.check_changelog_bug_reference(URL, bug, _LP()) is False
+
+
+def test_bugref_no_attachments_is_clean():
+    assert checks.check_changelog_bug_reference(URL, FakeBug(), _LP()) is False
+
+
+def test_bugref_fetch_failure_is_inconclusive():
+    bug = FakeBug(attachments=[FakeAttachment("fix.debdiff", fail_fetch=True)])
+    assert checks.check_changelog_bug_reference(URL, bug, _LP()) is None
+
+
+def test_bugref_lookup_failure_with_nothing_confirmed_is_inconclusive():
+    # Cited bug #2000001 can't be loaded (not in the map) and the host bug
+    # is a different number: nothing confirmed -> retry, not a clean False.
+    bug = FakeBug(
+        id=999,
+        attachments=[FakeAttachment("fix.debdiff", content=DEBDIFF)],
+    )
+    assert checks.check_changelog_bug_reference(URL, bug, _LP()) is None

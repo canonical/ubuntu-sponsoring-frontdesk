@@ -1015,8 +1015,14 @@ def _lp_bug_numbers_from_new_changelog_entry(lp_obj):
     entry_lines = _new_changelog_stanza_lines(lp_obj)
     if entry_lines is None:
         return None
+    return _lp_bug_numbers_from_text("\n".join(entry_lines))
+
+
+def _lp_bug_numbers_from_text(text):
+    """LP bug numbers cited in a changelog-entry text -- the extraction
+    core shared by the MP path above and the attachment path (#63)."""
     numbers = set()
-    for block in _LP_BUG_BLOCK_RE.findall("\n".join(entry_lines)):
+    for block in _LP_BUG_BLOCK_RE.findall(text):
         numbers.update(int(n) for n in _BUG_NUM_RE.findall(block))
     return numbers
 
@@ -1112,8 +1118,15 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
     None/False distinction elsewhere in this module. A confirmed mismatch
     always fires (True) even if some *other* cited bug's lookup failed --
     we already have a definite problem to report.
+
+    Bug-side parity (#63): the same rule applies to the new changelog
+    entry inside a debdiff attached to a bug -- see
+    _changelog_bug_reference_bug.
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        return _changelog_bug_reference_bug(url, bug, lp_client)
     if resource_type != "branch_merge_proposal":
         return False
 
@@ -1136,20 +1149,36 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
         )
         return False
 
+    return _bug_reference_verdict(
+        url, "the changelog", bug_numbers, package, lp_client
+    )
+
+
+def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug=None):
+    """The shared verification tail of the changelog bug-reference check
+    (#63): load each cited bug, compare against `package`, and turn the
+    result into a Finding/False/None with the docstring's fail-safe
+    semantics. `host_bug`, when given (the attachment path), short-cuts
+    a citation of the very bug under triage -- we already hold it, no
+    extra API call."""
     mismatched = []
     lookup_failed = False
+    host_id = getattr(host_bug, "id", None) if host_bug is not None else None
     for number in sorted(bug_numbers):
-        try:
-            bug = lp_client.lp.bugs[number]
-        except Exception as e:
-            logger.debug(
-                "check_changelog_bug_reference: could not load bug #%s "
-                "(%s); skipping it rather than guessing.",
-                number,
-                e,
-            )
-            lookup_failed = True
-            continue
+        if number == host_id:
+            bug = host_bug
+        else:
+            try:
+                bug = lp_client.lp.bugs[number]
+            except Exception as e:
+                logger.debug(
+                    "check_changelog_bug_reference: could not load bug #%s "
+                    "(%s); skipping it rather than guessing.",
+                    number,
+                    e,
+                )
+                lookup_failed = True
+                continue
         if not _bug_targets_package(bug, package):
             mismatched.append(number)
 
@@ -1180,9 +1209,65 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
     )
     return Finding(
         "incomplete",
-        f"The bug reference(s) in the changelog ({bug_list}) don't appear to "
+        f"The bug reference(s) in {where} ({bug_list}) don't appear to "
         f"be reported against `{package}`. Please double-check the bug "
         "number(s) are correct.",
+    )
+
+
+def _changelog_bug_reference_bug(url, bug, lp_client):
+    """
+    The bug-side path of the changelog bug-reference check (#63): reads
+    the new changelog entry from the newest usable patch/debdiff
+    attachment (attachments.review_target -- memoized, free when Check 8
+    already fetched it) and verifies its LP: #nnn citations the same way
+    the MP path does.
+
+    The package comes from the entry's own header (that's what would be
+    uploaded). A plain patch has no changelog entry, so it -- like a
+    debdiff citing no bug -- skips naturally; no debdiff/patch
+    classification needed. Citing the host bug itself (the common case)
+    is checked against the bug object we already hold.
+
+    Returns an incomplete Finding, False, or None (attachment fetch or a
+    cited bug's lookup failed with nothing confirmed -- retriable).
+    """
+    target = attachments.review_target(bug)
+    if target is None:
+        return None
+    if target is False:
+        return False
+    _attachment, text = target
+
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    if not stanza:
+        logger.debug(
+            "_changelog_bug_reference_bug: no new changelog entry in the "
+            "attachment; skipping."
+        )
+        return False
+    header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+    if not header:
+        logger.debug(
+            "_changelog_bug_reference_bug: unparseable entry header; skipping."
+        )
+        return False
+    package = header.group("pkg")
+
+    bug_numbers = _lp_bug_numbers_from_text(stanza)
+    if not bug_numbers:
+        logger.debug(
+            "_changelog_bug_reference_bug: entry cites no bug; skipping."
+        )
+        return False
+
+    return _bug_reference_verdict(
+        url,
+        "the attached debdiff's changelog",
+        bug_numbers,
+        package,
+        lp_client,
+        host_bug=bug,
     )
 
 

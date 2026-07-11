@@ -697,13 +697,19 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     diffs, version-dir prefixes stripped, timestamps cut at first
     whitespace -- a live parsing bug on #2158304) / `review_target`
     (newest usable diff attachment, memoized per item). First consumer:
-    Check 8 bug-side (item 43). **Remaining consumers (backlog):**
-    `check_stale_version` for patches (stanza version vs archive --
-    backlog since #27), `check_changelog_bug_reference` parity, Check 9
-    parity (debdiff missing a changelog entry -- plain patches
-    legitimately have none), Rule B's "does the new attachment address
-    the bounce" step (item 1), and SRU bugs with one debdiff per series
-    (an all-candidates variant of `review_target`).
+    Check 8 bug-side (item 43). Second consumer:
+    `check_changelog_bug_reference` parity (DONE 2026-07-11,
+    design_journal.md #63 -- typo'd `LP: #nnn` closers in an attached
+    debdiff now bounce; package from the entry's own header; citing the
+    host bug verified without an API call). **Remaining consumers
+    (backlog):** `check_stale_version` for patches (stanza version vs
+    archive -- backlog since #27), Check 9 parity (debdiff missing a
+    changelog entry -- plain patches legitimately have none), Rule B's
+    "does the new attachment address the bounce" step (item 1), SRU
+    bugs with one debdiff per series (an all-candidates variant of
+    `review_target`), and possibly a soft "the debdiff cites no LP bug,
+    publication won't auto-close this report" advisory (seen live on
+    #2158304; deliberately left out of #63).
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 

@@ -134,7 +134,9 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   decompressed size), `classify_diff` (parses both git-style diffs and
   debdiffs, whose paths carry a version-dir prefix), and `review_target`
   (the newest usable diff attachment, memoized per item). Foundation for
-  bug-side content checks; Check 8 is the first consumer.
+  bug-side content checks; consumers so far: Check 8 (#62) and the
+  changelog bug-reference check (#63 -- typo'd `LP: #nnn` closers in an
+  attached debdiff bounce the same way they do on an MP).
 - **Missing changelog-entry check** — Check 9,
   `check_missing_changelog_stanza` (#61): a fix MP whose diff doesn't
   touch `debian/changelog` at all gets an incomplete-tier bounce asking
