@@ -12,13 +12,17 @@ class FakePerson:
 
 class FakeHostedFile:
     """Stand-in for launchpadlib's HostedFile (what `preview_diff.diff_text`
-    returns): `.open().read()` gives the raw bytes."""
+    or `attachment.data` returns): `.open().read()` gives the raw bytes,
+    or raises when fail=True (a fetch failure)."""
 
-    def __init__(self, content):
+    def __init__(self, content, fail=False):
         self._content = content.encode() if isinstance(content, str) else content
+        self.fail = fail
         self.opens = 0  # fetch counter, for the diff-memoization tests (#39)
 
     def open(self):
+        if self.fail:
+            raise TimeoutError("simulated Launchpad timeout")
         self.opens += 1
         return self
 
@@ -122,11 +126,20 @@ class FakeTask:
         self.status = status
 
 
+# A harmless plain patch (touches no debian/ file): attachment-content
+# checks (#62) treat it as a normal contribution shape and stay silent,
+# so tests that only care about attachment *metadata* keep passing.
+_DEFAULT_PATCH = "--- a/src/x.c\n+++ b/src/x.c\n@@ -1 +1 @@\n-a\n+b\n"
+
+
 class FakeAttachment:
-    def __init__(self, title, type="Unspecified"):
+    def __init__(self, title, type="Unspecified", content=None, fail_fetch=False):
         self.title = title
         self.type = type  # Launchpad's patch flag: "Patch" when ticked
         self.self_link = f"https://api.launchpad.net/devel/bug/1/+attachment/{title}"
+        self.data = FakeHostedFile(
+            _DEFAULT_PATCH if content is None else content, fail=fail_fetch
+        )
 
 
 class FakeVote:

@@ -152,11 +152,12 @@ def test_unreadable_diff_is_inconclusive():
     assert checks.check_direct_source_edit(URL, mp, _LP()) is None
 
 
-def test_bug_resource_is_skipped():
-    bug = types.SimpleNamespace(
-        resource_type_link="https://api.launchpad.net/devel/#bug"
-    )
-    assert checks.check_direct_source_edit(URL, bug, _LP()) is False
+def test_bug_without_attachments_is_clean():
+    # The bug side is real since #62 (see test_attachments.py); a bug with
+    # nothing attached has nothing to judge.
+    from fakes import FakeBug
+
+    assert checks.check_direct_source_edit(URL, FakeBug(), _LP()) is False
 
 
 def test_many_files_are_capped_in_the_message():

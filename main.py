@@ -8,6 +8,7 @@ import json
 from state import StateManager
 from launchpad_client import LPClient
 from audit import AuditLog
+import attachments
 import checks
 import facts
 import notify
@@ -112,6 +113,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # Fresh item, fresh diff-content memo (design_journal.md #39) -- checks
     # 2/5/6 share one fetch of the same preview diff within this item.
     checks.reset_diff_lines_cache()
+    # Same for the bug-attachment content memo (#62).
+    attachments.reset_cache()
 
     def persistable_facts():
         if inconclusive or not lp_client.all_writes_effective():

@@ -4,6 +4,7 @@ import re
 from typing import NamedTuple
 
 import archive_lookup
+import attachments
 import git_history
 import llm_reviewer
 import notify
@@ -264,8 +265,9 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
 
 
 # Attachment filenames that read as a proposed fix even when the submitter
-# forgot to tick Launchpad's "patch" flag.
-_PATCH_FILENAME_RE = re.compile(r"\.(debdiff|diff|patch)(\.gz)?$", re.IGNORECASE)
+# forgot to tick Launchpad's "patch" flag. Lives in attachments.py (#62)
+# so the content-fetching foundation and this metadata check agree.
+_PATCH_FILENAME_RE = attachments.PATCH_FILENAME_RE
 
 # Linked MPs in these states are no longer a review venue.
 _INACTIVE_MP_STATUSES = ("Rejected", "Superseded")
@@ -2051,6 +2053,19 @@ def _upstream_component(version):
     return v.rsplit("-", 1)[0]
 
 
+def _old_changelog_version_from_lines(lines):
+    """The first changelog header visible in a changelog hunk's context/
+    removed lines -- the entry the new stanza sits on top of. None when
+    it isn't visible (short context)."""
+    for line in lines:
+        if not line or line[0] not in " -":
+            continue
+        match = _CHANGELOG_HEADER_RE.match(line[1:])
+        if match:
+            return match.group("version")
+    return None
+
+
 def _old_changelog_version(lp_obj):
     """The version of the changelog entry the MP's new stanza sits on top
     of, read from the debian/changelog hunk's context/removed lines. None
@@ -2059,13 +2074,7 @@ def _old_changelog_version(lp_obj):
     lines = _changelog_diff_lines(lp_obj)
     if not isinstance(lines, list):
         return None
-    for line in lines:
-        if not line or line[0] not in " -":
-            continue
-        match = _CHANGELOG_HEADER_RE.match(line[1:])
-        if match:
-            return match.group("version")
-    return None
+    return _old_changelog_version_from_lines(lines)
 
 
 def check_direct_source_edit(url, lp_obj, lp_client):
@@ -2090,10 +2099,17 @@ def check_direct_source_edit(url, lp_obj, lp_client):
       the target series): upstream and packaging aren't separate there.
       Proper nativeness classification (debian/source/format) is backlog.
 
+    Bug-side parity (#62): the same rule applies to a debdiff attached to
+    a bug -- see _direct_source_edit_bug. A plain patch (touching no
+    debian/ file) is a normal contribution shape there and never bounced.
+
     Returns an incomplete Finding, False (clean/skipped), or None (diff,
     merge-detection, or archive lookup failed -- retriable).
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        return _direct_source_edit_bug(url, bug)
     if resource_type != "branch_merge_proposal":
         return False
 
@@ -2174,6 +2190,13 @@ def check_direct_source_edit(url, lp_obj, lp_client):
         )
         return False
 
+    return _direct_edit_finding(url, "The changes edit", other_files)
+
+
+def _direct_edit_finding(url, intro, other_files):
+    """The Check 8 bounce, shared by the MP and bug paths (#60/#62).
+    `intro` opens the sentence ('The changes edit' / 'The attached
+    debdiff edits')."""
     shown = ", ".join(f"`{p}`" for p in other_files[:5])
     more = f" (and {len(other_files) - 5} more)" if len(other_files) > 5 else ""
     logger.info(
@@ -2185,11 +2208,92 @@ def check_direct_source_edit(url, lp_obj, lp_client):
     )
     return Finding(
         "incomplete",
-        f"The changes edit upstream source files directly ({shown}{more}). "
+        f"{intro} upstream source files directly ({shown}{more}). "
         "Changes to upstream code must be provided as patches under "
         "`debian/patches` instead, so they stay visible and survive new "
         "upstream versions -- see "
         "https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/",
+    )
+
+
+def _direct_source_edit_bug(url, bug):
+    """
+    Check 8's bug-side path (#62): the direct-source-edit rule applied to
+    the newest usable patch/debdiff attachment (attachments.review_target).
+
+    Only *debdiffs* are judged -- a diff that touches debian/ files is a
+    package-level change and must carry upstream edits as debian/patches
+    patches. A plain patch (no debian/ file at all) is a normal
+    contribution shape -- it's expected to BECOME a debian/patches patch
+    at upload time -- and is never bounced.
+
+    Exemptions mirror the MP path where they apply: merge bugs (title,
+    same signal as _is_merge_proposal's fallback), new upstream versions,
+    native packages. Unlike the MP path there is no archive fallback for
+    nativeness: a debdiff without a parseable new changelog stanza is a
+    shape we haven't seen (debdiffs diff two source packages, the stanza
+    is inherently there) -- skip rather than guess.
+
+    Returns an incomplete Finding, False, or None (attachment listing/
+    fetch failed -- retriable).
+    """
+    if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
+        logger.debug("_direct_source_edit_bug: merge bug; skipping.")
+        return False
+
+    target = attachments.review_target(bug)
+    if target is None:
+        return None
+    if target is False:
+        return False
+    attachment, text = target
+
+    info = attachments.classify_diff(text)
+    if not info["debian_paths"]:
+        logger.debug(
+            "_direct_source_edit_bug: %r touches no debian/ file; a plain "
+            "patch is a normal contribution shape. Skipping.",
+            getattr(attachment, "title", "?"),
+        )
+        return False
+    if not info["other_paths"]:
+        logger.debug("_direct_source_edit_bug: all changes under debian/; clean.")
+        return False
+
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    proposed_version = None
+    if stanza:
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        proposed_version = header.group("version") if header else None
+    if proposed_version is None:
+        logger.debug(
+            "_direct_source_edit_bug: debdiff has no parseable new "
+            "changelog stanza; unexpected shape, skipping."
+        )
+        return False
+
+    upstream = _upstream_component(proposed_version)
+    if upstream is None:
+        logger.debug(
+            "_direct_source_edit_bug: %r looks native; skipping.",
+            proposed_version,
+        )
+        return False
+
+    old_version = None
+    if info["changelog_lines"]:
+        old_version = _old_changelog_version_from_lines(info["changelog_lines"])
+    if old_version is not None and _upstream_component(old_version) != upstream:
+        logger.debug(
+            "_direct_source_edit_bug: upstream version changed (%r -> %r); "
+            "skipping.",
+            old_version,
+            proposed_version,
+        )
+        return False
+
+    return _direct_edit_finding(
+        url, "The attached debdiff edits", info["other_paths"]
     )
 
 
