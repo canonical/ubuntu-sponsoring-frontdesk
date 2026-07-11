@@ -1369,10 +1369,11 @@ def check_stale_version(url, lp_obj, lp_client):
            content genuinely differs regardless of how long ago the archive
            upload landed.
 
-    Applies to merge_proposals only for now -- the same comparison is
-    useful for a bug's attached patch too, but needs adapting to read the
-    proposed version out of the patch instead of an MP diff (see
-    STATUS.md backlog).
+    Bug-side parity (#65): the same comparison runs for a debdiff
+    attached to a bug -- see _stale_version_bug. The verdict core
+    (_stale_version_verdict) is shared; only the input gathering and the
+    already-landed handling (_classify_against_publication vs its _bug
+    sibling) differ.
 
     Fail-safe throughout, but distinguishes two kinds of "nothing to
     report" (see _changelog_diff_lines / _is_merge_proposal's docstrings
@@ -1405,6 +1406,9 @@ def check_stale_version(url, lp_obj, lp_client):
     permanently skip re-checking this URL.
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        return _stale_version_bug(url, bug, lp_client)
     if resource_type != "branch_merge_proposal":
         return False
 
@@ -1430,6 +1434,28 @@ def check_stale_version(url, lp_obj, lp_client):
         )
         return None
 
+    def classify(version, pub):
+        return _classify_against_publication(
+            url, lp_obj, lp_client, package, version, proposed_entry, pub
+        )
+
+    return _stale_version_verdict(
+        url, lp_client, package, proposed_version, proposed_entry,
+        target_series, classify,
+    )
+
+
+def _stale_version_verdict(
+    url, lp_client, package, proposed_version, proposed_entry, target_series,
+    classify,
+):
+    """The input-source-independent core of the stale-version check (#65):
+    archive comparison, the upload-queue race (#55/#56), the historical-
+    publication rescue (#43). `classify(version, pub)` handles the
+    "exact version already published" outcome -- _classify_against_
+    publication for MPs (grace defer, rich-history diagnosis), its _bug
+    sibling for debdiffs on bugs. Return-value contract is
+    check_stale_version's."""
     versions = archive_lookup.ubuntu_versions(
         lp_client.lp, package, series_names=[target_series]
     )
@@ -1532,15 +1558,7 @@ def check_stale_version(url, lp_obj, lp_client):
             lp_client.lp, package, target_series, proposed_version, status=None
         )
         if historical_pub is not None:
-            outcome = _classify_against_publication(
-                url,
-                lp_obj,
-                lp_client,
-                package,
-                proposed_version,
-                proposed_entry,
-                historical_pub,
-            )
+            outcome = classify(proposed_version, historical_pub)
             if outcome is not None:
                 return outcome
             # Publication exists but its changelog couldn't be fetched --
@@ -1580,9 +1598,7 @@ def check_stale_version(url, lp_obj, lp_client):
         )
         return None
 
-    outcome = _classify_against_publication(
-        url, lp_obj, lp_client, package, archive_version, proposed_entry, pub
-    )
+    outcome = classify(archive_version, pub)
     # None here means the changelog fetch failed -- correctly propagates as
     # "couldn't determine" (see this function's own docstring/return-value
     # contract), same as every other lookup-failure path in this module.
@@ -1868,6 +1884,139 @@ def _classify_against_publication(
         "content already exists in the archive. Your change needs to be "
         "rebased (with a new version number) and resubmitted.",
     )
+
+
+# Pocket suffixes a changelog suite may carry: 'noble-proposed' etc.
+_POCKET_SUFFIX_RE = re.compile(r"-(proposed|updates|security|backports)$")
+
+
+def _stale_version_bug(url, bug, lp_client):
+    """
+    check_stale_version's bug-side path (#65): the proposed version /
+    entry / package come from the newest usable attachment's new
+    changelog stanza (attachments.review_target -- memoized, free after
+    checks 8/10), and the target series from the stanza's own suite
+    field ('pkg (1.2-3ubuntu1) noble; urgency=...') -- that's where an
+    upload would actually go, so it's the authoritative signal; pocket
+    suffixes are stripped. A suite that isn't a currently-known series
+    (UNRELEASED, a typo, an EOL series) -> skip, don't guess.
+
+    The verdict core is shared with the MP path (_stale_version_verdict);
+    only the already-landed handling differs
+    (_classify_against_publication_bug: no grace defer, no rich-history
+    diagnosis).
+    """
+    target = attachments.review_target(bug)
+    if target is None:
+        return None
+    if target is False:
+        return False
+    _attachment, text = target
+
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    if not stanza:
+        logger.debug("_stale_version_bug: no new changelog entry; skipping.")
+        return False
+    header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+    if not header:
+        logger.debug("_stale_version_bug: unparseable entry header; skipping.")
+        return False
+    package = header.group("pkg")
+    proposed_version = header.group("version")
+    suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+
+    series_pairs = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_pairs is None:
+        logger.debug("_stale_version_bug: series lookup failed; can't determine.")
+        return None
+    if suite not in (name for name, _version in series_pairs):
+        logger.debug(
+            "_stale_version_bug: suite %r isn't a currently-known series; "
+            "skipping.",
+            suite,
+        )
+        return False
+
+    def classify(version, pub):
+        return _classify_against_publication_bug(
+            url, bug, lp_client, package, version, stanza, pub
+        )
+
+    return _stale_version_verdict(
+        url, lp_client, package, proposed_version, stanza, suite, classify
+    )
+
+
+def _classify_against_publication_bug(
+    url, bug, lp_client, package, version, proposed_entry, pub
+):
+    """
+    The bug-side sibling of _classify_against_publication: an existing
+    publication of exactly `version` compared by changelog content.
+
+    Matching content -> the attached debdiff's change already landed:
+    comment + unsubscribe ~ubuntu-sponsors immediately and return "done".
+    No grace defer, unlike the MP side (seb128, #65): the automation
+    that would resolve the bug on its own -- Launchpad closing the task
+    over the changelog's `LP: #nnn` -- only runs when the upload reaches
+    the release pocket, which for an SRU can take weeks; nothing is
+    racing us here, so unsubscribe directly. No rich-history diagnosis
+    either (#49 is about git-ubuntu MP imports; a debdiff carries no git
+    history to preserve).
+
+    Different content -> the same-version-collision Finding. None -> the
+    publication's changelog couldn't be fetched (retriable).
+    """
+    archive_text = archive_lookup.changelog_text(pub)
+    if archive_text is None:
+        logger.debug(
+            "check_stale_version: couldn't fetch the archive changelog; "
+            "can't determine."
+        )
+        return None
+
+    archive_entry = _first_changelog_stanza_text(archive_text)
+    same_content = _normalize_changelog_entry(
+        proposed_entry
+    ) == _normalize_changelog_entry(archive_entry)
+    logger.debug(
+        "check_stale_version: version %r already published (status=%s); "
+        "content matches=%s",
+        version,
+        getattr(pub, "status", "?"),
+        same_content,
+    )
+
+    if not same_content:
+        logger.info(
+            "[%s] version %r already published with different content. "
+            "Adding an incomplete finding.",
+            url,
+            version,
+        )
+        return Finding(
+            "incomplete",
+            f"An upload with the same version (`{version}`) but different "
+            "content already exists in the archive. Your change needs to be "
+            "rebased (with a new version number) and resubmitted.",
+        )
+
+    pub_url = archive_lookup.published_source_url(package, version)
+    logger.info(
+        "[%s] version %r already published with matching content. "
+        "Commenting and unsubscribing ~ubuntu-sponsors.",
+        url,
+        version,
+    )
+    lp_client.comment(
+        bug,
+        "Thanks for your contribution! It seems that this change was "
+        f"already uploaded to the archive as `{package} {version}`, so "
+        "there is nothing left to sponsor here. Cleaning up the queue by "
+        f"unsubscribing ~ubuntu-sponsors.\n\n{pub_url}",
+    )
+    lp_client.unsubscribe_sponsors(bug)
+    return "done"
 
 
 # Task shape of a series-specific Ubuntu bug task: 'pkg (Ubuntu Noble)'.

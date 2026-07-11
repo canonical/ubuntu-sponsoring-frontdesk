@@ -358,3 +358,143 @@ def test_mp_resource_is_skipped():
         resource_type_link="https://api.launchpad.net/devel/#branch_merge_proposal"
     )
     assert checks.check_patch_not_debdiff(URL, mp, None) is False
+
+
+# --- stale-version for attached debdiffs (#65) -------------------------------
+# DEBDIFF's stanza: testpkg (1.2-3ubuntu2) stonking. Series/archive state is
+# monkeypatched; the verdict core is shared with the MP path (its edge cases
+# live in test_mp_checks.py).
+
+import datetime
+
+import archive_lookup
+import llm_reviewer
+from fakes import FakeTriageClient
+
+_SERIES = [("noble", "24.04"), ("stonking", "26.10")]
+
+
+def _patch_stale(
+    monkeypatch,
+    versions=None,
+    pub=object(),
+    changelog=None,
+    historical_pub=None,
+    queued=False,
+    series=None,
+):
+    monkeypatch.setattr(
+        archive_lookup,
+        "supported_series_ordered",
+        lambda lp: _SERIES if series is None else series,
+    )
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        lambda lp, pkg, series_names=None: versions,
+    )
+    monkeypatch.setattr(
+        archive_lookup,
+        "published_source",
+        lambda lp, pkg, series_name, version, status="Published": (
+            pub if status == "Published" else historical_pub
+        ),
+    )
+    monkeypatch.setattr(archive_lookup, "changelog_text", lambda p: changelog)
+    monkeypatch.setattr(
+        archive_lookup,
+        "upload_in_queue",
+        lambda lp, pkg, series_name, version: queued,
+    )
+
+
+def _debdiff_bug(content=DEBDIFF):
+    return FakeBug(attachments=[FakeAttachment("fix.debdiff", content=content)])
+
+
+def _own_stanza():
+    return llm_reviewer._new_changelog_stanza(DEBDIFF)
+
+
+def test_stale_debdiff_older_than_archive_bounces(monkeypatch):
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
+    lp = FakeTriageClient(objects={})
+    finding = checks.check_stale_version(URL, _debdiff_bug(), lp)
+    assert finding.tier == "incomplete"
+    assert "`1.2-3ubuntu2`" in finding.message
+    assert "`1.2-3ubuntu5`" in finding.message
+    assert "stonking" in finding.message
+
+
+def test_debdiff_already_uploaded_closes_and_unsubscribes_immediately(monkeypatch):
+    # Same version, same content, published seconds ago: unlike the MP path
+    # there is NO grace defer (seb128, #65) -- comment + unsubscribe now.
+    pub = types.SimpleNamespace(
+        status="Published",
+        date_published=datetime.datetime.now(datetime.timezone.utc),
+    )
+    _patch_stale(
+        monkeypatch,
+        versions={"stonking": "1.2-3ubuntu2"},
+        pub=pub,
+        changelog=_own_stanza(),
+    )
+    lp = FakeTriageClient(objects={})
+    assert checks.check_stale_version(URL, _debdiff_bug(), lp) == "done"
+    assert len(lp.comments) == 1
+    assert "already uploaded to the archive as `testpkg 1.2-3ubuntu2`" in lp.comments[0]
+    assert "nothing left to sponsor" in lp.comments[0]
+    assert lp.unsubscribed == 1
+
+
+def test_debdiff_same_version_different_content_bounces(monkeypatch):
+    other = "testpkg (1.2-3ubuntu2) stonking; urgency=medium\n\n  * Unrelated.\n"
+    _patch_stale(
+        monkeypatch, versions={"stonking": "1.2-3ubuntu2"}, changelog=other
+    )
+    lp = FakeTriageClient(objects={})
+    finding = checks.check_stale_version(URL, _debdiff_bug(), lp)
+    assert finding.tier == "incomplete"
+    assert "same version" in finding.message
+    assert lp.comments == []
+
+
+def test_debdiff_newer_than_archive_is_fine(monkeypatch):
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu1"})
+    lp = FakeTriageClient(objects={})
+    assert checks.check_stale_version(URL, _debdiff_bug(), lp) is False
+
+
+def test_debdiff_unknown_suite_is_skipped(monkeypatch):
+    unreleased = DEBDIFF.replace(
+        "(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) UNRELEASED;"
+    )
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
+    lp = FakeTriageClient(objects={})
+    assert checks.check_stale_version(URL, _debdiff_bug(unreleased), lp) is False
+
+
+def test_debdiff_pocket_suffix_is_stripped(monkeypatch):
+    proposed = DEBDIFF.replace(
+        "(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) stonking-proposed;"
+    )
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
+    lp = FakeTriageClient(objects={})
+    finding = checks.check_stale_version(URL, _debdiff_bug(proposed), lp)
+    assert finding.tier == "incomplete"
+
+
+def test_debdiff_series_lookup_failure_is_inconclusive(monkeypatch):
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"}, series=False)
+    monkeypatch.setattr(
+        archive_lookup, "supported_series_ordered", lambda lp: None
+    )
+    lp = FakeTriageClient(objects={})
+    assert checks.check_stale_version(URL, _debdiff_bug(), lp) is None
+
+
+def test_plain_patch_has_no_version_to_compare(monkeypatch):
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
+    lp = FakeTriageClient(objects={})
+    bug = FakeBug(attachments=[FakeAttachment("fix.patch", content=PLAIN_PATCH)])
+    assert checks.check_stale_version(URL, bug, lp) is False

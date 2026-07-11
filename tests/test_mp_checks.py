@@ -794,7 +794,9 @@ def test_stale_version_structural_false_when_diff_has_no_changelog_section(
     assert checks.check_stale_version("url", mp, _LP()) is False
 
 
-def test_stale_version_not_applied_to_bugs(monkeypatch):
+def test_stale_version_on_a_bug_without_attachments_is_clean(monkeypatch):
+    # The bug side is real since #65 (see test_attachments.py); with no
+    # usable attachment there is no proposed version to compare.
     _patch_archive(monkeypatch, versions={"noble": "1.2-5"})
     bug = FakeBug()
     assert checks.check_stale_version("url", bug, _LP()) is False
