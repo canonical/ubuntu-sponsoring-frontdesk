@@ -114,6 +114,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # Fresh item, fresh diff-content memo (design_journal.md #39) -- checks
     # 2/5/6 share one fetch of the same preview diff within this item.
     checks.reset_diff_lines_cache()
+    checks.reset_human_engaged_cache()
     # Same for the bug-attachment content memo (#62).
     attachments.reset_cache()
 
@@ -314,6 +315,32 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "failure). Skipping the LLM phase and posting nothing this run -- "
             "the aggregated review must not claim to be complete when it "
             "isn't. Facts won't be persisted, so this URL is retried next run."
+        )
+        return
+
+    # Engagement is decided before the token-spending phases (#73): once a
+    # human reviewer is engaged, Check 7's escape hatch and the LLM review
+    # can only produce findings-tier output that the end of the pass would
+    # suppress anyway -- skip them and suppress now, sparing the tokens.
+    # Exception: a sync-shaped bug keeps its LLM phase, whose SYNCED
+    # outcome is an archive-fact close that must never be skipped. None
+    # (unreadable history) falls through: only the end-of-pass consult
+    # (memoized, so it's free) decides whether that matters.
+    engaged = checks.check_human_engaged(lp_obj, lp_client)
+    checkpoint("check_human_engaged")
+    logger.debug("check_human_engaged -> %s", engaged)
+    if engaged is True and not checks.is_sync_shaped(lp_obj):
+        logger.info(
+            "A human reviewer is already engaged; skipping the LLM phases "
+            "and suppressing %d deterministic finding(s).",
+            len(findings),
+        )
+        state_manager.update_status(
+            url,
+            "READY_FOR_HUMAN",
+            f"{len(findings)} finding(s) suppressed (LLM phases skipped): "
+            "a human reviewer is already engaged.",
+            facts=persistable_facts(),
         )
         return
 

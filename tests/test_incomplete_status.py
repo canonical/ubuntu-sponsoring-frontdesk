@@ -18,15 +18,6 @@ from fakes import (
 URL = "https://launchpad.net/bugs/42"
 
 
-def setup_function(_fn):
-    # This module's bugs carry attachments whose content the checks read;
-    # the per-bug memo is keyed on the shared fake self_link, so it must
-    # not leak across tests/modules.
-    import attachments
-
-    attachments.reset_cache()
-
-
 # --- facts.apply_task_status_changes (pure) ---------------------------------
 
 

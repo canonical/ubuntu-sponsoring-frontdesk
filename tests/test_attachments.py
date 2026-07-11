@@ -2,11 +2,15 @@
 classifying and selecting patch/debdiff attachments, plus Check 8's
 bug-side path built on top of it."""
 
+import datetime
 import gzip
+import types
 
+import archive_lookup
 import attachments
 import checks
-from fakes import FakeAttachment, FakeBug
+import llm_reviewer
+from fakes import FakeAttachment, FakeBug, FakeTask, FakeTriageClient
 
 URL = "url"
 
@@ -63,10 +67,6 @@ PLAIN_PATCH = """\
 """
 
 
-def setup_function(_fn):
-    attachments.reset_cache()
-
-
 def _bug(atts, title="crash on resize"):
     return FakeBug(title=title, attachments=atts)
 
@@ -75,7 +75,7 @@ def test_classify_debdiff_paths_strip_the_version_dir():
     info = attachments.classify_diff(DEBDIFF)
     assert info["debian_paths"] == ["debian/changelog"]
     assert info["other_paths"] == ["src/framebuffer.cpp"]
-    assert any("testpkg (1.2-3ubuntu2)" in l for l in info["changelog_lines"])
+    assert any("testpkg (1.2-3ubuntu2)" in line for line in info["changelog_lines"])
 
 
 def test_classify_git_style_diff_too():
@@ -190,10 +190,6 @@ def test_check8_bug_side_no_attachments_is_clean():
 
 # --- changelog bug-reference parity (#63) -----------------------------------
 # DEBDIFF's new entry cites LP: #2000001 against package "testpkg".
-
-import types
-
-from fakes import FakeTask
 
 
 class _LP:
@@ -364,12 +360,6 @@ def test_mp_resource_is_skipped():
 # DEBDIFF's stanza: testpkg (1.2-3ubuntu2) stonking. Series/archive state is
 # monkeypatched; the verdict core is shared with the MP path (its edge cases
 # live in test_mp_checks.py).
-
-import datetime
-
-import archive_lookup
-import llm_reviewer
-from fakes import FakeTriageClient
 
 _SERIES = [("noble", "24.04"), ("stonking", "26.10")]
 

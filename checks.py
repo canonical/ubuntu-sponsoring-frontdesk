@@ -114,7 +114,27 @@ SERVICE_ACCOUNTS = frozenset(
 )
 
 
+# Per-item memo for check_human_engaged (#73): main consults it both before
+# the token-spending phases and at the aggregate, and the comment history
+# doesn't change mid-pass. Reset per item alongside the other memos.
+_human_engaged_cache = {}
+
+
+def reset_human_engaged_cache():
+    _human_engaged_cache.clear()
+
+
 def check_human_engaged(lp_obj, lp_client):
+    key = getattr(lp_obj, "self_link", None)
+    if key in _human_engaged_cache:
+        return _human_engaged_cache[key]
+    result = _check_human_engaged(lp_obj, lp_client)
+    if key is not None:
+        _human_engaged_cache[key] = result
+    return result
+
+
+def _check_human_engaged(lp_obj, lp_client):
     """
     True if a human reviewer is already engaged on this item, i.e. someone
     other than the submitter (and other than the bot itself) commented since
@@ -421,6 +441,20 @@ def _has_proposed_source_link(bug):
             e,
         )
     return any(_PROPOSED_SOURCE_LINK_RE.search(text) for text in texts)
+
+
+def is_sync_shaped(lp_obj):
+    """True when the item is a bug that reads as a sync request -- whose
+    LLM phase can conclude SYNCED, an archive-fact close that the engaged-
+    human skip (#73) must never bypass. Metadata-only, no Launchpad
+    lookups."""
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return False
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    return llm_reviewer._is_sync(
+        getattr(bug, "title", ""), getattr(bug, "description", "")
+    )
 
 
 def check_nothing_to_sponsor(url, lp_obj, lp_client):

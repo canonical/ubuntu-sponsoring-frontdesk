@@ -13,11 +13,15 @@ from fakes import (
     BOT,
     CLEAN_DIFF_TEXT,
     HUMAN,
+    FakeAttachment,
+    FakeBug,
+    FakeBugMessage,
     FakeDiff,
     FakeLLM,
     FakeMP,
     FakeMPComment,
     FakeRoot,
+    FakeTask,
     FakeTriageClient,
 )
 
@@ -117,15 +121,8 @@ def test_unreadable_comment_history_is_inconclusive():
 # --- check_human_engaged on bugs (#72) ------------------------------------------
 
 
-import attachments
-from fakes import FakeAttachment, FakeBug, FakeBugMessage, FakeTask
-
 ATTACH_DATE = DIFF_DATE  # the newest usable diff attachment is the anchor
 DEBDIFF = "--- foo-1.0/debian/rules\n+++ foo-1.1/debian/rules\n@@ -1 +1 @@\n-a\n+b\n"
-
-
-def setup_function(_fn):
-    attachments.reset_cache()
 
 
 def _bug(messages, bug_attachments=None):

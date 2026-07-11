@@ -62,10 +62,6 @@ def _linked_bug(number):
     return types.SimpleNamespace(id=number, title="a bug")
 
 
-def setup_function(_fn):
-    checks.reset_diff_lines_cache()
-
-
 def test_missing_changelog_fires_incomplete_without_bug():
     finding = checks.check_missing_changelog_stanza(URL, _mp(), None)
     assert finding.tier == "incomplete"

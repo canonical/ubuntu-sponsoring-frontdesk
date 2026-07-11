@@ -6,7 +6,6 @@ no changelog stanza at all, so nativeness falls back to the archive."""
 import types
 
 import archive_lookup
-import attachments
 import checks
 from fakes import FakeDiff, FakeMP
 
@@ -73,13 +72,6 @@ def _mp(diff_text, source="refs/heads/fix-lp2000001", **kwargs):
 
 class _LP:
     lp = types.SimpleNamespace()
-
-
-def setup_function(_fn):
-    checks.reset_diff_lines_cache()
-    # FakeBugs share a self_link, so the attachment memo (#62) can leak
-    # across test modules without this.
-    attachments.reset_cache()
 
 
 def test_direct_source_edit_fires_incomplete():

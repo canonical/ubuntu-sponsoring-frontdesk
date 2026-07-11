@@ -5,7 +5,6 @@ New; silence for 30+ days gets the final comment + unsubscribe."""
 
 import datetime
 
-import attachments
 import sweep
 from state import StateManager
 from fakes import (
@@ -33,10 +32,6 @@ DEBDIFF = """\
 -a
 +b
 """
-
-
-def setup_function(_fn):
-    attachments.reset_cache()
 
 
 def _state(tmp_path, bounce_reason="Please add a changelog entry."):
