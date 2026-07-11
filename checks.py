@@ -2236,23 +2236,19 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
 
     series_list = ", ".join(unhandled)
     if stated_fixed:
+        # The bug text already documents the newer series as fixed/not
+        # affected -- that's all a reviewer needs. Updating the task table
+        # would require nominating series tasks, a restricted action most
+        # contributors can't perform, so there is nothing useful to ask of
+        # the submitter (seb128, live on bug #2148507).
         logger.info(
-            "[%s] SRU to %s: bug text says %s already fixed, tasks don't "
-            "reflect it. Adding a soft advisory finding.",
+            "[%s] SRU to %s: bug text says %s already fixed; tasks don't "
+            "reflect it but fixing that needs nomination rights. Skipping.",
             url,
             target_series,
             series_list,
         )
-        return Finding(
-            "question",
-            f"This looks like an SRU targeting {target_series}. The bug "
-            f"text suggests the issue is already fixed in the newer Ubuntu "
-            f"series ({series_list}), but the bug's task table doesn't "
-            "reflect that. Please mark those tasks as fixed (or ask on the "
-            "bug for someone with the permissions to do it) so the SRU "
-            "status is clear to reviewers.",
-            kind="advisory",
-        )
+        return False
 
     logger.info(
         "[%s] SRU to %s with no sign the fix landed in %s first. Adding an "

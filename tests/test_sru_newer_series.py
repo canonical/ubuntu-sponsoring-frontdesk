@@ -152,17 +152,18 @@ def test_unhandled_newer_series_fires_the_advisory():
     ]
 
 
-def test_bug_text_saying_fixed_softens_to_update_the_tasks():
+def test_bug_text_saying_fixed_skips_silently():
+    # The bug text already tells reviewers the newer series are covered;
+    # fixing the task table needs series-nomination rights most
+    # contributors don't have, so there is nothing to ask of the
+    # submitter (seb128, live on bug #2148507).
     bug = _bug(
         [FakeTask("testpkg (Ubuntu Noble)", "In Progress")],
         description="0.4.13 in resolute and later carries the workaround.",
     )
     llm = FakeLLM()
     llm.fixed_in_newer = True
-    finding = checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), llm)
-    assert finding.tier == "question" and finding.kind == "advisory"
-    assert "task table doesn't" in finding.message
-    assert "SRU requirements" not in finding.message  # the soft variant
+    assert checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), llm) is False
 
 
 def test_llm_failure_is_inconclusive():
