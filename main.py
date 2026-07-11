@@ -372,8 +372,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
     checkpoint("llm_reviewer")
 
-    llm_incomplete = new_status == "INCOMPLETE"
-    if llm_incomplete:
+    if new_status == "INCOMPLETE":
         findings.append(checks.Finding("incomplete", comment))
     elif new_status == "ADVISORY":
         # The MP content review (#47): a list of (kind, bullet) pairs, each
@@ -450,12 +449,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             else None
         )
         lp_client.comment(lp_obj, aggregated, vote=vote)
-        if llm_incomplete:
+        if blocking and resource_type in ("bug", "bug_task"):
             # Mark the bug Incomplete (the status for "waiting on the
-            # submitter"). We deliberately keep ~ubuntu-sponsors subscribed
-            # for visibility. Fold our own status writes into the persisted
-            # facts so the bot's action is not mistaken for a contributor
-            # change on the next run (Fix #2).
+            # submitter") -- for any blocking finding, deterministic or
+            # LLM (the checks only gained bug-side blocking findings with
+            # #62-#65, and only the LLM path set the status before). We
+            # deliberately keep ~ubuntu-sponsors subscribed for visibility.
+            # Fold our own status writes into the persisted facts so the
+            # bot's action is not mistaken for a contributor change on the
+            # next run (Fix #2). Rule B's sweep (#66) also depends on this:
+            # its clock is date_incomplete.
             changed = lp_client.set_bug_tasks_incomplete(lp_obj)
             new_facts = facts.apply_task_status_changes(new_facts, changed)
         if blocking:

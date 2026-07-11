@@ -18,6 +18,15 @@ from fakes import (
 URL = "https://launchpad.net/bugs/42"
 
 
+def setup_function(_fn):
+    # This module's bugs carry attachments whose content the checks read;
+    # the per-bug memo is keyed on the shared fake self_link, so it must
+    # not leak across tests/modules.
+    import attachments
+
+    attachments.reset_cache()
+
+
 # --- facts.apply_task_status_changes (pure) ---------------------------------
 
 
@@ -102,3 +111,27 @@ def test_bounce_sets_incomplete_keeps_sponsors_and_is_quiet_next_run(tmp_path):
     # no re-triage, no second comment.
     main.triage_url(URL, sm, lp, llm)
     assert len(lp.comments) == 1
+
+
+def test_deterministic_bug_bounce_also_sets_incomplete(tmp_path):
+    # Found live on bug #2145103 (#65's same-version-collision bounce): only
+    # the LLM's INCOMPLETE verdict used to set the task status; a blocking
+    # finding from a deterministic check posted the comment but left the
+    # tasks open. Any blocking finding on a bug must set Incomplete -- Rule
+    # B's sweep clock (date_incomplete) depends on it too.
+    sm = StateManager(db_path=str(tmp_path / "state.db"))
+    # The default FakeAttachment content is a plain code patch: Check 10
+    # bounces it (incomplete tier) with the LLM staying at READY_FOR_HUMAN.
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu)", "New")],
+        description="fix attached",
+        attachments=[FakeAttachment("fix.patch", type="Patch")],
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    assert len(lp.comments) == 1
+    assert "Needs fixing before this can be sponsored:" in lp.comments[0]
+    assert bug.bug_tasks[0].status == "Incomplete"
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
