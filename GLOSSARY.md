@@ -286,6 +286,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   the bug is a duplicate queue entry) or when there is no patch and no
   linked MP at all (sync requests exempt — they legitimately carry no
   patch). Runs before the LLM, so a patch-less bug is never LLM-reviewed.
+  The MP must be a real sponsoring venue (#71): not Merged, a
+  git-ubuntu-convention target branch (`ubuntu/devel`,
+  `ubuntu/<series>[-devel]`, or `debian/sid`/`debian/experimental` for a
+  merge = devel), and that series still open on the bug — a team
+  packaging fork's master/stable/* MP never qualifies.
 
 - **Operator notifications** — `notify.py` (#48): best-effort pings to a
   Mattermost incoming webhook, strictly for anomalies the bot detected but

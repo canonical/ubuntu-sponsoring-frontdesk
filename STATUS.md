@@ -488,7 +488,11 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     unsubscribes ~ubuntu-sponsors when the bug's fix is under review on a
     linked MP (sponsors-as-reviewer or an actual review vote -- the bug is
     a duplicate queue entry) or when there is no patch and no MP at all
-    (sync requests exempt). Bug facts now fingerprint attachments and
+    (sync requests exempt). Since #71 (2026-07-12, gnocchi bug #2148798)
+    the MP must be a real sponsoring venue: not Merged, git-ubuntu-shaped
+    target branch (`ubuntu/devel`, `ubuntu/<series>[-devel]`, or
+    `debian/sid`/`debian/experimental` for a merge), and that series
+    still open on the bug -- team packaging forks' MPs don't qualify. Bug facts now fingerprint attachments and
     linked-MP review state so a closed no-patch bug re-triages once a fix
     appears. The SRU/sync LLM INCOMPLETE messages also lost their own
     greeting/sign-off (the aggregated template carries them once).
