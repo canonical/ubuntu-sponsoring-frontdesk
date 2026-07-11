@@ -40,13 +40,19 @@ class Finding(NamedTuple):
     kind: str = "advisory"
 
 
-def render_findings_comment(findings):
+def render_findings_comment(findings, for_bug=False):
     """
     Render the one aggregated comment for a pass's fired findings
     (design_journal.md #31): a single intro, a "needs fixing" section, an
     optional "nice to have" section, and a single closing line -- instead
     of one comment per check. Individual finding messages are bullets and
     deliberately carry no greeting/sign-off of their own.
+
+    for_bug: a blocking bounce on a bug also sets its tasks Incomplete
+    (#70), so the closing line tells the contributor how to re-enter the
+    queue: set the status back to New. (Rule B's sweep would also notice a
+    new attachment or reply on its own, but the explicit route shouldn't
+    depend on that.)
     """
     incomplete = [f for f in findings if f.tier == "incomplete"]
     verify = [f for f in findings if f.tier == "question" and f.kind == "verify"]
@@ -78,7 +84,14 @@ def render_findings_comment(findings):
             "this, or in a future contribution):\n\n" + bullets(advisory)
         )
     if incomplete:
-        parts.append("Once the points above are addressed, please let us know!")
+        if for_bug:
+            parts.append(
+                "The bug status is being set to Incomplete while waiting. "
+                "Once the points above are addressed, please set it back "
+                "to New so the request re-enters the review queue!"
+            )
+        else:
+            parts.append("Once the points above are addressed, please let us know!")
     return "\n\n".join(parts)
 
 

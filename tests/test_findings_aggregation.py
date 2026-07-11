@@ -33,6 +33,17 @@ def test_render_incomplete_findings_one_comment_with_bullets():
     assert "Nice to have" not in out
 
 
+def test_render_for_bug_closes_with_the_back_to_new_hint():
+    # A bug bounce also sets the tasks Incomplete (#70), so the closing
+    # line explains the way back into the queue instead of "let us know".
+    out = checks.render_findings_comment(
+        [checks.Finding("incomplete", "First problem.")], for_bug=True
+    )
+    assert "status is being set to Incomplete" in out
+    assert "set it back to New" in out
+    assert "let us know" not in out
+
+
 def test_render_question_only_has_no_blocking_section_or_closing_line():
     out = checks.render_findings_comment(
         [checks.Finding("question", "A soft suggestion.")]

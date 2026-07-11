@@ -133,5 +133,8 @@ def test_deterministic_bug_bounce_also_sets_incomplete(tmp_path):
 
     assert len(lp.comments) == 1
     assert "Needs fixing before this can be sponsored:" in lp.comments[0]
+    # The bug variant of the closing line: says the status is being set to
+    # Incomplete and how to re-enter the queue (set it back to New).
+    assert "set it back to New" in lp.comments[0]
     assert bug.bug_tasks[0].status == "Incomplete"
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"

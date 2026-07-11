@@ -434,7 +434,9 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 facts=persistable_facts(),
             )
             return
-        aggregated = checks.render_findings_comment(findings)
+        aggregated = checks.render_findings_comment(
+            findings, for_bug=resource_type in ("bug", "bug_task")
+        )
         blocking = [f for f in findings if f.tier == "incomplete"]
         logger.info(
             "Posting the aggregated review comment (%d finding(s), %d blocking).",
