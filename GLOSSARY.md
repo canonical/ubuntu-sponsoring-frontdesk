@@ -125,8 +125,16 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   (https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/).
   Silently exempt: merge MPs, new upstream versions, and native packages
   (no Debian revision in the version — read from the new stanza, or from
-  the archive when the MP carries no stanza at all). MP-only today; the
-  same rule for debdiff attachments on bugs is backlog (STATUS item 43).
+  the archive when the MP carries no stanza at all). Since #62 it also
+  covers bugs: a *debdiff* attachment (diff touching debian/) that edits
+  upstream files directly gets the same bounce, while a plain patch
+  (no debian/ file) is a normal contribution shape and never bounced.
+- **Bug-attachment content foundation** — `attachments.py` (#62): fetch a
+  bug's patch/debdiff content (`attachment.data`, gunzip, 1 MB cap on
+  decompressed size), `classify_diff` (parses both git-style diffs and
+  debdiffs, whose paths carry a version-dir prefix), and `review_target`
+  (the newest usable diff attachment, memoized per item). Foundation for
+  bug-side content checks; Check 8 is the first consumer.
 - **Missing changelog-entry check** — Check 9,
   `check_missing_changelog_stanza` (#61): a fix MP whose diff doesn't
   touch `debian/changelog` at all gets an incomplete-tier bounce asking

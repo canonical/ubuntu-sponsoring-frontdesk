@@ -62,8 +62,10 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
 1. **Rule B — stale-bounce sweep (DESIGNED, not built).** For any bug with an
    Ubuntu task in `Incomplete`, check activity since `bug_task.date_incomplete`:
 
-   - **New attachment** → flip tasks back to New immediately (attachment content
-     not yet readable via lpcli; canonical/lpcli#23 filed; revisit once fixed).
+   - **New attachment** → flip tasks back to New immediately (attachment
+     content is now readable -- `attachments.review_target`, #62; the old
+     lpcli caveat is moot: deterministic code uses launchpadlib, and
+     canonical/lpcli#23 was resolved 2026-07-10 anyway).
    - **New comment(s)** → pass comment text to LLM (read via launchpadlib,
      injected into prompt) + the stored bounce reason; LLM judges whether the
      response addresses the bounce. Yes → flip to New. No + >30d → sweep.
@@ -677,29 +679,31 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
     nux #508190 (now gets both the patches and the changelog bounce).
     332 tests.
 
-43. **Backlog: Check 8 for debdiff attachments on bugs (seb128,
-    2026-07-11).** The direct-source-edit rule applies equally to a
-    debdiff attached to a bug, but `check_direct_source_edit` is
-    MP-only and nothing reads attachment *content* today (bug-side
-    checks only look at titles/flags; launchpadlib can fetch the bytes
-    via `attachment.data`, unlike lpcli -- see item 1's canonical/lpcli#23
-    note). Needs: fetch the debdiff, parse changed paths, reuse the
-    same exemptions (native, new upstream version).
+43. **Check 8 for debdiff attachments on bugs (DONE, 2026-07-11).**
+    Built as the first consumer of the #62 foundation (see item 44):
+    `check_direct_source_edit` now dispatches bug/bug_task resources to
+    `_direct_source_edit_bug`. Only debdiffs (diff touches debian/) are
+    judged; a plain patch touching no debian/ file is a normal
+    contribution shape and never bounced. Same exemptions as the MP
+    side (merge bugs, new upstream version, native), minus the archive
+    fallback (a debdiff without a parseable changelog stanza is an
+    unexpected shape -> skip).
 
-44. **Backlog: bug-attachment content foundation (seb128, 2026-07-11 --
-    "we need to tackle patches attached to bug reports at some point").**
-    Items 42/43 and several older gaps share one missing primitive:
-    fetch a bug's attached patch/debdiff (`attachment.data`, gunzip if
-    needed) and expose the MP path's diff helpers
-    (`_split_debian_diff`, `_new_changelog_stanza`) over it. That
-    unlocks bug-side parity for: Check 8 (item 43), `check_stale_version`
-    (patch's stanza version vs archive -- backlog since #27),
-    `check_changelog_bug_reference`, Check 9 (item 42, MP-side DONE),
-    and Rule B's "does the new attachment address the bounce" step
-    (item 1). Design questions: which attachment when several (newest
-    patch-flagged?), size caps, graceful skip for non-diff attachments
-    (tarballs). Build as one foundation + small per-check branches, not
-    piecemeal.
+44. **Bug-attachment content foundation (foundation DONE, 2026-07-11).**
+    See design_journal.md #62 and the new `attachments.py`:
+    `patch_attachments` / `attachment_text` (gunzip by magic, 1 MB cap
+    on decompressed content -- seb128 -- doubling as the gzip-bomb
+    guard) / `classify_diff` (format-tolerant: debdiffs are NOT git
+    diffs, version-dir prefixes stripped, timestamps cut at first
+    whitespace -- a live parsing bug on #2158304) / `review_target`
+    (newest usable diff attachment, memoized per item). First consumer:
+    Check 8 bug-side (item 43). **Remaining consumers (backlog):**
+    `check_stale_version` for patches (stanza version vs archive --
+    backlog since #27), `check_changelog_bug_reference` parity, Check 9
+    parity (debdiff missing a changelog entry -- plain patches
+    legitimately have none), Rule B's "does the new attachment address
+    the bounce" step (item 1), and SRU bugs with one debdiff per series
+    (an all-candidates variant of `review_target`).
 
 ## Live dry-run, 2026-07-08 (full queue, ~87 items, `--all --dry-run --verbose`)
 

@@ -48,7 +48,7 @@ digraph SponsoringBot {
     c3 -> c4 [label="no / None"];
     c4 -> c5;
     c5 -> c6;
-    c8 [label="Check 8: direct_source_edit (#60)\nupstream files edited, not patched\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c8 [label="Check 8: direct_source_edit (#60/#62)\nupstream files edited, not patched\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c9 [label="Check 9: missing_changelog_stanza (#61)\nno debian/changelog entry in the diff\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c6 -> c8;
     c8 -> c9;
