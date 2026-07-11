@@ -627,7 +627,10 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     series, or bug with an open series task), every newer supported
     series (devel included) must show the fix handled -- task Fix
     Released/Committed, a linked MP per series, or a series-named patch.
-    Mechanically unhandled series get one LLM question ("does the bug
+    A newer series with no current publication of the package is exempt
+    -- removed there, nothing can land (#69; only when the package IS
+    published in the target series, so an introduction doesn't qualify).
+    Remaining unhandled series get one LLM question ("does the bug
     text say it's fixed there?", series labeled with release versions
     since codenames postdate LLM training); yes -> silent skip (since
     #68: the old "update the bug tasks" advisory asked for series

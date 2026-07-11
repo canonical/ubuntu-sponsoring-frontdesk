@@ -114,7 +114,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   (#58): SRU policy requires the fix to land in the development release
   (and, by extension, every supported series newer than the SRU's target)
   first. Handled = task Fix Released/Committed, a linked MP targeting that
-  series, or a series-named patch attachment; otherwise one LLM question
+  series, or a series-named patch attachment. A newer series where the
+  package has no current publication is exempt (#69: removed there --
+  guarded by the package being published in the target series, so an
+  introduction doesn't qualify); otherwise one LLM question
   asks whether the bug text says it's already fixed there (task tables are
   often stale — updating them needs nomination rights submitters usually
   lack, so a yes skips silently since #68; only "no basis to conclude
