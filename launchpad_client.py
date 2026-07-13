@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 import sys
 
 from launchpadlib.launchpad import Launchpad
@@ -51,6 +52,32 @@ _CONCLUSIVE_STATUSES = ("Fix Released", "Fix Committed", "Won't Fix", "Invalid")
 # an hour with one idle ESTABLISHED connection to the API, no timeout to
 # recover from it.
 _LP_TIMEOUT_SECONDS = 30
+
+# Privileged-helper delegation (#78): unsubscribing ~ubuntu-sponsors from a
+# bug requires team membership, but the bot account must NOT be a member (a
+# member's MP vote claims the team review slot and permanently drops the MP
+# from the sponsoring report). When helper credentials are configured, the
+# unsubscribe is delegated to privileged_helper.py, a subprocess with its own
+# token from a member account; otherwise the bot acts directly (the
+# pre-#78 behavior, kept for the transition while the bot is still a member).
+_HELPER_SCRIPT = os.path.join(os.path.dirname(__file__), "privileged_helper.py")
+
+
+def _helper_credentials():
+    return os.environ.get(
+        "SPONSORING_BOT_HELPER_LP_CREDENTIALS",
+        os.path.join(
+            os.path.expanduser("~"),
+            ".cache",
+            "ubuntu-sponsoring-bot-helper",
+            "credentials",
+        ),
+    )
+
+
+def _helper_configured():
+    return os.path.exists(_helper_credentials())
+
 
 # Write outcomes after which the item can be considered handled: the write
 # either happened, or an identical bot comment already existed on Launchpad.
@@ -217,6 +244,11 @@ class LPClient:
         queue via their status/vote transitions, and Launchpad offers no
         direct API to unsubscribe a review team from an MP anyway. Both call
         sites (check_administrative_state, the SYNCED path) are bug-only.
+
+        The action needs ~ubuntu-sponsors membership, which the bot account
+        must not have (#78: a member's MP vote claims the team review slot
+        and permanently drops the MP from the report), so with helper
+        credentials configured it is delegated to privileged_helper.py.
         """
         sponsors_team = self.lp.people["ubuntu-sponsors"]
 
@@ -268,7 +300,25 @@ class LPClient:
             return
 
         try:
-            lp_obj.unsubscribe(person=sponsors_team)
+            if _helper_configured():
+                # Delegated to the privileged helper (#78): a separate
+                # process, separate token, separate account -- see the
+                # module docstring in privileged_helper.py.
+                result = subprocess.run(
+                    [sys.executable, _HELPER_SCRIPT, "unsubscribe-sponsors",
+                     str(lp_obj.id)],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"privileged helper exited {result.returncode}: "
+                        f"{result.stderr.strip()}"
+                    )
+                logger.info("privileged helper: %s", result.stdout.strip())
+            else:
+                lp_obj.unsubscribe(person=sponsors_team)
             self._record_write(
                 url=target,
                 action="unsubscribe",

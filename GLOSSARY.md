@@ -337,3 +337,16 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   to, so `check_nothing_to_sponsor` (#50) treats a PPA/git-repo link in
   the description or comments as the normal shape of a proposed
   contribution there and leaves it for a human instead of auto-closing.
+
+- **Privileged helper** — `privileged_helper.py` (#78): team-membership
+  actions (today: unsubscribing ~ubuntu-sponsors from a bug) run in a
+  separate process with its own Launchpad token from a team-member
+  account, because the bot account itself must NOT be a member -- a
+  member's vote on an MP claims the team's review slot and permanently
+  drops the MP from the sponsoring report. Enabled when the helper
+  credentials file exists (`$SPONSORING_BOT_HELPER_LP_CREDENTIALS`,
+  default `~/.cache/ubuntu-sponsoring-bot-helper/credentials`); without
+  it the bot acts directly (transition behavior). Mode gating and audit
+  stay in `LPClient`; helper exit != 0 counts as a failed write (facts
+  withheld, retried). The bug activity log attributes the unsubscribe to
+  the helper account.

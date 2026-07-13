@@ -11,6 +11,7 @@ import pytest
 
 import attachments
 import checks
+import launchpad_client
 
 
 @pytest.fixture(autouse=True)
@@ -18,3 +19,12 @@ def _reset_per_item_caches():
     checks.reset_diff_lines_cache()
     checks.reset_human_engaged_cache()
     attachments.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _no_privileged_helper(monkeypatch):
+    """Tests must never depend on (or spawn) the real privileged helper
+    (#78): _helper_configured() looks for a credentials file on the host,
+    so once real helper credentials exist, un-pinned tests would start
+    subprocesses. Default to unconfigured; delegation tests override."""
+    monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: False)

@@ -792,3 +792,47 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   #508190 still bounces, exercising the 1.0-tiebreak (.diff.gz present).
   Closes the #60 "proper nativeness classification" backlog line. 426
   tests.
+
+## 78. Privileged helper: bot leaves ~ubuntu-sponsors (2026-07-13)
+
+* seb128 realized on the nux bounce: MPs sit in the sponsoring report
+  because ~ubuntu-sponsors is a requested reviewer, and when a MEMBER of
+  that team reviews, the team's review slot is claimed and the MP drops
+  from the report. The bot joined the team on 2026-07-09 (for the bug
+  unsubscribe 401) -- so every bot vote silently and PERMANENTLY removes
+  the MP from the queue: nothing un-claims the slot when the contributor
+  pushes a fix, and no human sponsor ever sees it again.
+* Options: (A) bounce without a vote; (B) vote + re-request the team
+  review -- dead: Launchpad offers no way to request review on an MP you
+  don't own; (C) accept the drop + Rule-B-style re-request -- same API
+  wall; (D, seb128's, chosen) the bot LEAVES ~ubuntu-sponsors so its
+  votes are ordinary community reviews that don't claim the slot, and
+  the one action that genuinely needs membership -- unsubscribing the
+  team from a bug -- is delegated to a privileged helper with its own
+  token from a member account (interim: a personal seb128 token; later a
+  dedicated helper account, which is also the natural future member of
+  ~ubuntu-security-sponsors, reframing backlog 5b).
+* Helper = SUBPROCESS (privileged_helper.py), not a second in-process
+  launchpadlib session: seb128 has seen launchpadlib state confusion
+  between sessions; a process boundary isolates credentials/cache by
+  construction, and objects can't cross sessions anyway (the helper
+  re-loads the bug by id). Contract: exit 0 = performed, else failed
+  with stderr; all mode gating stays in the CALLER (LPClient._decide
+  runs before the helper is ever invoked); helper failure -> outcome
+  "error" -> facts withheld, retried (#36). Env:
+  SPONSORING_BOT_HELPER_LP_CREDENTIALS / _LP_CACHE (default
+  ~/.cache/ubuntu-sponsoring-bot-helper/). Credentials file present =
+  delegation on; absent = direct call (transition behavior while the
+  bot is still a member).
+* Caveat surfaced: the unsubscribe is NOT anonymous -- the bug activity
+  log records "removed subscriber" attributed to the helper account
+  (no comment/notification though). seb128 accepted for the interim.
+* tests/conftest.py pins _helper_configured() to False (autouse):
+  otherwise tests would start spawning real subprocesses the day real
+  helper credentials appear on the host.
+* Follow-ups: seb128 removes the bot from ~ubuntu-sponsors and
+  authorizes the helper token (first helper invocation triggers the
+  OAuth flow -- container text-browser gotcha applies); after the
+  switch, verify a non-member bot vote really leaves the MP on the
+  report, and watch private-bug loads (team membership may have been
+  granting visibility).

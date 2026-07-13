@@ -39,6 +39,10 @@ python3 main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#
 
 Write modes: **`--dry-run`** (default; logs intended writes, does nothing),
 `--interactive` (`[y/N]` per write; refuses if no TTY), `--yes` (unattended/cron).
+The ~ubuntu-sponsors bug unsubscribe is delegated to `privileged_helper.py`
+(#78) when `~/.cache/ubuntu-sponsoring-bot-helper/credentials` (or
+`$SPONSORING_BOT_HELPER_LP_CREDENTIALS`) exists -- a separate token from a
+team-member account, because the bot account itself must not be a member.
 Every write attempt is recorded in `audit.jsonl`. `--verbose` (design_journal.md
 #24, #32) logs every decision step each check considered (not just the ones
 that fired) plus a `[timing]` line per step and a `TOTAL` line per URL --
@@ -122,12 +126,19 @@ Fixes 1–6 + auth + a real bug found in validation. See `design_journal.md` #9�
    of scope.
 5. **Tool-using investigation triage** — pull packages, check Debian/upstream
    trackers, git status (the richer roadmap; opencode agent with tools).
-5b. **Get ~ubuntu-sponsoring-bot added to ~ubuntu-security-sponsors**
-   (seb128 to arrange once the bot has proven itself). Security-sponsored
-   bugs are triaged normally (#72) -- posting and task statuses work --
-   but the bot can't unsubscribe a team it isn't a member of, so
-   security bugs currently stay in the security queue after a close;
-   `unsubscribe_sponsors` logs when that happens.
+5b. **Privileged-helper account memberships (reframed by #78).** The BOT
+   account must NOT be a member of any sponsoring team: a member's MP
+   vote claims the team review slot and permanently drops the MP from
+   the report (#78). Team-membership actions are delegated to
+   `privileged_helper.py` (subprocess, own token from a member account;
+   interim: a seb128 personal token, later a dedicated helper account).
+   Pending: seb128 removes ~ubuntu-sponsoring-bot from ~ubuntu-sponsors
+   and authorizes the helper token (first helper run triggers OAuth);
+   then verify a bot vote leaves the MP on the report and private-bug
+   loads still work. Security-sponsored bugs are triaged normally (#72)
+   but stay in the security queue after a close until the HELPER
+   account joins ~ubuntu-security-sponsors; `unsubscribe_sponsors` logs
+   when that happens.
 5c. **Sponsoring-report "most recent update" field** (report-side change,
    we own sponsoring-reports.ubuntu.com): add a last-activity timestamp
    per entry so the bot can run on "what changed since the last pass"
