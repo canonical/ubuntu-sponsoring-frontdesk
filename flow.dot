@@ -20,9 +20,14 @@ digraph SponsoringBot {
     gate    [label="force?  OR\nstored facts ≠ new facts?", shape=diamond, fillcolor="#FFF9C4"];
     skip    [label="Skip\n(nothing changed)", shape=box, fillcolor="#ECEFF1"];
 
+    qguard [label="bug directly subscribed to\n~ubuntu-sponsors / ~ubuntu-security-\nsponsors? (#76; MPs always pass)", shape=diamond, fillcolor="#FFF9C4"];
+    qskip  [label="not a queue item\n(mistaken --url): skip,\nnothing persisted\n(dry-run proceeds --\nit performs no writes)", shape=box, fillcolor="#ECEFF1"];
+
     triage -> load;
     load -> loaderr [label="error"];
-    load -> facts [label="ok"];
+    load -> qguard [label="ok"];
+    qguard -> qskip [label="no / None\n(write modes)"];
+    qguard -> facts [label="yes /\ndry-run"];
     facts -> gate;
     gate -> skip [label="unchanged"];
 

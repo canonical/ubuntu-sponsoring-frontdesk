@@ -244,6 +244,49 @@ def _check_human_engaged(lp_obj, lp_client):
     return False
 
 
+# Teams whose direct bug subscription puts an item on a sponsoring queue
+# (direct subscription is the only mechanism the report uses -- #76).
+SPONSORING_TEAMS = frozenset({"~ubuntu-sponsors", "~ubuntu-security-sponsors"})
+
+
+def check_sponsoring_team_subscribed(url, lp_obj):
+    """
+    Queue-membership guard (#76): is a sponsoring team directly subscribed?
+
+    Bugs only reach the sponsoring report via a direct ~ubuntu-sponsors /
+    ~ubuntu-security-sponsors subscription. A bug without one is not a
+    sponsoring request (typically a mistaken --url run, e.g. the bug an MP
+    links to), and the bot must not write to it -- no "cleaning up the
+    queue" comment, no Incomplete bounce, no unsubscribe no-op.
+
+    MPs always pass: they queue via their own review-request mechanics.
+    Returns True (subscribed / MP), False (not a queue item), None
+    (subscription lookup failed -- skip and retry, #28 convention).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type == "branch_merge_proposal":
+        return True
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    try:
+        subscribers = {
+            s.person_link.rsplit("/", 1)[-1] for s in bug.subscriptions
+        }
+    except Exception as e:
+        logger.warning(
+            "check_sponsoring_team_subscribed: could not read subscriptions "
+            "(%s); cannot tell whether [%s] is a queue item.",
+            e,
+            url,
+        )
+        return None
+    subscribed = sorted(SPONSORING_TEAMS & subscribers)
+    logger.debug(
+        "check_sponsoring_team_subscribed: sponsoring teams subscribed=%s",
+        subscribed or "none",
+    )
+    return bool(subscribed)
+
+
 # A task that has landed in Ubuntu.
 DONE_STATUSES = ("Fix Released", "Fix Committed")
 # Statuses that mean "this series no longer needs sponsor action": either it

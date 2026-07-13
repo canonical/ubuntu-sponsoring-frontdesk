@@ -234,6 +234,26 @@ class LPClient:
             return
 
         target = _target(lp_obj)
+
+        # Mid-run race belt (#76): the triage-level queue-membership guard
+        # already filtered non-queue bugs, but a human may have unsubscribed
+        # the team while we were triaging. Nothing to do then -- skip the
+        # prompt entirely. On a lookup failure fall through to the normal
+        # flow (worst case: a prompt/attempt for a no-op).
+        try:
+            if not any(
+                s.person_link.rsplit("/", 1)[-1] == "~ubuntu-sponsors"
+                for s in lp_obj.subscriptions
+            ):
+                logger.info(
+                    "~ubuntu-sponsors is not subscribed to %s; nothing to "
+                    "unsubscribe.",
+                    target,
+                )
+                return
+        except Exception:
+            pass
+
         decision = self._decide(
             f"Unsubscribe ~ubuntu-sponsors from this {resource_type}."
         )

@@ -162,6 +162,11 @@ class FakeVote:
         self.comment_link = comment_link
 
 
+class FakeSubscription:
+    def __init__(self, person):
+        self.person_link = f"https://api.launchpad.net/devel/{person}"
+
+
 class FakeBug:
     resource_type_link = "https://api.launchpad.net/devel/#bug"
 
@@ -174,8 +179,16 @@ class FakeBug:
         attachments=None,
         linked_merge_proposals=None,
         id=1,
+        subscriptions=None,
     ):
         self.id = id
+        # Direct subscriptions; queue items carry a sponsoring team (#76).
+        # Default matches the common case so most tests need no change.
+        self.subscriptions = (
+            subscriptions
+            if subscriptions is not None
+            else [FakeSubscription("~ubuntu-sponsors")]
+        )
         # The bug's reporter -- the submitter for the #72 human-engaged
         # check, mirroring FakeMP.registrant_link.
         self.owner_link = HUMAN
@@ -269,8 +282,10 @@ class FakeRoot:
 class FakeTriageClient:
     """Minimal lp_client for exercising main.triage_url end-to-end."""
 
-    def __init__(self, objects, write_outcome="performed", lp=None):
+    def __init__(self, objects, write_outcome="performed", lp=None, mode="yes"):
         self.objects = objects  # url -> lp_obj
+        # Write mode, consulted by main's queue-membership guard (#76).
+        self.mode = mode
         # Optional FakeRoot: when set, main passes it to facts.build_facts so
         # the archive-version fingerprint (design #37) is exercised too.
         self.lp = lp

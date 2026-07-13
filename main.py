@@ -67,6 +67,34 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         return
     checkpoint("load_url")
 
+    # Queue-membership guard (#76): a bug without a direct sponsoring-team
+    # subscription is not a sponsoring request (mistaken --url, e.g. the bug
+    # an MP links to) -- never write to it. --all items come from the report
+    # so this is a race guard there. Dry-run performs no writes, so it may
+    # proceed and show what the bot would do if the bug were queued.
+    subscribed = checks.check_sponsoring_team_subscribed(url, lp_obj)
+    checkpoint("check_sponsoring_team_subscribed")
+    if subscribed is None:
+        logger.info(
+            "Could not determine queue membership; skipping (nothing "
+            "persisted, retried next run)."
+        )
+        return
+    if subscribed is False:
+        if lp_client.mode == "dry-run":
+            logger.warning(
+                "No sponsoring team (~ubuntu-sponsors / "
+                "~ubuntu-security-sponsors) is subscribed to this bug -- not "
+                "a queue item. Continuing because dry-run performs no writes."
+            )
+        else:
+            logger.info(
+                "No sponsoring team (~ubuntu-sponsors / "
+                "~ubuntu-security-sponsors) is subscribed to this bug -- not "
+                "a queue item. Skipping (nothing persisted)."
+            )
+            return
+
     # Fingerprint the contributor-controlled signals. We (re-)triage only when
     # these change; an unchanged snapshot means nothing has happened since we
     # last looked, so we stay quiet and avoid re-posting the same comment.

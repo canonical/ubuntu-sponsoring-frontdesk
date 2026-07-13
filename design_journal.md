@@ -729,3 +729,30 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   facts persisted (no write needed, so nothing to gate on -- same as the
   Merged-MP path). test_admin_check.py's harness now asserts the check
   never writes.
+
+## 76. Queue-membership guard: only write to actually-queued bugs (2026-07-13)
+
+* Trigger: seb128 mistakenly ran --url on bug #2160299 (the bug linked
+  from unity MP #508187, itself the real queue entry); the mp_review
+  close proposed a "cleaning up the queue" comment plus an unsubscribe of
+  a team that was never subscribed.
+* seb128: direct subscription is the only way onto the report, so check
+  ~ubuntu-sponsors is subscribed before suggesting to unsubscribe it.
+* Guard placed at triage level, right after load_url (before build_facts):
+  `checks.check_sponsoring_team_subscribed` -- bugs need a DIRECT
+  ~ubuntu-sponsors or ~ubuntu-security-sponsors (#72) subscription; MPs
+  always pass (they queue via review-request mechanics). Not subscribed ->
+  not a sponsoring request: skip, write nothing, persist nothing. Lookup
+  failure -> None, skip and retry (#28 convention).
+* Mode split (seb128 wondered about --force as the escape hatch; agreed
+  risk of `--force --yes --url` noise was worse): the bypass keys on the
+  WRITE MODE instead -- dry-run performs no writes, so it warns and
+  proceeds, staying usable as a "what would the bot do on this bug"
+  probe. --force keeps meaning only "ignore the facts cache".
+* Belt: unsubscribe_sponsors itself silently no-ops when ~ubuntu-sponsors
+  isn't subscribed (mid-run race; lookup failure falls through to the
+  normal prompt -- worst case a no-op attempt).
+* In --all runs items come from the report so the guard is a pure race
+  guard there; cost is one subscriptions fetch per item that got past
+  load. FakeBug grew a subscriptions field (defaulting to ~ubuntu-sponsors
+  so existing tests kept their meaning); FakeTriageClient grew mode.
