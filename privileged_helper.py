@@ -68,9 +68,22 @@ def unsubscribe_team(bug_id, team):
     print(f"unsubscribed ~{team} from bug #{bug_id} as {lp.me.name}")
 
 
+def login():
+    """One-time setup: run the OAuth flow and store the token. Needed
+    because the caller only delegates to this helper once the credentials
+    file EXISTS -- the first-use OAuth can never be triggered by the bot
+    itself (found live: the unsubscribe fell back to the bot's own token
+    and got a 401)."""
+    lp = _login()
+    print(f"logged in as {lp.me.name}; token stored, delegation is now active")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser(
+        "login", help="Authorize the helper token (one-time setup, no writes)"
+    )
     unsub = sub.add_parser(
         "unsubscribe-sponsors", help="Unsubscribe a sponsoring team from a bug"
     )
@@ -83,7 +96,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        unsubscribe_team(args.bug_id, args.team)
+        if args.action == "login":
+            login()
+        else:
+            unsubscribe_team(args.bug_id, args.team)
     except Exception as e:
         print(f"helper failed: {e}", file=sys.stderr)
         return 1

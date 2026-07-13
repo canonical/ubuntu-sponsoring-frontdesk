@@ -39,7 +39,8 @@ python3 main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#
 
 Write modes: **`--dry-run`** (default; logs intended writes, does nothing),
 `--interactive` (`[y/N]` per write; refuses if no TTY), `--yes` (unattended/cron).
-The ~ubuntu-sponsors bug unsubscribe is delegated to `privileged_helper.py`
+One-time setup: `python3 privileged_helper.py login` (OAuth as the helper
+account) -- the ~ubuntu-sponsors bug unsubscribe is then delegated to it
 (#78) when `~/.cache/ubuntu-sponsoring-bot-helper/credentials` (or
 `$SPONSORING_BOT_HELPER_LP_CREDENTIALS`) exists -- a separate token from a
 team-member account, because the bot account itself must not be a member.

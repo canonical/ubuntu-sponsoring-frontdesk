@@ -105,3 +105,10 @@ def test_helper_failure_exits_nonzero(monkeypatch, capsys):
     monkeypatch.setattr(privileged_helper, "_login", _boom)
     assert privileged_helper.main(["unsubscribe-sponsors", "1"]) == 1
     assert "helper failed" in capsys.readouterr().err
+
+
+def test_login_subcommand_authorizes_and_exits_zero(monkeypatch, capsys):
+    lp = types.SimpleNamespace(me=types.SimpleNamespace(name="helper-account"))
+    monkeypatch.setattr(privileged_helper, "_login", lambda: lp)
+    assert privileged_helper.main(["login"]) == 0
+    assert "helper-account" in capsys.readouterr().out

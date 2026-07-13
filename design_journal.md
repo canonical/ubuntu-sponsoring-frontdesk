@@ -880,3 +880,14 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   to a dedicated account. Until then a genuine comment from the account
   would (wrongly but harmlessly -- the bot just stays chattier) not
   count as engagement.
+
+## 78 addendum: helper `login` subcommand (2026-07-13)
+
+* Live gap on the first #79 interactive write (bug #2158959): comment
+  performed, unsubscribe 401'd via the bot's own token -- the helper
+  never ran, because delegation activates only once the credentials file
+  exists, and the file could only be created BY the helper: chicken-and-
+  egg. seb128 expected a credential prompt.
+* `privileged_helper.py login`: one-time, write-free OAuth flow storing
+  the token (container text-browser gotcha applies), after which
+  delegation is active. Setup step documented in STATUS.
