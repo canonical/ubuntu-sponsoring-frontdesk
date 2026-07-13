@@ -891,3 +891,21 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * `privileged_helper.py login`: one-time, write-free OAuth flow storing
   the token (container text-browser gotcha applies), after which
   delegation is active. Setup step documented in STATUS.
+
+## 81. Check 1: Fix Committed unsubscribes, Fix Released stays silent (2026-07-14)
+
+* Trigger: bug #2159516 (xdg-desktop-portal-wlr SRU, uploaded by seb128,
+  task Fix Committed, sitting in the SRU queue) -- #75's silent close
+  left it in the queue. #75's premise ("resolved bugs drop off the next
+  report build") is only true for Fix Released: confirmed live, the bug
+  was still in the report. A Fix Committed SRU waits in -proposed for a
+  week+, listed the whole time unless ~ubuntu-sponsors is unsubscribed.
+* Refinement: all-closed-and-landed with ANY relevant task Fix Committed
+  -> comment + unsubscribe ("uploaded and is awaiting release"); all
+  landed tasks Fix Released -> #75's silent skip stands.
+* Comment-or-just-unsubscribe was discussed (the sponsor usually already
+  commented "uploaded"; an engaged-aware variant B was on the table):
+  seb128 chose ALWAYS COMMENT (A) -- a bit verbose, but people should
+  understand what the bot is doing, at least at the beginning, to avoid
+  pushback; sponsors who dislike it can unsubscribe the team themselves
+  when uploading.

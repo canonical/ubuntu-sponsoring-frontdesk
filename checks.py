@@ -365,9 +365,31 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         summary = ", ".join(
             sorted(f"{task.bug_target_name}: {task.status}" for task in tasks)
         )
-        # Silent, like the MP branch: closed bugs drop off the next
-        # sponsoring-report build on their own, so a comment would be
-        # noise and unsubscribing changes nothing (#75).
+        if any(task.status == "Fix Committed" for task in tasks):
+            # Fix Committed (an upload waiting in -proposed/the SRU queue,
+            # possibly for weeks) does NOT drop off the sponsoring report on
+            # its own -- confirmed live on bug #2159516 (#81). Unsubscribe,
+            # and say why: seb128 prefers the bot to explain its actions,
+            # at least early on, to avoid pushback -- sponsors who find it
+            # verbose can unsubscribe the team themselves when uploading.
+            logger.info(
+                "[%s] uploaded and awaiting release (%s). Unsubscribing "
+                "~ubuntu-sponsors.",
+                url,
+                summary,
+            )
+            lp_client.comment(
+                bug,
+                f"This request has been uploaded and is awaiting release "
+                f"({summary}), so there is nothing left for a sponsor to do "
+                f"here. Cleaning up the queue by unsubscribing "
+                f"~ubuntu-sponsors.",
+            )
+            lp_client.unsubscribe_sponsors(bug)
+            return True
+        # All landed tasks are Fix Released: silent, like the MP branch --
+        # the bug drops off the next sponsoring-report build on its own, so
+        # a comment would be noise and unsubscribing changes nothing (#75).
         logger.info(
             "[%s] all relevant Ubuntu tasks resolved (%s). No action needed.",
             url,

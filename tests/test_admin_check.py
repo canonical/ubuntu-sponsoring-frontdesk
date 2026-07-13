@@ -6,23 +6,26 @@ from fakes import FakeBug, FakeTask, FakeMP
 
 class _LP:
     def __init__(self):
-        self.acted = False
+        self.comments = []
+        self.unsubscribed = 0
 
     def comment(self, obj, message):
-        self.acted = True
+        self.comments.append(message)
 
     def unsubscribe_sponsors(self, obj):
-        self.acted = True
+        self.unsubscribed += 1
 
 
-def _run(tasks, pkg):
-    lp = _LP()
+def _run(tasks, pkg, lp=None):
+    lp = lp if lp is not None else _LP()
     fired = checks.check_administrative_state(
         "url", FakeBug(tasks=tasks), lp, source_package=pkg
     )
-    # #75: this check never writes -- closed bugs drop off the next
-    # sponsoring-report build on their own.
-    assert lp.acted is False
+    if not any(t.status == "Fix Committed" for t in tasks):
+        # #75: without a Fix Committed task this check never writes --
+        # Fix Released bugs drop off the next sponsoring-report build on
+        # their own. Fix Committed stays listed, hence writes (#81).
+        assert lp.comments == [] and lp.unsubscribed == 0
     return fired
 
 
@@ -79,3 +82,28 @@ def test_unknown_package_falls_back_to_any_ubuntu_task():
 def test_merged_mp_is_handled():
     mp = FakeMP(queue_status="Merged")
     assert checks.check_administrative_state("u", mp, _LP()) is True
+
+
+def test_fix_committed_unsubscribes_with_an_explanation():
+    # #81 (bug #2159516): Fix Committed = uploaded, awaiting release -- the
+    # sponsoring report keeps listing it (confirmed live), so unlike Fix
+    # Released (#75) the bot must unsubscribe, and explain why (seb128
+    # chose always-comment over engaged-aware silence for transparency).
+    lp = _LP()
+    tasks = [FakeTask("xdg-desktop-portal-wlr (Ubuntu)", "Fix Committed")]
+    assert _run(tasks, "xdg-desktop-portal-wlr", lp=lp) is True
+    assert "uploaded and is awaiting release" in lp.comments[0]
+    assert "Fix Committed" in lp.comments[0]
+    assert lp.unsubscribed == 1
+
+
+def test_mixed_released_and_committed_still_unsubscribes():
+    # One series released, another still in -proposed: the Committed task
+    # alone keeps the bug on the report.
+    lp = _LP()
+    tasks = [
+        FakeTask("foo (Ubuntu Noble)", "Fix Released"),
+        FakeTask("foo (Ubuntu Jammy)", "Fix Committed"),
+    ]
+    assert _run(tasks, "foo", lp=lp) is True
+    assert lp.unsubscribed == 1

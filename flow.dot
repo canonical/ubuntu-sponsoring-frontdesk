@@ -109,7 +109,7 @@ digraph SponsoringBot {
     rfh  [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
     pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- #27)", shape=box, fillcolor="#D1C4E9"];
 
-    c1  -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged\n(silent: no comment/unsubscribe,\nthe report drops it -- #75)"];
+    c1  -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged\nFix Released: silent, the report\ndrops it (#75); any Fix Committed:\ncomment + unsubscribe, the report\nkeeps listing those (#81)"];
     c1b -> done [label="review on linked MP /\nno patch to sponsor"];
     c4  -> done [label="empty diff (landed)\n(drops earlier findings)"];
     c6  -> done [label="already uploaded, old enough"];
