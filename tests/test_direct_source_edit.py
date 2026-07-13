@@ -1,7 +1,9 @@
 """Check 8 (#60): changes to upstream files must arrive as debian/patches
 patches, not direct source edits. Merge MPs, new upstream versions, and
-native packages are silently exempt; the trigger case (nux MP #508190) had
-no changelog stanza at all, so nativeness falls back to the archive."""
+native packages are silently exempt. Since #77 nativeness is authoritative
+(the published .dsc's Format: field via archive_lookup.is_native_source,
+consulted lazily on would-bounce diffs) -- the old "no Debian revision"
+version heuristic misjudged unity, which is native WITH a revision."""
 
 import types
 
@@ -33,11 +35,6 @@ diff --git a/src/framebuffer.cpp b/src/framebuffer.cpp
 -int old;
 +int fixed;
 """
-
-# Same shape but the version is native (no Debian revision).
-NATIVE_DIFF = DIRECT_EDIT_DIFF.replace("1.2-3ubuntu2", "1.3").replace(
-    "1.2-3ubuntu1", "1.2"
-)
 
 # New upstream version: upstream component changes 1.2 -> 1.3.
 UPSTREAM_BUMP_DIFF = DIRECT_EDIT_DIFF.replace("1.2-3ubuntu2", "1.3-0ubuntu1")
@@ -74,7 +71,17 @@ class _LP:
     lp = types.SimpleNamespace()
 
 
-def test_direct_source_edit_fires_incomplete():
+def _classify(monkeypatch, native):
+    """Stub the #77 nativeness lookup (and the devel-codename resolution the
+    ubuntu/devel target branch needs)."""
+    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
+    monkeypatch.setattr(
+        archive_lookup, "is_native_source", lambda lp, package, series: native
+    )
+
+
+def test_direct_source_edit_fires_incomplete(monkeypatch):
+    _classify(monkeypatch, native=False)
     finding = checks.check_direct_source_edit(URL, _mp(DIRECT_EDIT_DIFF), _LP())
     assert finding.tier == "incomplete"
     assert "`src/framebuffer.cpp`" in finding.message
@@ -83,6 +90,7 @@ def test_direct_source_edit_fires_incomplete():
 
 
 def test_debian_only_changes_are_clean():
+    # No upstream edit: the nativeness lookup must not even be consulted.
     assert checks.check_direct_source_edit(URL, _mp(DEBIAN_ONLY_DIFF), _LP()) is False
 
 
@@ -92,42 +100,33 @@ def test_merge_mp_is_exempt():
 
 
 def test_new_upstream_version_is_exempt():
+    # The cheap deterministic exemption decides before any archive lookup.
     assert (
         checks.check_direct_source_edit(URL, _mp(UPSTREAM_BUMP_DIFF), _LP()) is False
     )
 
 
-def test_native_package_version_is_exempt():
-    assert checks.check_direct_source_edit(URL, _mp(NATIVE_DIFF), _LP()) is False
+def test_native_package_is_exempt_even_with_a_revision(monkeypatch):
+    # The unity case (#77): 7.7.1+26.04.20260306-0ubuntu3 has a Debian
+    # revision but the package is 3.0 (native) -- the .dsc verdict wins.
+    _classify(monkeypatch, native=True)
+    assert checks.check_direct_source_edit(URL, _mp(DIRECT_EDIT_DIFF), _LP()) is False
 
 
-def test_no_stanza_falls_back_to_archive_version(monkeypatch):
-    # nux's shape: nativeness comes from the published version.
-    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
-    monkeypatch.setattr(
-        archive_lookup,
-        "ubuntu_versions",
-        lambda lp, package, series_names=None: {"stonking": "1.2-3ubuntu1"},
-    )
+def test_no_stanza_direct_edit_fires(monkeypatch):
+    # nux's shape: no changelog change at all, non-native -> bounce.
+    _classify(monkeypatch, native=False)
     finding = checks.check_direct_source_edit(URL, _mp(NO_STANZA_DIFF), _LP())
     assert finding.tier == "incomplete"
 
 
-def test_no_stanza_native_archive_version_is_exempt(monkeypatch):
-    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
-    monkeypatch.setattr(
-        archive_lookup,
-        "ubuntu_versions",
-        lambda lp, package, series_names=None: {"stonking": "1.2"},
-    )
+def test_no_stanza_native_is_exempt(monkeypatch):
+    _classify(monkeypatch, native=True)
     assert checks.check_direct_source_edit(URL, _mp(NO_STANZA_DIFF), _LP()) is False
 
 
-def test_no_stanza_archive_lookup_failure_is_inconclusive(monkeypatch):
-    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, package, series_names=None: None
-    )
+def test_nativeness_lookup_failure_is_inconclusive(monkeypatch):
+    _classify(monkeypatch, native=None)
     assert checks.check_direct_source_edit(URL, _mp(NO_STANZA_DIFF), _LP()) is None
 
 
@@ -156,7 +155,8 @@ def test_bug_without_attachments_is_clean():
     assert checks.check_direct_source_edit(URL, FakeBug(), _LP()) is False
 
 
-def test_many_files_are_capped_in_the_message():
+def test_many_files_are_capped_in_the_message(monkeypatch):
+    _classify(monkeypatch, native=False)
     extra = "".join(
         f"diff --git a/src/f{i}.c b/src/f{i}.c\n"
         f"--- a/src/f{i}.c\n+++ b/src/f{i}.c\n@@ -1 +1 @@\n-a\n+b\n"

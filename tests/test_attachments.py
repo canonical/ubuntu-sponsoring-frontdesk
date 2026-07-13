@@ -140,9 +140,26 @@ def test_review_target_fetch_failure_is_none():
     assert attachments.review_target(_bug(atts)) is None
 
 
-def test_check8_bug_side_fires_on_a_direct_edit_debdiff():
+def _classify_bug_side(monkeypatch, native, series_known=True):
+    """Stub the #77 nativeness lookup and the stanza-suite validation."""
+    monkeypatch.setattr(
+        archive_lookup,
+        "supported_series_ordered",
+        lambda lp: [("stonking", "26.10")] if series_known else [],
+    )
+    monkeypatch.setattr(
+        archive_lookup, "is_native_source", lambda lp, package, series: native
+    )
+
+
+def _plain_lp():
+    return types.SimpleNamespace(lp=types.SimpleNamespace())
+
+
+def test_check8_bug_side_fires_on_a_direct_edit_debdiff(monkeypatch):
+    _classify_bug_side(monkeypatch, native=False)
     bug = _bug([FakeAttachment("fix.debdiff", type="Patch", content=DEBDIFF)])
-    finding = checks.check_direct_source_edit(URL, bug, None)
+    finding = checks.check_direct_source_edit(URL, bug, _plain_lp())
     assert finding.tier == "incomplete"
     assert "The attached debdiff edits" in finding.message
     assert "`src/framebuffer.cpp`" in finding.message
@@ -159,10 +176,25 @@ def test_check8_bug_side_plain_patch_is_a_normal_shape():
     assert checks.check_direct_source_edit(URL, bug, None) is False
 
 
-def test_check8_bug_side_native_version_is_exempt():
-    native = DEBDIFF.replace("1.2-3ubuntu2", "1.3").replace("1.2-3ubuntu1", "1.2")
-    bug = _bug([FakeAttachment("fix.debdiff", content=native)])
-    assert checks.check_direct_source_edit(URL, bug, None) is False
+def test_check8_bug_side_native_package_is_exempt(monkeypatch):
+    # #77: the .dsc Format verdict decides, revision or not (the unity case).
+    _classify_bug_side(monkeypatch, native=True)
+    bug = _bug([FakeAttachment("fix.debdiff", content=DEBDIFF)])
+    assert checks.check_direct_source_edit(URL, bug, _plain_lp()) is False
+
+
+def test_check8_bug_side_unknown_suite_skips(monkeypatch):
+    # An UNRELEASED/typo/EOL suite says nothing about where the upload goes,
+    # so nativeness can't be classified -- skip, don't guess.
+    _classify_bug_side(monkeypatch, native=False, series_known=False)
+    bug = _bug([FakeAttachment("fix.debdiff", content=DEBDIFF)])
+    assert checks.check_direct_source_edit(URL, bug, _plain_lp()) is False
+
+
+def test_check8_bug_side_nativeness_lookup_failure_is_inconclusive(monkeypatch):
+    _classify_bug_side(monkeypatch, native=None)
+    bug = _bug([FakeAttachment("fix.debdiff", content=DEBDIFF)])
+    assert checks.check_direct_source_edit(URL, bug, _plain_lp()) is None
 
 
 def test_check8_bug_side_new_upstream_version_is_exempt():

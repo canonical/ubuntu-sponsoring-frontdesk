@@ -698,11 +698,18 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     "provide this as a patch under debian/patches" bounce, citing
     https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/.
     Exempt (silently): merge MPs, new upstream versions (upstream
-    component changed vs the changelog entry below), native packages
-    (version without a Debian revision -- from the stanza, else from
-    the archive when the MP has no stanza, the trigger nux #508190's
-    shape). Proper nativeness classification (debian/source/format) is
-    backlog. Live-verified on the trigger MP. 320 tests.
+    component changed vs the changelog entry below), native packages.
+    Nativeness is authoritative since #77 (2026-07-13, trigger: unity
+    MP #508187 -- native WITH a Debian revision, so the old no-revision
+    version heuristic misjudged it): `archive_lookup.is_native_source`
+    reads the published .dsc's `Format:` field (seb128's suggestion;
+    `1.0` is ambiguous by design and tiebreaks on the sourceFileUrls
+    file names -- .diff.gz/.debian.tar. means non-native), consulted
+    lazily only once a diff would otherwise bounce; lookup failure ->
+    inconclusive, never guess. Both paths (MP + bug debdiff, the
+    latter on the stanza's own package/suite) live-verified: unity
+    exempt via `3.0 (native)`, nux #508190 still bounces via the 1.0
+    tiebreak. Live-verified on the trigger MP. 426 tests.
 
 42. **Check 9: missing debian/changelog entry on a fix MP (DONE,
     2026-07-11).** See design_journal.md #61. `check_missing_changelog_stanza`

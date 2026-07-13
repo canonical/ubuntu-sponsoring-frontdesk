@@ -129,8 +129,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   patches under `debian/patches`
   (https://ubuntu.com/project/docs/contributors/bug-fix/apply-the-fix/).
   Silently exempt: merge MPs, new upstream versions, and native packages
-  (no Debian revision in the version — read from the new stanza, or from
-  the archive when the MP carries no stanza at all). Since #62 it also
+  (#77: classified from the published .dsc's `Format:` field via
+  `archive_lookup.is_native_source`, fetched lazily only when the diff
+  would otherwise bounce; `Format: 1.0` tiebreaks on the source file
+  names). Since #62 it also
   covers bugs: a *debdiff* attachment (diff touching debian/) that edits
   upstream files directly gets the same bounce, while a plain patch
   (no debian/ file) is a normal contribution shape and never bounced.

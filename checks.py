@@ -2577,10 +2577,12 @@ def check_direct_source_edit(url, lp_obj, lp_client):
     - a new upstream version (the stanza's upstream component differs
       from the entry below it in the diff): the diff naturally carries
       upstream changes;
-    - native packages (no Debian revision in the version, from the new
-      stanza when present, else from the version currently published in
-      the target series): upstream and packaging aren't separate there.
-      Proper nativeness classification (debian/source/format) is backlog.
+    - native packages: upstream and packaging aren't separate there.
+      Classified authoritatively (#77) via the published .dsc's Format:
+      field (archive_lookup.is_native_source), consulted lazily -- only
+      once the diff would otherwise bounce. The version-heuristic ("no
+      Debian revision") predecessor misjudged e.g. unity, which is
+      native WITH a revision.
 
     Bug-side parity (#62): the same rule applies to a debdiff attached to
     a bug -- see _direct_source_edit_bug. A plain patch (touching no
@@ -2592,7 +2594,7 @@ def check_direct_source_edit(url, lp_obj, lp_client):
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type in ("bug", "bug_task"):
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
-        return _direct_source_edit_bug(url, bug)
+        return _direct_source_edit_bug(url, bug, lp_client)
     if resource_type != "branch_merge_proposal":
         return False
 
@@ -2623,53 +2625,40 @@ def check_direct_source_edit(url, lp_obj, lp_client):
     if stanza:
         header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
         proposed_version = header.group("version") if header else None
-    if proposed_version is None:
-        # No (parseable) new changelog stanza -- the trigger MP's shape.
-        # Nativeness has to come from what the archive currently publishes.
-        package = _source_package_from_mp(lp_obj)
-        if not package:
+    if proposed_version is not None:
+        old_version = _old_changelog_version(lp_obj)
+        if old_version is not None and _upstream_component(
+            old_version
+        ) != _upstream_component(proposed_version):
             logger.debug(
-                "check_direct_source_edit: no version and no source package; "
-                "skipping."
-            )
-            return False
-        target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
-        if target_series is None:
-            return None
-        versions = archive_lookup.ubuntu_versions(
-            lp_client.lp, package, series_names=[target_series]
-        )
-        if versions is None:
-            return None
-        proposed_version = _max_published_version(versions)
-        if proposed_version is None:
-            logger.debug(
-                "check_direct_source_edit: nothing published in %s; can't "
-                "classify native vs non-native. Skipping.",
-                target_series,
+                "check_direct_source_edit: upstream version changed (%r -> %r); "
+                "the diff naturally carries upstream changes. Skipping.",
+                old_version,
+                proposed_version,
             )
             return False
 
-    upstream = _upstream_component(proposed_version)
-    if upstream is None:
+    # Would bounce -- now (and only now) pay the archive lookup that tells
+    # native from non-native (#77): native packages carry their packaging in
+    # the source tree, direct edits are the normal shape there.
+    package = _source_package_from_mp(lp_obj)
+    if not package:
         logger.debug(
-            "check_direct_source_edit: %r looks like a native package "
-            "version; direct source edits are legitimate there. Skipping.",
-            proposed_version,
+            "check_direct_source_edit: no source package; can't classify "
+            "native vs non-native. Skipping."
         )
         return False
-
-    old_version = _old_changelog_version(lp_obj)
-    if (
-        stanza
-        and old_version is not None
-        and _upstream_component(old_version) != upstream
-    ):
+    target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
+    if target_series is None:
+        return None
+    native = archive_lookup.is_native_source(lp_client.lp, package, target_series)
+    if native is None:
+        return None
+    if native:
         logger.debug(
-            "check_direct_source_edit: upstream version changed (%r -> %r); "
-            "the diff naturally carries upstream changes. Skipping.",
-            old_version,
-            proposed_version,
+            "check_direct_source_edit: %s is a native package; direct "
+            "source edits are legitimate there. Skipping.",
+            package,
         )
         return False
 
@@ -2699,7 +2688,7 @@ def _direct_edit_finding(url, intro, other_files):
     )
 
 
-def _direct_source_edit_bug(url, bug):
+def _direct_source_edit_bug(url, bug, lp_client):
     """
     Check 8's bug-side path (#62): the direct-source-edit rule applied to
     the newest usable patch/debdiff attachment (attachments.review_target).
@@ -2712,13 +2701,14 @@ def _direct_source_edit_bug(url, bug):
 
     Exemptions mirror the MP path where they apply: merge bugs (title,
     same signal as _is_merge_proposal's fallback), new upstream versions,
-    native packages. Unlike the MP path there is no archive fallback for
-    nativeness: a debdiff without a parseable new changelog stanza is a
-    shape we haven't seen (debdiffs diff two source packages, the stanza
-    is inherently there) -- skip rather than guess.
+    native packages (#77: archive_lookup.is_native_source on the stanza's
+    own package/suite, only consulted once the debdiff would bounce). A
+    debdiff without a parseable new changelog stanza is a shape we
+    haven't seen (debdiffs diff two source packages, the stanza is
+    inherently there) -- skip rather than guess.
 
     Returns an incomplete Finding, False, or None (attachment listing/
-    fetch failed -- retriable).
+    fetch or the nativeness lookup failed -- retriable).
     """
     if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
         logger.debug("_direct_source_edit_bug: merge bug; skipping.")
@@ -2744,34 +2734,54 @@ def _direct_source_edit_bug(url, bug):
         return False
 
     stanza = llm_reviewer._new_changelog_stanza(text)
-    proposed_version = None
+    header = None
     if stanza:
         header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
-        proposed_version = header.group("version") if header else None
-    if proposed_version is None:
+    if header is None:
         logger.debug(
             "_direct_source_edit_bug: debdiff has no parseable new "
             "changelog stanza; unexpected shape, skipping."
         )
         return False
-
-    upstream = _upstream_component(proposed_version)
-    if upstream is None:
-        logger.debug(
-            "_direct_source_edit_bug: %r looks native; skipping.",
-            proposed_version,
-        )
-        return False
+    package = header.group("pkg")
+    proposed_version = header.group("version")
 
     old_version = None
     if info["changelog_lines"]:
         old_version = _old_changelog_version_from_lines(info["changelog_lines"])
-    if old_version is not None and _upstream_component(old_version) != upstream:
+    if old_version is not None and _upstream_component(
+        old_version
+    ) != _upstream_component(proposed_version):
         logger.debug(
             "_direct_source_edit_bug: upstream version changed (%r -> %r); "
             "skipping.",
             old_version,
             proposed_version,
+        )
+        return False
+
+    # Would bounce -- consult the archive for nativeness (#77). The stanza's
+    # suite is where the upload would go (same signal as _stale_version_bug);
+    # an unknown suite (UNRELEASED, typo, EOL) -> skip, don't guess.
+    suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+    series_pairs = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_pairs is None:
+        return None
+    if suite not in (name for name, _version in series_pairs):
+        logger.debug(
+            "_direct_source_edit_bug: suite %r isn't a currently-known "
+            "series; can't classify native vs non-native. Skipping.",
+            suite,
+        )
+        return False
+    native = archive_lookup.is_native_source(lp_client.lp, package, suite)
+    if native is None:
+        return None
+    if native:
+        logger.debug(
+            "_direct_source_edit_bug: %s is a native package; direct "
+            "source edits are legitimate there. Skipping.",
+            package,
         )
         return False
 

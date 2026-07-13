@@ -756,3 +756,39 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   guard there; cost is one subscriptions fetch per item that got past
   load. FakeBug grew a subscriptions field (defaulting to ~ubuntu-sponsors
   so existing tests kept their meaning); FakeTriageClient grew mode.
+
+## 77. Authoritative nativeness for Check 8: the .dsc Format field (2026-07-13)
+
+* Trigger: unity MP #508187 -- Check 8 would bounce its direct source
+  edits, but unity is `3.0 (native)` (debian/source/format), where source
+  edits are exactly how changes are made (dpkg-source(1)). The existing
+  "no Debian revision" version heuristic misjudged it: unity is native
+  WITH a revision (7.7.1+26.04.20260306-0ubuntu3), a buggy-but-real case.
+* Options seb128 tabled: (a) keep the version heuristic and fix unity's
+  changelog -- rejected as the deciding signal, unity proves it lies;
+  (b) fetch debian/source/format -- most authoritative but needs base-
+  branch content we don't have (the file isn't in the diff); (c) archive
+  source files (native = tarball + dsc, no .debian.tar/.diff.gz). Poking
+  at (c), seb128 found the published .dsc itself carries `Format:` --
+  adopted as the primary signal: it's the exact declaration dpkg-source
+  obeys, and the .dsc URL comes free from the same sourceFileUrls()
+  listing.
+* `archive_lookup.is_native_source(lp, package, series)` -- tri-state:
+  `3.0 (native)` -> True, `3.0 (quilt)` -> False; `Format: 1.0` is
+  ambiguous BY DESIGN (native iff no .diff.gz), so 1.0 or an unreadable
+  Format tiebreaks on the file names; no publication / lookup / .dsc
+  fetch failure -> None (never guess). Plain line scan tolerates the PGP
+  clearsign wrapper.
+* Consulted LAZILY in Check 8, both paths, only once the diff would
+  otherwise bounce: MP path (package from the MP, series from the target
+  branch) and bug-debdiff path (package/suite from the stanza header,
+  same signal as _stale_version_bug; unknown suite -> skip). The version
+  heuristic and the no-stanza archive-version fallback are gone -- the
+  cheap deterministic exemptions (merge, upstream bump) still run first.
+* Caveat accepted: the verdict reflects the currently PUBLISHED package;
+  a proposal flipping native<->non-native would be misjudged (rare,
+  deserves human eyes anyway).
+* Live: unity #508187 now exempt (`Format='3.0 (native)'`); control nux
+  #508190 still bounces, exercising the 1.0-tiebreak (.diff.gz present).
+  Closes the #60 "proper nativeness classification" backlog line. 426
+  tests.

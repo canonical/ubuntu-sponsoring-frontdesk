@@ -265,6 +265,91 @@ def upload_in_queue(lp, package, series_name, version):
         return None
 
 
+# The `Format:` declaration in a .dsc (dpkg-source(1)). Signed .dsc files
+# wrap the fields in a PGP clearsign envelope; a plain line scan still finds
+# the field, no signature handling needed.
+_DSC_FORMAT_RE = re.compile(r"^Format:\s*(?P<format>.+?)\s*$", re.MULTILINE)
+
+# Source files that only a non-native package ships: the Debian packaging
+# delta relative to a separate orig tarball.
+_NON_NATIVE_FILE_MARKERS = (".diff.gz", ".debian.tar.")
+
+
+def is_native_source(lp, package, series_name):
+    """
+    Whether the currently published `package` in `series_name` is a native
+    source package (design_journal.md #77): native packages carry their
+    packaging in the upstream tree, so direct source edits are legitimate
+    (dpkg-source(1)).
+
+    The authoritative signal is the published .dsc's `Format:` field
+    (seb128's suggestion -- it's what dpkg-source itself obeys):
+    `3.0 (native)` -> native, `3.0 (quilt)` -> non-native. `Format: 1.0`
+    is ambiguous by design (1.0 is native iff no .diff.gz accompanies the
+    tarball), so 1.0 -- or a missing/unrecognized Format -- falls back to
+    the source file names from the same sourceFileUrls() listing.
+
+    Tri-state: True (native), False (non-native), None (no publication
+    found or a lookup/fetch failed -- the caller must not guess).
+    """
+    try:
+        ubuntu = lp.distributions["ubuntu"]
+        archive = ubuntu.main_archive
+        series = ubuntu.getSeries(name_or_version=series_name)
+        pubs = list(
+            archive.getPublishedSources(
+                source_name=package,
+                exact_match=True,
+                distro_series=series,
+                status="Published",
+            )
+        )
+        if not pubs:
+            logger.debug(
+                "is_native_source: no current publication of %s in %s.",
+                package,
+                series_name,
+            )
+            return None
+        file_urls = list(pubs[0].sourceFileUrls())
+    except Exception as e:
+        logger.warning(
+            "Launchpad lookup failed (source files for %s in %s): %s",
+            package,
+            series_name,
+            e,
+        )
+        return None
+
+    dsc_url = next((u for u in file_urls if u.endswith(".dsc")), None)
+    fmt = None
+    if dsc_url:
+        try:
+            with urllib.request.urlopen(dsc_url, timeout=15) as resp:
+                match = _DSC_FORMAT_RE.search(resp.read().decode(errors="replace"))
+                fmt = match.group("format").strip() if match else None
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            logger.warning("could not fetch .dsc at %s: %s", dsc_url, e)
+            return None
+    logger.debug(
+        "is_native_source: %s in %s: Format=%r files=%s",
+        package,
+        series_name,
+        fmt,
+        [u.rsplit("/", 1)[-1] for u in file_urls],
+    )
+    if fmt == "3.0 (native)":
+        return True
+    if fmt == "3.0 (quilt)":
+        return False
+    # Format 1.0 (or no readable Format): the file listing decides.
+    return not any(
+        marker in url.rsplit("/", 1)[-1]
+        for url in file_urls
+        for marker in _NON_NATIVE_FILE_MARKERS
+    )
+
+
 def changelog_text(pub):
     """Plain-text contents of a SourcePackagePublishingHistory's changelog
     file (`pub.changelogUrl()`), or None if it can't be resolved or fetched.
