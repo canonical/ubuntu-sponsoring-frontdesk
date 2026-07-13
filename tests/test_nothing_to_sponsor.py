@@ -4,6 +4,9 @@ with no patch and no MP has nothing to review yet -- both get
 ~ubuntu-sponsors unsubscribed. Found live on bug #2139024 (no patch, linked
 MP already reviewed)."""
 
+import types
+
+import archive_lookup
 import checks
 import main
 from state import StateManager
@@ -336,3 +339,94 @@ def test_needs_packaging_comment_read_failure_is_inconclusive():
     # rule out an engaged human -- unreadable means retry, not close.
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is None
     assert lp.comments == []
+
+
+# --- needs-packaging: package already uploaded/published (#79) --------------
+# Trigger: bug #2158959 -- cloud-hypervisor sponsored into stonking's NEW
+# queue; the sponsor's job happened, nothing left for the queue.
+
+
+def _np_titled_bug(**kwargs):
+    kwargs.setdefault("title", "[needs-packaging] cloud-hypervisor")
+    return _needs_packaging_bug(**kwargs)
+
+
+def _archive(monkeypatch, published=None, queued=False):
+    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        lambda lp, package, series_names=None: published if published is not None else {},
+    )
+    upload = (
+        types.SimpleNamespace(
+            package_name="cloud-hypervisor", package_version="52.0-0ubuntu1"
+        )
+        if queued
+        else queued  # False or None pass through
+    )
+    monkeypatch.setattr(
+        archive_lookup, "upload_in_queue", lambda lp, package, series, version=None: upload
+    )
+
+
+def test_needs_packaging_in_the_new_queue_closes(monkeypatch):
+    _archive(monkeypatch, queued=True)
+    bug = _np_titled_bug()
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "uploaded"
+    assert "waiting in the stonking NEW queue" in lp.comments[0]
+    assert "52.0-0ubuntu1" in lp.comments[0]
+    assert "subscribe ~ubuntu-sponsors again" in lp.comments[0]
+    assert lp.unsubscribed == 1
+
+
+def test_needs_packaging_already_published_closes(monkeypatch):
+    _archive(monkeypatch, published={"stonking": "52.0-0ubuntu1"})
+    bug = _np_titled_bug()
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "uploaded"
+    assert "now published in stonking" in lp.comments[0]
+
+
+def test_needs_packaging_uploaded_close_ignores_engaged_humans(monkeypatch):
+    # Archive-fact closes are never suppressed by engagement (#72 split) --
+    # the trigger bug itself had the sponsor commenting "Sponsored: ...".
+    _archive(monkeypatch, queued=True)
+    bug = _np_titled_bug()
+    bug.messages = [
+        FakeBugMessage(
+            "https://api.launchpad.net/devel/~a-sponsor", "Sponsored: dput ubuntu ..."
+        )
+    ]
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "uploaded"
+
+
+def test_needs_packaging_not_uploaded_keeps_the_old_paths(monkeypatch):
+    _archive(monkeypatch, queued=False)
+    bug = _np_titled_bug(
+        description="see https://launchpad.net/~someone/+archive/ubuntu/ppa"
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False  # PPA link
+    bare = _np_titled_bug(description="please package this")
+    lp2 = FakeTriageClient(objects={URL: bare})
+    assert checks.check_nothing_to_sponsor(URL, bare, lp2) == "no_patch"
+
+
+def test_needs_packaging_queue_lookup_failure_is_inconclusive(monkeypatch):
+    _archive(monkeypatch, queued=None)
+    bug = _np_titled_bug()
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is None
+    assert lp.comments == []
+
+
+def test_needs_packaging_unparseable_title_skips_the_archive_lookups():
+    # No monkeypatching: a lookup attempt would blow up on the fake lp.
+    bug = _needs_packaging_bug(
+        title="please add cloud-hypervisor", description="please package this"
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"

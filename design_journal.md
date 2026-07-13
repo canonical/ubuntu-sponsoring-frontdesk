@@ -836,3 +836,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   switch, verify a non-member bot vote really leaves the MP on the
   report, and watch private-bug loads (team membership may have been
   granting visibility).
+
+## 79. needs-packaging: uploaded/published means nothing left to sponsor (2026-07-13)
+
+* Trigger: bug #2158959 ([needs-packaging] cloud-hypervisor) -- ~skia
+  sponsored the upload (comment "Sponsored: dput ubuntu ..."), the package
+  sits in stonking's NEW queue, but the bot only saw "needs-packaging bug
+  with a PPA link, leave for a human" and (post-#73) an engaged human.
+  seb128: the "someone said they uploaded" comment is hard to automate,
+  but the stonking NEW queue is checkable -- this should close as
+  "uploaded, unsubscribe sponsors".
+* Live probe first: title convention `[needs-packaging] <source>` gives
+  the package name; `series.getPackageUploads(name=..., exact_match=True)`
+  finds the queue entry without knowing the version.
+* `_needs_packaging_uploaded` in check_nothing_to_sponsor's
+  needs-packaging branch, BEFORE the #50 PPA-link leave-for-human:
+  package published in devel (ubuntu_versions) OR any upload of it in
+  devel's queue (upload_in_queue grew version=None = any version) ->
+  comment + unsubscribe, new "uploaded" outcome (DONE). Unparseable
+  title -> fall through to the old paths; any lookup failure -> None.
+  Task statuses untouched (NEW review/publication isn't the sponsor
+  queue's business). Archive-fact close: the engaged-human split (#72)
+  deliberately does NOT suppress it -- the trigger bug's engaged human
+  IS the sponsor who uploaded.
+* Unlike #55's silent defer for queued SRUs this closes outright;
+  seb128 on the rejection worry: the uploader gets the rejection email
+  and the archive admin may comment on the bug. The closing comment
+  still explains re-subscribing to re-enter the queue.
+* Live-verified on #2158959 (dry-run): "cloud-hypervisor 52.0-0ubuntu1
+  has been uploaded and is waiting in the stonking NEW queue..." 437
+  tests.

@@ -301,7 +301,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   git-ubuntu-convention target branch (`ubuntu/devel`,
   `ubuntu/<series>[-devel]`, or `debian/sid`/`debian/experimental` for a
   merge = devel), and that series still open on the bug — a team
-  packaging fork's master/stable/* MP never qualifies.
+  packaging fork's master/stable/* MP never qualifies. For
+  needs-packaging bugs (#79) it first checks whether the requested
+  package (named in the `[needs-packaging] <source>` title) is already
+  published in devel or waiting in its upload queue — if so, the
+  "uploaded" close fires (comment + unsubscribe, tasks untouched), and
+  being an archive-fact close it is never suppressed by an engaged
+  human.
 
 - **Operator notifications** — `notify.py` (#48): best-effort pings to a
   Mattermost incoming webhook, strictly for anomalies the bot detected but

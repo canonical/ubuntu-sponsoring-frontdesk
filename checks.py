@@ -459,6 +459,77 @@ def _is_needs_packaging(bug):
     )
 
 
+# The sponsoring-report/bug-title convention for new-package requests.
+_NEEDS_PACKAGING_TITLE_RE = re.compile(
+    r"^\s*\[needs-packaging\]\s+(?P<pkg>[a-z0-9][a-z0-9.+-]*)\s*$", re.IGNORECASE
+)
+
+
+def _needs_packaging_uploaded(url, bug, lp_client):
+    """
+    A needs-packaging request whose package has since been uploaded (#79,
+    trigger: cloud-hypervisor bug #2158959, sponsored into stonking's NEW
+    queue): the sponsor's job -- the upload itself -- happened, so there is
+    nothing left for the queue. Deterministic, no LLM: the devel archive
+    (published) and the devel upload queue (New/Unapproved/Accepted, any
+    version) are the authoritative signals.
+
+    Unlike #55's silent defer for queued SRUs, this CLOSES (comment +
+    unsubscribe): seb128 -- don't worry about a queue rejection, the
+    uploader is emailed about it and the archive admin may comment on the
+    bug; the closing comment still says how to re-enter the queue.
+    Task statuses are left untouched (publication/NEW review isn't the
+    sponsor queue's business).
+
+    Returns "uploaded" (handled: commented + unsubscribed), False (not
+    uploaded / package name unparseable), or None (a lookup failed).
+    """
+    match = _NEEDS_PACKAGING_TITLE_RE.match(getattr(bug, "title", "") or "")
+    if not match:
+        logger.debug(
+            "_needs_packaging_uploaded: no package name in the title; skipping."
+        )
+        return False
+    package = match.group("pkg").lower()
+
+    devel = archive_lookup.devel_codename(lp_client.lp)
+    if devel is None:
+        return None
+    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, [devel])
+    if versions is None:
+        return None
+    published = versions.get(devel) or _max_published_version(versions)
+    if published:
+        note = f"`{package} {published}` is now published in {devel}"
+    else:
+        upload = archive_lookup.upload_in_queue(lp_client.lp, package, devel)
+        if upload is None:
+            return None
+        if upload is False:
+            return False
+        note = (
+            f"`{upload.package_name} {upload.package_version}` has been "
+            f"uploaded and is waiting in the {devel} NEW queue for archive "
+            "admin review"
+        )
+
+    logger.info(
+        "[%s] needs-packaging request already uploaded (%s). Unsubscribing "
+        "~ubuntu-sponsors.",
+        url,
+        note,
+    )
+    lp_client.comment(
+        bug,
+        f"{note}, so there is nothing left for a sponsor to do here. "
+        "Cleaning up the queue by unsubscribing ~ubuntu-sponsors; should "
+        "the upload be rejected, please subscribe ~ubuntu-sponsors again "
+        "to get back in the review queue.",
+    )
+    lp_client.unsubscribe_sponsors(bug)
+    return "uploaded"
+
+
 def _has_proposed_source_link(bug):
     """Whether the bug's description or any comment mentions what looks
     like a PPA or git repository -- the usual way a needs-packaging
@@ -524,9 +595,13 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
       fix is proposed. Sync requests are exempt: they legitimately carry no
       patch (the LLM phase reviews those).
 
-    Returns "mp_review"/"no_patch" (handled: commented + unsubscribed),
-    False (a fix is present, or not a bug, or nothing conclusive), or None
-    (a Launchpad lookup failed; retry next run).
+    Plus, for needs-packaging bugs (#79): "uploaded" -- the requested
+    package is already published in devel or waiting in its upload queue
+    (see _needs_packaging_uploaded), an archive-fact close.
+
+    Returns "mp_review"/"no_patch"/"uploaded" (handled: commented +
+    unsubscribed), False (a fix is present, or not a bug, or nothing
+    conclusive), or None (a Launchpad lookup failed; retry next run).
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type not in ("bug", "bug_task"):
@@ -626,13 +701,21 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
         # "leave it for a human", not "treat it as a real patch" -- no
         # comment, no unsubscribe, no judgment on whether the link is any
         # good.
-        if _is_needs_packaging(bug) and _has_proposed_source_link(bug):
-            logger.info(
-                "[%s] needs-packaging bug references a possible PPA/git "
-                "repo; leaving for a human instead of closing as no_patch.",
-                url,
-            )
-            return False
+        if _is_needs_packaging(bug):
+            # First: has the requested package been uploaded already
+            # (published in devel, or waiting in its NEW queue)? That's an
+            # archive-fact close (#79) -- nothing left to sponsor.
+            uploaded = _needs_packaging_uploaded(url, bug, lp_client)
+            if uploaded is not False:
+                return uploaded
+            if _has_proposed_source_link(bug):
+                logger.info(
+                    "[%s] needs-packaging bug references a possible PPA/git "
+                    "repo; leaving for a human instead of closing as "
+                    "no_patch.",
+                    url,
+                )
+                return False
     except Exception as e:
         logger.warning(
             "check_nothing_to_sponsor: could not read the bug's linked MPs/"

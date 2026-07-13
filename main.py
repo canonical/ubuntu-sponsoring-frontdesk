@@ -183,10 +183,12 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if outcome is None:
         inconclusive = True
     elif outcome:
-        detail = (
-            "Unsubscribed: fix under review on the linked merge proposal."
-            if outcome == "mp_review"
-            else "Unsubscribed: no patch or merge proposal to sponsor yet."
+        details = {
+            "mp_review": "Unsubscribed: fix under review on the linked merge proposal.",
+            "uploaded": "Unsubscribed: the requested package is uploaded/published (#79).",
+        }
+        detail = details.get(
+            outcome, "Unsubscribed: no patch or merge proposal to sponsor yet."
         )
         state_manager.update_status(url, "DONE", detail, facts=persistable_facts())
         return

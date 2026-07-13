@@ -222,11 +222,14 @@ def published_source(lp, package, series_name, version, status="Published"):
         return None
 
 
-def upload_in_queue(lp, package, series_name, version):
+def upload_in_queue(lp, package, series_name, version=None):
     """Whether `package` == `version` is sitting in `series_name`'s upload
     queue awaiting archive review -- uploaded, but not yet published, so
     invisible to getPublishedSources/madison. Typical for an SRU waiting on
     the SRU team in the Unapproved queue (design_journal.md #55).
+    ``version=None`` matches ANY upload of the source (#79: a brand-new
+    package waiting in the NEW queue, where the version isn't known from
+    the bug).
 
     Tri-state: the PackageUpload entry (truthy -- in queue; pass it to
     queue_changes_text() to see WHOSE upload it is, a same-version race is
@@ -235,14 +238,15 @@ def upload_in_queue(lp, package, series_name, version):
     lookup as "not queued")."""
     try:
         series = lp.distributions["ubuntu"].getSeries(name_or_version=series_name)
+        kwargs = dict(name=package, exact_match=True)
+        if version is not None:
+            kwargs["version"] = version
         # Unapproved first: it's where SRUs (and freeze-time devel uploads)
         # wait, so the common hit short-circuits the other two lookups.
         # Accepted is included to cover the window between queue acceptance
         # and actual publication.
         for status in ("Unapproved", "New", "Accepted"):
-            uploads = series.getPackageUploads(
-                name=package, version=version, exact_match=True, status=status
-            )
+            uploads = series.getPackageUploads(status=status, **kwargs)
             for upload in uploads:
                 logger.debug(
                     "upload_in_queue: %s %s found in %s queue %r (pocket=%s)",
