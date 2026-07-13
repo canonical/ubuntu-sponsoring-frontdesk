@@ -316,17 +316,14 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         summary = ", ".join(
             sorted(f"{task.bug_target_name}: {task.status}" for task in tasks)
         )
+        # Silent, like the MP branch: closed bugs drop off the next
+        # sponsoring-report build on their own, so a comment would be
+        # noise and unsubscribing changes nothing (#75).
         logger.info(
-            "[%s] all relevant Ubuntu tasks resolved (%s). Unsubscribing ~ubuntu-sponsors.",
+            "[%s] all relevant Ubuntu tasks resolved (%s). No action needed.",
             url,
             summary,
         )
-        lp_client.comment(
-            bug,
-            f"This request appears complete for Ubuntu ({summary}). "
-            f"Cleaning up the queue by unsubscribing ~ubuntu-sponsors.",
-        )
-        lp_client.unsubscribe_sponsors(bug)
         return True
 
     return False

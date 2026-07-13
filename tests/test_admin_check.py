@@ -16,9 +16,14 @@ class _LP:
 
 
 def _run(tasks, pkg):
-    return checks.check_administrative_state(
-        "url", FakeBug(tasks=tasks), _LP(), source_package=pkg
+    lp = _LP()
+    fired = checks.check_administrative_state(
+        "url", FakeBug(tasks=tasks), lp, source_package=pkg
     )
+    # #75: this check never writes -- closed bugs drop off the next
+    # sponsoring-report build on their own.
+    assert lp.acted is False
+    return fired
 
 
 def test_upstream_done_but_ubuntu_open_does_not_unsubscribe():

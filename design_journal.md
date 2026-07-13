@@ -714,3 +714,18 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Follow-up idea (backlog 5c): add a "most recent update" timestamp per
   entry on the report side, enabling incremental "what changed since the
   last pass" runs instead of full-queue walks.
+
+## 75. Check 1 closes silently (2026-07-13)
+
+* Trigger: giflib sync bug #2158776, sponsored minutes earlier by seb128;
+  the bot proposed a "request appears complete... unsubscribing
+  ~ubuntu-sponsors" comment on the freshly Fix Released bug.
+* seb128: a bug with no open task / Fix Released is a plain skip -- it
+  drops off the next sponsoring-report build by itself, the comment is
+  noise, and unsubscribing makes no difference since fix-released items
+  aren't included in the report anyway.
+* `check_administrative_state`'s bug branch now mirrors its MP branch:
+  log + return True, no comment, no unsubscribe. Status stays DONE with
+  facts persisted (no write needed, so nothing to gate on -- same as the
+  Merged-MP path). test_admin_check.py's harness now asserts the check
+  never writes.
