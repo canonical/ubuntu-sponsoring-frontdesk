@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-12_
+_Last updated: 2026-07-14_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -21,8 +21,12 @@ Incomplete and tells the contributor to set them back to New once
 addressed (#70). The whole aggregate is suppressed -- and the LLM phases
 skipped (#73) -- once a human reviewer is already engaged on the item
 (#45 MPs, #72 bugs; the no_patch close respects it too). Security items
-(~ubuntu-security-sponsors) are triaged like any bug; only the team
-unsubscribe is pending membership (backlog 5b). After the queue pass,
+(~ubuntu-security-sponsors) are triaged like any bug; their team
+unsubscribe waits on the helper account joining that team (backlog 5b).
+The bot only writes to bugs actually carrying a sponsoring-team
+subscription (#76), and team-membership actions go through the
+privileged helper (#78) so the bot account's MP votes never claim the
+~ubuntu-sponsors review slot. After the queue pass,
 Rule B (#66) revisits previously bounced bugs: a real response flips
 them back into review, a month of silence gets them swept out of the queue.
 Current pipeline: `flow.svg`.
@@ -857,6 +861,40 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
 - Writes performed this run: #2148798 (gnocchi) closed, #2145103
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
+
+## `--interactive` run continued, 2026-07-13/14 (#74-#81)
+
+Eight more live-found improvements, all same-day (journal #74-#81):
+
+- **Queue walked newest-first** (#74): the report is oldest-first, fresh
+  items now come before the tail of unchanged skips. Backlog 5c: a
+  report-side "most recent update" field for incremental runs.
+- **Check 1 closes silently on Fix Released** (giflib #2158776, #75) --
+  the report drops those on its own -- but **Fix Committed comments +
+  unsubscribes** (xdg-desktop-portal-wlr #2159516, #81; confirmed live
+  the report keeps listing those). Wording review: no task-status
+  summary in the comment.
+- **Queue-membership guard** (#76, mistaken --url on unity bug
+  #2160299): write modes skip bugs without a direct sponsoring-team
+  subscription; dry-run proceeds as the "what would it do" probe.
+- **Check 8 nativeness from the published .dsc `Format:` field** (#77,
+  unity MP #508187 -- native WITH a revision): lazy lookup, 1.0
+  tiebreaks on file names; nux #508190 still bounces (control).
+- **Bot must leave ~ubuntu-sponsors** (#78): a member's MP vote claims
+  the team review slot and permanently drops the MP from the report.
+  Team actions delegated to `privileged_helper.py` (subprocess, own
+  token; `login` subcommand added after the first live 401 exposed the
+  credentials chicken-and-egg). Backlog 5b reframed around the helper
+  account.
+- **needs-packaging "uploaded" close** (#79, cloud-hypervisor #2158959):
+  package published in devel or in its upload queue -> comment +
+  unsubscribe, engagement-proof.
+- **~brian-murray is a service account** (#80): the needs-packaging
+  Wishlist automation still posts with his token; backlog 5d removes it
+  once the automation gets its own account.
+- Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
+  unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
+  #2159516 pending re-run with the final wording.
 
 ## Known residual edges (documented in code)
 
