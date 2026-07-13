@@ -128,6 +128,12 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    but the bot can't unsubscribe a team it isn't a member of, so
    security bugs currently stay in the security queue after a close;
    `unsubscribe_sponsors` logs when that happens.
+5c. **Sponsoring-report "most recent update" field** (report-side change,
+   we own sponsoring-reports.ubuntu.com): add a last-activity timestamp
+   per entry so the bot can run on "what changed since the last pass"
+   instead of walking the whole queue. Until then, `--all` walks the
+   report newest-first (#74) so fresh items come before the tail of
+   unchanged skips.
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by

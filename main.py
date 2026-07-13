@@ -520,7 +520,10 @@ def process_queue(state_manager, lp_client, llm_reviewer, force=False):
         data = json.loads(response.read().decode())
 
     logger.info("Found %d items in the queue.", len(data))
-    for item in data:
+    # The report is sorted oldest-first (we own its sorting); walk it
+    # newest-first so fresh items are triaged before the long tail of
+    # unchanged skips.
+    for item in reversed(data):
         link = item.get("link")
         if link:
             triage_url(

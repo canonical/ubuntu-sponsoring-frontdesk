@@ -701,3 +701,16 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Cost note: the early consult adds one comments fetch per item, but it's exactly the item shapes where an LLM spend was imminent that benefit; generic non-SRU/non-sync bugs never queried the LLM anyway.
 * **tests/conftest.py introduced:** autouse fixture resets ALL per-item memos (diff lines, attachments, human-engaged) before every test -- replaces the per-module setup_function boilerplate that each new cache had to remember (the #62 cache-leak rule, now structural). Preexisting lint debt in test_attachments.py cleaned; `make lint` green again.
 * Live-verified on the trigger bug: 21.5s/2 LLM calls -> 3.2s/0 LLM calls, same suppressed outcome. 409 tests.
+
+## 74. Walk the queue newest-first (2026-07-13)
+
+* seb128: the sponsoring report is sorted oldest-first, so frequent runs
+  spend the start of every pass on old, fact-unchanged skip entries while
+  the fresh (interesting) items sit at the end. Reverse the order.
+* We own the report and its sorting, so `process_queue` simply iterates
+  `reversed(data)` rather than re-sorting on `date_queued` (MM/DD/YY
+  strings) client-side. Per-item outcomes are order-independent (the
+  facts gate decides), this only changes when interesting items surface.
+* Follow-up idea (backlog 5c): add a "most recent update" timestamp per
+  entry on the report side, enabling incremental "what changed since the
+  last pass" runs instead of full-queue walks.
