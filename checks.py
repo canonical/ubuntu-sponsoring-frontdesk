@@ -378,12 +378,13 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
                 url,
                 summary,
             )
+            # No task summary in the comment: the bug page already shows the
+            # statuses, it just made the post longer (seb128).
             lp_client.comment(
                 bug,
-                f"This request has been uploaded and is awaiting release "
-                f"({summary}), so there is nothing left for a sponsor to do "
-                f"here. Cleaning up the queue by unsubscribing "
-                f"~ubuntu-sponsors.",
+                "This request has been uploaded and is awaiting release, so "
+                "there is nothing left for a sponsor to do here. Cleaning up "
+                "the queue by unsubscribing ~ubuntu-sponsors.",
             )
             lp_client.unsubscribe_sponsors(bug)
             return True

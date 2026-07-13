@@ -93,7 +93,9 @@ def test_fix_committed_unsubscribes_with_an_explanation():
     tasks = [FakeTask("xdg-desktop-portal-wlr (Ubuntu)", "Fix Committed")]
     assert _run(tasks, "xdg-desktop-portal-wlr", lp=lp) is True
     assert "uploaded and is awaiting release" in lp.comments[0]
-    assert "Fix Committed" in lp.comments[0]
+    # No task-status summary in the comment: the bug page already shows it
+    # (seb128 wording review).
+    assert "Fix Committed" not in lp.comments[0]
     assert lp.unsubscribed == 1
 
 

@@ -909,3 +909,8 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   understand what the bot is doing, at least at the beginning, to avoid
   pushback; sponsors who dislike it can unsubscribe the team themselves
   when uploading.
+
+* #81 wording review (seb128, on the interactive prompt): the task-status
+  summary "(pkg (Ubuntu): Fix Committed)" made the post longer without
+  adding value -- the bug page shows the statuses. Dropped from the
+  comment; the log line keeps it.
