@@ -110,6 +110,12 @@ SERVICE_ACCOUNTS = frozenset(
         "~git-ubuntu-bot",
         "~git-ubuntu-import",
         "~janitor",
+        # The needs-packaging Wishlist automation ("*** This is an automated
+        # message ***", wiki.ubuntu.com/QATeam/Specs/NeedsPackagingBugs)
+        # still posts with Brian Murray's token although he has left Ubuntu
+        # work (#80, seen live on bug #2158959). Remove once the automation
+        # moves to a dedicated account -- seb128 to arrange, STATUS backlog.
+        "~brian-murray",
     }
 )
 

@@ -866,3 +866,17 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Live-verified on #2158959 (dry-run): "cloud-hypervisor 52.0-0ubuntu1
   has been uploaded and is waiting in the stonking NEW queue..." 437
   tests.
+
+## 80. ~brian-murray is a service account (2026-07-13)
+
+* On bug #2158959 the engaged-human check counted a ~brian-murray comment
+  as a reviewer engaging -- but it's the needs-packaging Wishlist
+  automation ("*** This is an automated message ***",
+  wiki.ubuntu.com/QATeam/Specs/NeedsPackagingBugs). seb128: Brian moved
+  to a new company and isn't active in Ubuntu anymore; the automation
+  still uses his token. Simplest fix: add the account to
+  checks.SERVICE_ACCOUNTS.
+* Backlog 5d: remove it from the list once seb128 moves the automation
+  to a dedicated account. Until then a genuine comment from the account
+  would (wrongly but harmlessly -- the bot just stays chattier) not
+  count as engagement.

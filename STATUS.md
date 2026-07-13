@@ -145,6 +145,13 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    instead of walking the whole queue. Until then, `--all` walks the
    report newest-first (#74) so fresh items come before the tail of
    unchanged skips.
+5d. **Remove `~brian-murray` from `checks.SERVICE_ACCOUNTS`** once the
+   needs-packaging Wishlist automation stops using his token (#80): Brian
+   left Ubuntu work but the automation still posts as him, so the account
+   is treated as a bot for the engaged-human check. seb128 to move the
+   automation to a dedicated account at some point; until then a genuine
+   comment from that account would (wrongly, but harmlessly) not count
+   as engagement.
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by
