@@ -1644,7 +1644,15 @@ _RECENT_UPLOAD_GRACE = datetime.timedelta(hours=24)
 # single 'ubuntu/devel' branch that tracks the archive's actual development
 # series. Matches either shape; non-greedy so '-devel' is stripped when
 # present rather than swallowed into the series name.
-_TARGET_SERIES_RE = re.compile(r"ubuntu/(?P<series>[a-z0-9.]+?)(?:-devel)?$")
+# Accepts the git-ubuntu pocket branches too (ubuntu/jammy-updates, ...):
+# whatever the branch-choice merits (backlog 5e), the SERIES such a target
+# names is unambiguous, and comparing against anything else is wrong --
+# found live on nano MP #508284 (#84), a jammy SRU targeting
+# ubuntu/jammy-updates that stale-version compared against devel.
+_TARGET_SERIES_RE = re.compile(
+    r"ubuntu/(?P<series>[a-z0-9.]+?)"
+    r"(?:-(?:devel|proposed|updates|security|backports))?$"
+)
 
 
 def _target_ubuntu_series(lp_obj, lp):

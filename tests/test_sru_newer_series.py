@@ -86,6 +86,14 @@ def test_supported_series_ordered_none_on_misaligned_output(monkeypatch):
 # --- not-an-SRU exits (no Launchpad lookups needed) ---------------------------
 
 
+def test_mp_targeting_a_pocket_branch_is_an_sru(monkeypatch):
+    # #84: ubuntu/jammy-updates names jammy just as ubuntu/jammy-devel does.
+    bug = _bug([FakeTask("testpkg (Ubuntu Jammy)", "In Progress")])
+    mp = _sru_mp([bug], target="refs/heads/ubuntu/jammy-updates")
+    finding = checks.check_sru_newer_series("url", mp, _LP(), FakeLLM())
+    assert finding and "targeting jammy" in finding.message
+
+
 def test_mp_targeting_devel_is_not_an_sru():
     mp = FakeMP(target="refs/heads/ubuntu/devel")
     # lp_client deliberately without a usable .lp: proves no lookup happens.

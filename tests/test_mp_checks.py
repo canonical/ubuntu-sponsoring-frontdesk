@@ -939,6 +939,16 @@ def test_target_ubuntu_series_sru_branch():
     assert checks._target_ubuntu_series(mp, lp=None) == "noble"
 
 
+def test_target_ubuntu_series_pocket_branches_name_their_series():
+    # #84 (nano MP #508284): a jammy SRU targeting the git-ubuntu pocket
+    # branch ubuntu/jammy-updates was compared against devel because the
+    # target didn't parse. Whatever the branch-choice merits (backlog 5e),
+    # the series it names is unambiguous.
+    for pocket in ("updates", "security", "proposed", "backports"):
+        mp = FakeMP(target=f"refs/heads/ubuntu/jammy-{pocket}")
+        assert checks._target_ubuntu_series(mp, lp=None) == "jammy"
+
+
 def test_target_ubuntu_series_bare_devel_resolves_via_devel_codename(monkeypatch):
     monkeypatch.setattr(checks.archive_lookup, "devel_codename", lambda lp: "stonking")
     mp = FakeMP(target="refs/heads/ubuntu/devel")

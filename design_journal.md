@@ -965,3 +965,23 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   as covered through the SRU bug's linked per-series MPs
   (`_series_evidence`), not the report; only stonking is legitimately
   flagged now.
+
+## 84. Target-series parsing: git-ubuntu pocket branches (2026-07-14)
+
+* Trigger: nano MP #508284, a jammy SRU targeting
+  `refs/heads/ubuntu/jammy-updates`. `_TARGET_SERIES_RE` only knew
+  `ubuntu/<series>[-devel]`, so the target "didn't parse" and
+  `_target_ubuntu_series` fell back to devel (that fallback is for
+  Debian merge MPs, #27/#41): stale-version compared the jammy upload
+  against stonking's 9.1-1 and bounced a fine 6.2-1ubuntu0.3, and
+  Check 7 said "targets devel; not an SRU". Earlier SRUs all targeted
+  `ubuntu/<series>[-devel]`, which is why this never fired before.
+* Fix: the regex accepts the pocket suffixes
+  (-devel|-proposed|-updates|-security|-backports). Consistent for all
+  four users: stale-version/Check 8 series, Check 1b venue matching,
+  Check 7 SRU detection and series evidence -- in each, the series a
+  pocket branch names is what matters.
+* Whether targeting a pocket branch instead of `-devel` deserves a
+  retargeting advisory is deliberately NOT decided: seb128 wants to
+  understand the difference first (backlog 5e); the bot stays silent
+  about the branch choice.

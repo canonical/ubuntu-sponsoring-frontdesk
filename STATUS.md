@@ -157,6 +157,12 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    automation to a dedicated account at some point; until then a genuine
    comment from that account would (wrongly, but harmlessly) not count
    as engagement.
+5e. **Understand git-ubuntu pocket branches as MP targets** (#84, nano MP
+   #508284 targeted `ubuntu/jammy-updates` instead of the conventional
+   `ubuntu/jammy-devel`): are they effectively the same for a sponsor, or
+   should the bot suggest retargeting to `-devel`? seb128 to clarify the
+   difference first; until then the bot parses the series from pocket
+   branches (correct comparisons) but stays silent about the choice.
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by
@@ -862,9 +868,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#83)
+## `--interactive` run continued, 2026-07-13/14 (#74-#84)
 
-Ten more live-found improvements, all same-day (journal #74-#83):
+Eleven more live-found improvements, all same-day (journal #74-#84):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -902,6 +908,11 @@ Ten more live-found improvements, all same-day (journal #74-#83):
   `Supported`) and count ESM, so Check 7 asked for a fix in a dead
   series; the table now comes from distro-info-data's real EOL dates.
   New runtime dependency: the `distro-info` package.
+- **Pocket branches parse as their series** (#84, nano MP #508284
+  targeting `ubuntu/jammy-updates`): the jammy SRU was version-compared
+  against devel and not seen as an SRU; `_TARGET_SERIES_RE` now accepts
+  the pocket suffixes. Whether to suggest retargeting to `-devel` is
+  backlog 5e.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
