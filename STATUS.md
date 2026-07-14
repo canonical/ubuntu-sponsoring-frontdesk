@@ -163,6 +163,18 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    should the bot suggest retargeting to `-devel`? seb128 to clarify the
    difference first; until then the bot parses the series from pocket
    branches (correct comparisons) but stays silent about the choice.
+5f. **Version-string convention check** (not high priority, needs design
+   work). seb128, found live on ipmiutil MP #508280 (`3.2.2-1ubuntu1~ppa2`
+   -- a PPA-style `~ppa` suffix has no business in an archive upload):
+   validate proposed versions against
+   https://github.com/ubuntu/ubuntu-project-docs/edit/main/docs/how-ubuntu-is-made/concepts/version-strings.md.
+   A colleague's dput-hooked linter already does this --
+   `check_sru_version_string_convention()` in
+   https://github.com/ubuntu/ubuntu-lint/blob/main/ubuntu_lint/linters.py
+   -- worth building on rather than reimplementing from the doc. First
+   cheap step floated: just flag `~ppa` in the proposed version (a common,
+   unambiguous mistake, confident enough to be a "please fix" rather than
+   advisory) before attempting the fuller convention check.
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by
