@@ -3164,8 +3164,8 @@ def _ppa_version_finding(url, proposed_version):
         f"The proposed version (`{proposed_version}`) has a `~ppaN` "
         "suffix, which belongs to a PPA build, not an archive upload. "
         "Please drop it and use a normal archive version string -- see "
-        "https://github.com/ubuntu/ubuntu-project-docs/blob/main/docs/"
-        "how-ubuntu-is-made/concepts/version-strings.md",
+        "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/"
+        "version-strings/",
     )
 
 
@@ -3179,10 +3179,13 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
 
     A first, narrow step toward the fuller backlog item (STATUS.md 5f):
     validating the proposed version against Ubuntu's whole version-string
-    convention (https://github.com/ubuntu/ubuntu-project-docs/blob/main/
-    docs/how-ubuntu-is-made/concepts/version-strings.md), maybe by
-    building on a colleague's ubuntu-lint dput hook
-    (check_sru_version_string_convention() in
+    convention -- source doc (easier for an LLM/reimplementation to
+    parse): https://github.com/ubuntu/ubuntu-project-docs/blob/main/docs/
+    how-ubuntu-is-made/concepts/version-strings.md; published page (what
+    the posted comment links, seb128: "we want the [human-readable
+    version] for users"): https://ubuntu.com/project/docs/how-ubuntu-is-
+    made/concepts/version-strings/. Maybe by building on a colleague's
+    ubuntu-lint dput hook (check_sru_version_string_convention() in
     https://github.com/ubuntu/ubuntu-lint/blob/main/ubuntu_lint/
     linters.py) rather than reimplementing it. `~ppa` alone is common
     and unambiguous enough to be worth catching on its own first.
