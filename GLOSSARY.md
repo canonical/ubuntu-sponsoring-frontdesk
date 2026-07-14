@@ -190,6 +190,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,
   including skips, is appended to `audit.jsonl` (#14).
+- **Bot self-subscribe on bug comments** — `LPClient._subscribe_self`
+  (#88): every time the bot posts a comment on a BUG (any tier), it also
+  subscribes its own account, so follow-up activity generates an email
+  (seb128: to see how sponsors/reporters react). MPs unaffected — a
+  review vote already adds a review slot/notification there. Best-effort,
+  not tied to write-effectiveness/facts persistence (a failure just logs
+  a warning): gating it would risk a retry loop that can't actually
+  retry, since the comment dedup check short-circuits before this runs
+  on any later pass once that exact comment already exists.
 - **Fail-safe** — this bot's standing bias: when a signal is ambiguous or a
   lookup fails, prefer no action / route to a human over guessing and
   auto-rejecting a contributor. Applied throughout (#9, #20 §"Fail-safe

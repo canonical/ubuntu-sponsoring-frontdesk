@@ -868,9 +868,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#87)
+## `--interactive` run continued, 2026-07-13/14 (#74-#88)
 
-Fourteen more live-found improvements, all same-day (journal #74-#87):
+Fifteen more live-found improvements, all same-day (journal #74-#88):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -931,6 +931,10 @@ Fourteen more live-found improvements, all same-day (journal #74-#87):
   framing. The SRU template bounce (#86) now links
   https://ubuntu.com/project/docs/SRU/reference/bug-template/
   #reference-sru-bug-template.
+- **Bot self-subscribes to bugs it comments on** (#88): so seb128 gets
+  follow-up emails on how sponsors/reporters react to the bot's activity.
+  Every bug comment, any tier; best-effort, doesn't gate facts
+  persistence. MPs unaffected -- a review vote already adds a slot.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

@@ -201,6 +201,7 @@ class FakeBug:
         self.self_link = "https://api.launchpad.net/devel/bug/1"
         self.messages = []
         self.new_messages = []
+        self.subscribed_by = []
 
     @property
     def bug(self):
@@ -211,6 +212,9 @@ class FakeBug:
 
     def unsubscribe(self, person=None):
         pass
+
+    def subscribe(self, person=None):
+        self.subscribed_by.append(person)
 
 
 class FakeBugMessage:

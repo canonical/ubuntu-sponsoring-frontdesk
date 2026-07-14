@@ -236,6 +236,31 @@ class LPClient:
             return None
         return False
 
+    def _subscribe_self(self, bug, target):
+        """
+        Subscribes the bot's own account to a bug it just commented on
+        (design_journal.md #88, seb128: "so I can see how sponsors/
+        reporters react to the bot activity" -- these land as follow-up
+        emails to whoever monitors the bot account). Bugs only: an MP
+        review vote already adds a review slot/notification, the direct
+        equivalent (#78's concern is a TEAM membership vote claiming the
+        team's slot -- an individual account subscribing to a bug has no
+        such side effect).
+
+        Best-effort and NOT tied to the comment's write-effectiveness or
+        facts persistence: subscribing is idempotent and low-stakes (like
+        notify.py's operator pings), and gating it would risk a retry
+        loop that never actually retries -- the dedup check above returns
+        before this runs on any later pass once the comment already
+        exists, so a failed subscribe here has no automatic retry path
+        regardless. No separate confirmation prompt: this runs only once
+        the user has already approved posting the comment itself.
+        """
+        try:
+            bug.subscribe(person=self.lp.me)
+        except Exception as e:
+            logger.warning("Could not subscribe to %s: %s", target, e)
+
     def unsubscribe_sponsors(self, lp_obj):
         """
         Unsubscribes ubuntu-sponsors from a bug.
@@ -628,6 +653,7 @@ class LPClient:
         try:
             if resource_type == "bug":
                 lp_obj.newMessage(content=message)
+                self._subscribe_self(lp_obj, target)
             elif resource_type == "branch_merge_proposal":
                 if vote:
                     lp_obj.createComment(content=message, vote=vote)

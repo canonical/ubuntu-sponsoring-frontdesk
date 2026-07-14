@@ -1059,3 +1059,27 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Live-verified on the trigger MP: the newer-series item now renders
   under "Please verify", the template bounce links the doc. 459 tests
   (1 updated).
+
+## 88. Bot self-subscribes to bugs it comments on (2026-07-14)
+
+* Request (seb128): "so I can see how sponsors/reporters react to the bot
+  activity" -- follow-up emails on a bug the bot touched. No MP equivalent
+  needed: a review vote already adds a review slot/notification there
+  (distinct from #78's concern, which was a TEAM membership vote claiming
+  the team's slot -- an individual account subscribing to a bug has no
+  such side effect).
+* Design: `LPClient._subscribe_self(bug, target)`, called right after
+  `newMessage()` succeeds in `comment()`'s bug branch (MPs untouched).
+  Applies to every bug comment, any tier -- closing, incomplete, question
+  -- per seb128 ("any"). No separate `--interactive` confirmation: it
+  runs only once the user already approved posting the comment, same as
+  an MP vote's review-slot side effect isn't separately confirmed either.
+* Best-effort, NOT tied to write-effectiveness/facts persistence: a
+  subscribe failure logs a warning but doesn't make the comment's outcome
+  anything other than "performed". Deliberate: the dedup check
+  (`_already_posted`) short-circuits BEFORE this code path on any later
+  run once the comment text already exists on the bug, so gating facts
+  on subscribe success would produce a retry loop that can never actually
+  retry the subscribe -- worse than just accepting the rare failure.
+* 464 tests (6 new in test_write_modes.py). Live-confirmed real Launchpad
+  bug objects expose `.subscribe(person=...)`.
