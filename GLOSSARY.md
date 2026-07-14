@@ -162,6 +162,14 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/).
   Exempt: merge bugs, sync requests, needs-packaging bugs, bugs with an
   active linked MP.
+- **PPA version-suffix check** — Check 11, `check_ppa_version_suffix`
+  (#90): the proposed version (MP's new changelog stanza, or a bug's
+  newest usable debdiff attachment's) carries a `~ppaN` suffix — a PPA
+  build identifier, not valid in an archive upload. Deterministic,
+  incomplete-tier. A first narrow step toward the fuller backlog item
+  (STATUS.md 5f) of validating the whole Ubuntu version-string
+  convention, maybe by building on a colleague's `ubuntu-lint` dput hook
+  rather than reimplementing it from the doc.
 - **Stale-bounce sweep (Rule B)** — `sweep.py` (#66): after every
   `--all` pass, bugs the bot bounced get revisited using
   `bug_task.date_incomplete` as the clock. A new usable-diff attachment

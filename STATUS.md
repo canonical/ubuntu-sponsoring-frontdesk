@@ -171,10 +171,10 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
    A colleague's dput-hooked linter already does this --
    `check_sru_version_string_convention()` in
    https://github.com/ubuntu/ubuntu-lint/blob/main/ubuntu_lint/linters.py
-   -- worth building on rather than reimplementing from the doc. First
-   cheap step floated: just flag `~ppa` in the proposed version (a common,
-   unambiguous mistake, confident enough to be a "please fix" rather than
-   advisory) before attempting the fuller convention check.
+   -- worth building on rather than reimplementing from the doc. **First
+   step DONE (#90, 2026-07-14):** Check 11 `check_ppa_version_suffix`
+   flags a bare `~ppa` suffix, incomplete-tier. Remaining: the fuller
+   convention check (or reuse of `ubuntu-lint`).
 6. **Hygiene (DONE).** `make lint`/`make fmt` targets + `.github/workflows/ci.yml`
    running ruff + pytest; whole tree is `ruff check`/`ruff format` clean. The
    brittle SRU/sync detection in `llm_reviewer.triage_bug` is replaced by
@@ -880,9 +880,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#89)
+## `--interactive` run continued, 2026-07-13/14 (#74-#90)
 
-Sixteen more live-found improvements, all same-day (journal #74-#89):
+Seventeen more live-found improvements, all same-day (journal #74-#90):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -953,6 +953,10 @@ Sixteen more live-found improvements, all same-day (journal #74-#89):
   factual clause instead of restating the general requirement -- fixes
   the verbose, self-repeating text seb128 flagged, without hardcoding
   any bug-specific content into the fixed wrapper.
+- **Check 11: `~ppaN` version suffix** (#90, ipmiutil MP #508280): a
+  PPA-build version string has no business in an archive upload --
+  incomplete-tier bounce, deterministic, same MP+bug input-gathering as
+  `check_stale_version`. First narrow step of backlog 5f.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

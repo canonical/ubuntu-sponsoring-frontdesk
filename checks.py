@@ -3145,3 +3145,80 @@ def check_patch_not_debdiff(url, lp_obj, lp_client):
         "https://ubuntu.com/project/docs/contributors/updating/"
         "work-with-debian-patches/",
     )
+
+
+# Case-insensitive: seen both '~ppa1' and '~PPA1' in the wild.
+_PPA_VERSION_RE = re.compile(r"~ppa", re.IGNORECASE)
+
+
+def _ppa_version_finding(url, proposed_version):
+    """Shared Finding for both call sites of check_ppa_version_suffix."""
+    logger.info(
+        "[%s] proposed version %r carries a ~ppaN suffix. Adding an "
+        "incomplete finding.",
+        url,
+        proposed_version,
+    )
+    return Finding(
+        "incomplete",
+        f"The proposed version (`{proposed_version}`) has a `~ppaN` "
+        "suffix, which belongs to a PPA build, not an archive upload. "
+        "Please drop it and use a normal archive version string -- see "
+        "https://github.com/ubuntu/ubuntu-project-docs/blob/main/docs/"
+        "how-ubuntu-is-made/concepts/version-strings.md",
+    )
+
+
+def check_ppa_version_suffix(url, lp_obj, lp_client):
+    """
+    Check 11: the proposed version carries a `~ppaN` suffix
+    (design_journal.md #90). That suffix identifies a PPA build and has no
+    business in an archive upload (found live, ipmiutil MP #508280:
+    `3.2.2-1ubuntu1~ppa2`) -- an unambiguous, deterministic mistake, so
+    this is an incomplete-tier bounce rather than advisory.
+
+    A first, narrow step toward the fuller backlog item (STATUS.md 5f):
+    validating the proposed version against Ubuntu's whole version-string
+    convention (https://github.com/ubuntu/ubuntu-project-docs/blob/main/
+    docs/how-ubuntu-is-made/concepts/version-strings.md), maybe by
+    building on a colleague's ubuntu-lint dput hook
+    (check_sru_version_string_convention() in
+    https://github.com/ubuntu/ubuntu-lint/blob/main/ubuntu_lint/
+    linters.py) rather than reimplementing it. `~ppa` alone is common
+    and unambiguous enough to be worth catching on its own first.
+
+    Same input-gathering as check_stale_version: the MP's new (top)
+    changelog stanza, or a bug's newest usable diff attachment's new
+    stanza. Returns an incomplete Finding, False (no ~ppa, or nothing
+    to check), or None (diff/attachment fetch failed -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        target = attachments.review_target(bug)
+        if target is None:
+            return None
+        if target is False:
+            return False
+        _attachment, text = target
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        if not stanza:
+            logger.debug("check_ppa_version_suffix: no new changelog entry; skipping.")
+            return False
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        if not header:
+            logger.debug("check_ppa_version_suffix: unparseable entry header; skipping.")
+            return False
+        proposed_version = header.group("version")
+    elif resource_type == "branch_merge_proposal":
+        proposed_version, _entry = _proposed_changelog_entry(lp_obj)
+        if proposed_version is None:
+            return None
+        if proposed_version is False:
+            return False
+    else:
+        return False
+
+    if not _PPA_VERSION_RE.search(proposed_version):
+        return False
+    return _ppa_version_finding(url, proposed_version)

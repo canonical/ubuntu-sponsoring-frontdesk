@@ -1105,3 +1105,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   problems could occur] sections; a reproduction recipe and upstream
   patch reference do not substitute for these required sections." No
   test breakage (existing assertions were substring-based). 464 tests.
+
+## 90. Check 11: `~ppaN` version suffix (2026-07-14)
+
+* Request (seb128, live ipmiutil MP #508280: `3.2.2-1ubuntu1~ppa2`): a
+  `~ppaN` suffix identifies a PPA build and has no business in an archive
+  upload -- unambiguous, deterministic, confident enough to be a "please
+  fix" bounce, not advisory.
+* First narrow step toward the fuller backlog item (STATUS.md 5f):
+  validating the whole version-string convention
+  (ubuntu-project-docs/.../version-strings.md), possibly building on a
+  colleague's `ubuntu-lint` dput hook
+  (`check_sru_version_string_convention()`) rather than reimplementing
+  it -- `~ppa` alone is common and unambiguous enough to catch on its
+  own first, without waiting on that larger design.
+* New `checks.check_ppa_version_suffix` (Check 11), same input-gathering
+  as `check_stale_version`: the MP's new (top) changelog stanza
+  (`_proposed_changelog_entry`, reused) or a bug's newest usable diff
+  attachment's new stanza (`attachments.review_target` +
+  `llm_reviewer._new_changelog_stanza`, same pattern as
+  `_stale_version_bug`/`_direct_source_edit_bug`). `_PPA_VERSION_RE`
+  (`~ppa`, case-insensitive) against the proposed version string.
+  Deterministic, pre-inconclusive-gate, wired in main.py right after
+  Check 10. Returns an incomplete Finding, False (no ~ppa, or nothing to
+  check -- no stanza, wrong resource type), or None (diff/attachment
+  fetch failed -- retriable).
+* Live-verified on the trigger MP: fires with the exact version and a
+  link to the version-string doc; a first --force run returned None
+  once (transient Launchpad blip on the diff fetch, correctly retried
+  rather than cached as clean) before firing cleanly on retry. 473 tests
+  (9 new in test_ppa_version_suffix.py).
