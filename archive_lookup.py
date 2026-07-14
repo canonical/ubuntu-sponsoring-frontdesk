@@ -1,11 +1,13 @@
 """
 Archive-lookup helpers used by the sync-request triage in llm_reviewer.py to
 answer "what's actually in the archive" without shelling out to `rmadison`
-(which needs devscripts installed locally) or `distro-info`.
+(which needs devscripts installed locally).
 
 Ubuntu state comes straight from the Launchpad API -- the canonical source,
 and one we're already authenticated against for everything else the bot
-does. Debian state comes from the FTP-master team's live madison endpoint
+does -- except the supported-series list, which comes from
+`ubuntu-distro-info` (distro-info-data has real EOL dates; Launchpad's
+series statuses lag EOL and count ESM as Supported, see #83). Debian state comes from the FTP-master team's live madison endpoint
 (https://api.ftp-master.debian.org/madison), which reads straight from dak's
 own database (projectb) -- updated the moment an upload is accepted, not
 after the next dinstall/publisher run. That matters here: qa.debian.org's
@@ -23,6 +25,7 @@ fail safe rather than act on a guess.
 
 import logging
 import re
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -104,32 +107,47 @@ def devel_codename(lp):
         return None
 
 
+def _distro_info(*args):
+    """`ubuntu-distro-info <args>` stdout; raises on any failure. Kept as a
+    seam so tests can pin the series table instead of spawning processes."""
+    return subprocess.run(
+        ["ubuntu-distro-info", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
+    ).stdout
+
+
 def supported_series_ordered(lp):
-    """The Ubuntu series a fix can still be expected to land in -- status
-    Supported, Current Stable Release, or Active Development -- as a list
+    """The Ubuntu series a fix can still be expected to land in, as a list
     of (codename, version) pairs ordered oldest release first (so the
     current devel series is last). Versions ride along because an LLM
     can't be assumed to know recent codenames' ordering (design #58's
     live probe: the model had no idea 'resolute' is 26.04, so 'fixed in
-    plucky 25.04+' didn't read as covering it). Includes ESM-only series
-    (they report 'Supported' too), which is harmless: callers only look
-    at series NEWER than an SRU's target. None on lookup failure
-    (tri-state; a failure must not read as 'no newer series exist')."""
+    plucky 25.04+' didn't read as covering it).
+
+    Sourced from `ubuntu-distro-info --supported` (distro-info-data's real
+    EOL dates), NOT Launchpad series statuses (#83): Launchpad's manual
+    status flip lags EOL -- questing (25.10) still read 'Supported' after
+    going end-of-life, which made Check 7 ask for an SRU fix in a dead
+    series (rclone MP #508341) -- and ESM-only series report 'Supported'
+    forever. distro-info excludes both, and its output is already
+    chronological with the devel series last. None on failure (tri-state;
+    a failure must not read as 'no newer series exist'). The `lp` argument
+    is unused but kept so callers don't care about the source."""
+    del lp
     try:
-        entries = []
-        for series in lp.distributions["ubuntu"].series:
-            if series.status in (
-                "Supported",
-                "Current Stable Release",
-                "Active Development",
-            ):
-                # '24.04' -> (24, 4): the release version orders series
-                # chronologically; codenames don't.
-                key = tuple(int(part) for part in series.version.split("."))
-                entries.append((key, series.name, series.version))
-        return [(name, version) for _key, name, version in sorted(entries)]
+        names = _distro_info("--supported").split()
+        # --release aligns line-by-line with the codename list; drop the
+        # ' LTS' qualifier ('24.04 LTS' -> '24.04').
+        releases = _distro_info("--supported", "--release").splitlines()
+        versions = [line.split()[0] for line in releases if line.strip()]
+        if len(names) != len(versions) or not names:
+            raise ValueError(f"unexpected output: {names!r} vs {versions!r}")
+        return list(zip(names, versions))
     except Exception as e:
-        logger.warning("Launchpad lookup failed (supported Ubuntu series): %s", e)
+        logger.warning("distro-info lookup failed (supported Ubuntu series): %s", e)
         return None
 
 

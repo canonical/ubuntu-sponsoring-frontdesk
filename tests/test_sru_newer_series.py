@@ -51,8 +51,10 @@ def _bug(tasks, **kwargs):
 
 
 def test_supported_series_ordered_oldest_first_devel_last():
-    lp = _LP().lp
-    assert archive_lookup.supported_series_ordered(lp) == [
+    # #83: sourced from ubuntu-distro-info (real EOL dates), not Launchpad
+    # series statuses (which lag EOL -- questing -- and count ESM). The
+    # conftest fixture pins the command output; `lp` is unused.
+    assert archive_lookup.supported_series_ordered(None) == [
         ("jammy", "22.04"),
         ("noble", "24.04"),
         ("resolute", "26.04"),
@@ -60,9 +62,25 @@ def test_supported_series_ordered_oldest_first_devel_last():
     ]
 
 
-def test_supported_series_ordered_none_on_failure():
-    lp = types.SimpleNamespace(distributions={})
-    assert archive_lookup.supported_series_ordered(lp) is None
+def test_supported_series_ordered_strips_the_lts_qualifier():
+    assert ("jammy", "22.04") in archive_lookup.supported_series_ordered(None)
+
+
+def test_supported_series_ordered_none_on_failure(monkeypatch):
+    def _boom(*args):
+        raise FileNotFoundError("ubuntu-distro-info not installed")
+
+    monkeypatch.setattr(archive_lookup, "_distro_info", _boom)
+    assert archive_lookup.supported_series_ordered(None) is None
+
+
+def test_supported_series_ordered_none_on_misaligned_output(monkeypatch):
+    monkeypatch.setattr(
+        archive_lookup,
+        "_distro_info",
+        lambda *args: "jammy\nnoble\n" if args == ("--supported",) else "22.04 LTS\n",
+    )
+    assert archive_lookup.supported_series_ordered(None) is None
 
 
 # --- not-an-SRU exits (no Launchpad lookups needed) ---------------------------
@@ -265,20 +283,17 @@ def test_bug_side_all_newer_closed_is_clean():
 # --- lookup failures are inconclusive -----------------------------------------
 
 
-def test_series_table_lookup_failure_is_inconclusive():
+def test_series_table_lookup_failure_is_inconclusive(monkeypatch):
     bug = _bug([FakeTask("testpkg (Ubuntu Noble)", "In Progress")])
-    # series=None: iterating the series table raises inside archive_lookup.
-    broken = types.SimpleNamespace(
-        lp=types.SimpleNamespace(
-            distributions={
-                "ubuntu": types.SimpleNamespace(
-                    current_series=FakeSeries("stonking"), series=None
-                )
-            }
-        )
-    )
+
+    # #83: the series table comes from ubuntu-distro-info; a failing
+    # command must read as "can't determine", not "no newer series".
+    def _boom(*args):
+        raise FileNotFoundError("ubuntu-distro-info not installed")
+
+    monkeypatch.setattr(archive_lookup, "_distro_info", _boom)
     assert (
-        checks.check_sru_newer_series("url", _sru_mp([bug]), broken, FakeLLM()) is None
+        checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is None
     )
 
 

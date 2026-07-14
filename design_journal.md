@@ -938,3 +938,30 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Wording (seb128): generic and singular/plural-aware -- "reviewed on
   the merge proposal(s) linked to this bug", no URL; the links are on
   the bug page already and quoting one of several is misleading.
+
+## 83. Supported series from distro-info, not Launchpad statuses (2026-07-14)
+
+* Trigger: rclone MP #508341 (jammy SRU) -- Check 7's advisory asked for
+  the fix in "questing, stonking", but questing (25.10) is EOL.
+  `supported_series_ordered` filtered Launchpad series on status
+  Supported/Current Stable Release/Active Development, and Launchpad's
+  status flip is manual and lags EOL (live probe: questing still
+  'Supported'; focal/bionic/xenial/trusty too, via ESM). #58 had noted
+  the ESM noise was harmless because callers only look NEWER than the
+  target -- an interim release going EOL sits between stable targets and
+  broke that assumption.
+* Fix (seb128: use the command): the series table now comes from
+  `ubuntu-distro-info --supported` (+ `--release` for the version
+  labels, ' LTS' stripped), i.e. distro-info-data's real EOL dates.
+  Output is already chronological with devel last; misaligned/empty
+  output or a failing command -> None (tri-state). The `lp` parameter
+  stays so callers don't care about the source. `_distro_info()` is the
+  subprocess seam; conftest pins it (host data independence), like the
+  privileged-helper pin.
+* Ripple accepted: debdiff suite validation (stale-version, Check 8
+  bug-side) now treats an EOL suite as unknown -> left for a human,
+  which is the right shape for "proposing an upload to a dead series".
+* Also confirmed on the trigger (seb128's question): noble/resolute read
+  as covered through the SRU bug's linked per-series MPs
+  (`_series_evidence`), not the report; only stonking is legitimately
+  flagged now.

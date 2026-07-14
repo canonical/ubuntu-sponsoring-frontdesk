@@ -122,7 +122,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   often stale — updating them needs nomination rights submitters usually
   lack, so a yes skips silently since #68; only "no basis to conclude
   it's fixed" produces the advisory). Question tier, never a reject
-  reason.
+  reason. The supported-series table comes from `ubuntu-distro-info
+  --supported` (#83), not Launchpad series statuses — those lag EOL
+  (questing read `Supported` after going end-of-life) and count
+  ESM-only series as `Supported` forever.
 - **Direct source-edit check** — Check 8, `check_direct_source_edit`
   (#60): a fix MP whose diff touches files outside `debian/` gets an
   incomplete-tier bounce — changes to upstream code must be provided as

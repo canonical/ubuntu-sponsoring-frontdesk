@@ -9,6 +9,7 @@ test, so no test module has to remember to do it itself.
 
 import pytest
 
+import archive_lookup
 import attachments
 import checks
 import launchpad_client
@@ -28,3 +29,18 @@ def _no_privileged_helper(monkeypatch):
     so once real helper credentials exist, un-pinned tests would start
     subprocesses. Default to unconfigured; delegation tests override."""
     monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def _pinned_distro_info(monkeypatch):
+    """supported_series_ordered shells out to ubuntu-distro-info (#83);
+    tests must not depend on the host's distro-info-data. Pin the series
+    table to the same set FakeRoot's fixtures use (jammy..stonking,
+    stonking = devel); the function's own unit tests override."""
+    outputs = {
+        ("--supported",): "jammy\nnoble\nresolute\nstonking\n",
+        ("--supported", "--release"): "22.04 LTS\n24.04 LTS\n26.04 LTS\n26.10\n",
+    }
+    monkeypatch.setattr(
+        archive_lookup, "_distro_info", lambda *args: outputs[args]
+    )

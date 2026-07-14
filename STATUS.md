@@ -34,7 +34,7 @@ Current pipeline: `flow.svg`.
 ## How to run
 
 ```bash
-make test                       # unit suite (needs pytest, launchpadlib, pyyaml, python3-apt)
+make test                       # unit suite (needs pytest, launchpadlib, pyyaml, python3-apt; runtime also needs distro-info -- #83)
 make smoke URL=<lp-url>          # read-only attribute check against real Launchpad
 python3 main.py --url <url> [--dry-run|--interactive|--yes] [--verbose]
 python3 main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
@@ -862,9 +862,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#82)
+## `--interactive` run continued, 2026-07-13/14 (#74-#83)
 
-Nine more live-found improvements, all same-day (journal #74-#82):
+Ten more live-found improvements, all same-day (journal #74-#83):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -897,6 +897,11 @@ Nine more live-found improvements, all same-day (journal #74-#82):
   before the bug entry closes; partial coverage is left for a human, a
   `ubuntu/devel` MP also covers the devel codename's task, and the
   comment uses generic plural-aware wording without an MP URL.
+- **Supported series from `ubuntu-distro-info`** (#83, rclone MP
+  #508341): Launchpad series statuses lag EOL (questing still read
+  `Supported`) and count ESM, so Check 7 asked for a fix in a dead
+  series; the table now comes from distro-info-data's real EOL dates.
+  New runtime dependency: the `distro-info` package.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
