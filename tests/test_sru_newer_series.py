@@ -224,7 +224,11 @@ def test_unhandled_newer_series_fires_the_advisory():
     )
     llm = FakeLLM()
     finding = checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), llm)
-    assert finding.tier == "question" and finding.kind == "advisory"
+    # #85: kind="verify" (renders under "Please verify", not "Nice to
+    # have" -- the wording is assertive that this must be checked, which
+    # the advisory bucket's "non-blocking... nice to have" framing
+    # contradicted).
+    assert finding.tier == "question" and finding.kind == "verify"
     assert "resolute, stonking" in finding.message
     assert "SRU policy" in finding.message
     # The LLM was asked exactly about the unhandled series, labeled with

@@ -2447,13 +2447,16 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     most submitters don't have, while the description frequently documents
     'newer series ship version X which has the fix'.) Yes -> silent, there
     is nothing actionable left to ask (updating the task table needs
-    nomination rights most submitters lack); no -> the advisory. Still
-    question-tier/no-vote (#85: seb128 confirmed this stays advisory, the
-    evidence here is inherently soft -- but the wording is assertive that
-    checking and reflecting the status is a must, not a suggestion, so it
-    doesn't read as skippable).
+    nomination rights most submitters lack); no -> the finding. Still
+    question-tier/no-vote (#85: seb128 confirmed this stays non-blocking,
+    the evidence here is inherently soft -- but the wording is assertive
+    that checking and reflecting the status is a must, not a suggestion).
+    kind="verify", not "advisory" (also #85: the generic "nice to have,
+    non-blocking" advisory-bucket framing contradicted that assertive
+    wording -- "if true this would need fixing, but we're not confident
+    enough to block on it" is the accurate epistemic state here).
 
-    Returns a Finding ("question"/advisory), False (not an SRU, or all
+    Returns a Finding ("question"/verify), False (not an SRU, or all
     newer series handled), or None (a Launchpad/LLM lookup failed --
     inconclusive, retry next run; main.py persists no facts).
     """
@@ -2665,8 +2668,8 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         return False
 
     logger.info(
-        "[%s] SRU to %s with no sign the fix landed in %s first. Adding an "
-        "advisory finding.",
+        "[%s] SRU to %s with no sign the fix landed in %s first. Adding a "
+        "verify finding.",
         url,
         target_series,
         series_list,
@@ -2680,7 +2683,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         "clearly in the bug description (and the bug tasks, if you have "
         "the rights to nominate them). If it isn't fixed yet, the newer "
         "series should be updated before this SRU.",
-        kind="advisory",
+        kind="verify",
     )
 
 

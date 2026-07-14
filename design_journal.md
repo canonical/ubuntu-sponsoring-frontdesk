@@ -1034,3 +1034,28 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Live-verified on the trigger: the SRU template failure now blocks with
   vote=Needs Fixing, alongside Check 7's (#85-reworded) advisory in the
   same aggregate. 459 tests (24 new in test_triage_mp.py).
+
+## 87. Check 7 kind=verify + SRU template doc link (2026-07-14)
+
+* Trigger: same nano MP round -- despite #85's assertive wording, the
+  finding still rendered under "Nice to have (non-blocking... address
+  them now, before a sponsor reviews this, or in a future contribution)"
+  because it carried `kind="advisory"`, whose bucket header directly
+  contradicted the new wording. seb128: "didn't we agree to remove
+  that?" -- we hadn't touched the bucket, #85 only reworded the finding
+  text.
+* Fix: `kind="verify"` instead of `"advisory"` -- the existing "Please
+  verify (not confirmed -- if any of these are real they'd need fixing,
+  but the automated review isn't confident enough to block on them)"
+  bucket is actually the accurate description of Check 7's epistemic
+  state (soft bug-metadata evidence, could be a real policy violation),
+  and drops the "non-blocking, nice to have" framing entirely without
+  bumping the tier or adding a vote.
+* Also added the canonical SRU bug-template doc link
+  (https://ubuntu.com/project/docs/SRU/reference/bug-template/
+  #reference-sru-bug-template) to both #86 wrapper comments (bug-side
+  `triage_bug` and the new MP-side `_sru_template_check_for_mp`, single-
+  and multiple-bug variants).
+* Live-verified on the trigger MP: the newer-series item now renders
+  under "Please verify", the template bounce links the doc. 459 tests
+  (1 updated).

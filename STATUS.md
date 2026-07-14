@@ -868,9 +868,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#86)
+## `--interactive` run continued, 2026-07-13/14 (#74-#87)
 
-Thirteen more live-found improvements, all same-day (journal #74-#86):
+Fourteen more live-found improvements, all same-day (journal #74-#87):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -923,6 +923,14 @@ Thirteen more live-found improvements, all same-day (journal #74-#86):
   blocks (`INCOMPLETE`, vote=Needs Fixing) before the changelog-quality
   review even runs. Also fixed the MP-side duplicate of #84's
   pocket-branch regex gap (`_MP_TARGET_SERIES_RE`).
+- **Check 7 = `kind="verify"`, SRU template doc link** (#87, same nano
+  MP): #85's assertive wording still rendered under "Nice to have
+  (non-blocking...)" because the finding's `kind` was `"advisory"` --
+  switched to `"verify"` ("if true this would need fixing, but we're not
+  confident enough to block"), accurate and drops the contradictory
+  framing. The SRU template bounce (#86) now links
+  https://ubuntu.com/project/docs/SRU/reference/bug-template/
+  #reference-sru-bug-template.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

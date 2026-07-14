@@ -748,7 +748,9 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 # aggregated comment's template carries both.
                 comment = (
                     "This looks like an SRU, but the bug description template "
-                    "needs a bit more work before it can be sponsored:\n\n"
+                    "needs a bit more work before it can be sponsored (see "
+                    "https://ubuntu.com/project/docs/SRU/reference/bug-template/"
+                    "#reference-sru-bug-template):\n\n"
                     f"{feedback}"
                 )
                 return "INCOMPLETE", comment
@@ -922,20 +924,25 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         if not failures:
             return None
 
+        template_link = (
+            "https://ubuntu.com/project/docs/SRU/reference/bug-template/"
+            "#reference-sru-bug-template"
+        )
         if len(bugs) == 1:
             _bug, feedback = failures[0]
             return (
                 "This looks like an SRU, but the bug description template "
-                "needs a bit more work before it can be sponsored:\n\n"
-                f"{feedback}"
+                f"needs a bit more work before it can be sponsored (see "
+                f"{template_link}):\n\n{feedback}"
             )
         detail = "\n\n".join(
             f"Bug #{bug.id}:\n{feedback}" for bug, feedback in failures
         )
         return (
             "This looks like an SRU with multiple linked bugs, but the "
-            "description template needs a bit more work on the following "
-            f"before this can be sponsored:\n\n{detail}"
+            f"description template needs a bit more work (see "
+            f"{template_link}) on the following before this can be "
+            f"sponsored:\n\n{detail}"
         )
 
     def triage_mp(self, lp_obj, diff_text=None):

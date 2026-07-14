@@ -121,9 +121,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   asks whether the bug text says it's already fixed there (task tables are
   often stale — updating them needs nomination rights submitters usually
   lack, so a yes skips silently since #68; only "no basis to conclude
-  it's fixed" produces the advisory). Question tier, never a reject
-  reason. The supported-series table comes from `ubuntu-distro-info
-  --supported` (#83), not Launchpad series statuses — those lag EOL
+  it's fixed" produces the finding). Question tier, never a reject
+  reason, but `kind="verify"` not `"advisory"` (#85/#87: wording is
+  assertive that checking and reflecting the status is a must — the
+  "nice to have, non-blocking" advisory bucket contradicted that, and
+  "if true this would need fixing, but we're not confident enough to
+  block on it" better fits the actual evidence, which is soft
+  bug-metadata proxies, not verified fact). The supported-series table
+  comes from `ubuntu-distro-info --supported` (#83), not Launchpad
+  series statuses — those lag EOL
   (questing read `Supported` after going end-of-life) and count
   ESM-only series as `Supported` forever.
 - **Direct source-edit check** — Check 8, `check_direct_source_edit`

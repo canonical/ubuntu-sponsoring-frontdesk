@@ -451,6 +451,7 @@ def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
     assert "Missing [Test Plan]" in comment
+    assert "bug-template/#reference-sru-bug-template" in comment
     # Only the template-check call happened -- the changelog review (which
     # would need a second queued reply) never ran.
     assert len(r.prompts) == 1
