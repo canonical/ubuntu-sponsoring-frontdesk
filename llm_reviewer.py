@@ -358,7 +358,13 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` if the template is missing sections or is vague
-reason: <if fail, a polite explanation of what is missing; leave empty if pass>
+reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
+  [Where problems could occur] are missing or inadequately filled, and if
+  the description has other content that doesn't substitute for them (e.g.
+  a reproduction recipe, a reference to an upstream fix), say briefly what
+  and that it doesn't cover the missing section(s). Do not restate the
+  general SRU template requirement -- that's already said elsewhere. Leave
+  empty if pass.>
 ```
 """
 
@@ -747,11 +753,10 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 # Bullet-style, no greeting/sign-off (design #31): the
                 # aggregated comment's template carries both.
                 comment = (
-                    "This looks like an SRU, but the bug description template "
-                    "needs a bit more work before it can be sponsored (see "
-                    "https://ubuntu.com/project/docs/SRU/reference/bug-template/"
-                    "#reference-sru-bug-template):\n\n"
-                    f"{feedback}"
+                    "This looks like an SRU, but the bug description "
+                    "doesn't follow the official SRU bug template "
+                    "(https://ubuntu.com/project/docs/SRU/reference/"
+                    f"bug-template/#reference-sru-bug-template). {feedback}"
                 )
                 return "INCOMPLETE", comment
             else:
@@ -931,18 +936,17 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         if len(bugs) == 1:
             _bug, feedback = failures[0]
             return (
-                "This looks like an SRU, but the bug description template "
-                f"needs a bit more work before it can be sponsored (see "
-                f"{template_link}):\n\n{feedback}"
+                "This looks like an SRU, but the bug description doesn't "
+                f"follow the official SRU bug template ({template_link}). "
+                f"{feedback}"
             )
         detail = "\n\n".join(
-            f"Bug #{bug.id}:\n{feedback}" for bug, feedback in failures
+            f"Bug #{bug.id}: {feedback}" for bug, feedback in failures
         )
         return (
             "This looks like an SRU with multiple linked bugs, but the "
-            f"description template needs a bit more work (see "
-            f"{template_link}) on the following before this can be "
-            f"sponsored:\n\n{detail}"
+            "following don't follow the official SRU bug template "
+            f"({template_link}):\n\n{detail}"
         )
 
     def triage_mp(self, lp_obj, diff_text=None):

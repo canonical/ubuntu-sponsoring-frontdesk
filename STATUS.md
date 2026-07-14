@@ -868,9 +868,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#88)
+## `--interactive` run continued, 2026-07-13/14 (#74-#89)
 
-Fifteen more live-found improvements, all same-day (journal #74-#88):
+Sixteen more live-found improvements, all same-day (journal #74-#89):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -935,6 +935,12 @@ Fifteen more live-found improvements, all same-day (journal #74-#88):
   follow-up emails on how sponsors/reporters react to the bot's activity.
   Every bug comment, any tier; best-effort, doesn't gate facts
   persistence. MPs unaffected -- a review vote already adds a slot.
+- **SRU template wording tightened** (#89): the bounce wrapper is now a
+  fixed, generic sentence ("...doesn't follow the official SRU bug
+  template ({link}). {reason}"), and the LLM's `reason` gives one short
+  factual clause instead of restating the general requirement -- fixes
+  the verbose, self-repeating text seb128 flagged, without hardcoding
+  any bug-specific content into the fixed wrapper.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

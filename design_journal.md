@@ -1083,3 +1083,25 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   retry the subscribe -- worse than just accepting the rare failure.
 * 464 tests (6 new in test_write_modes.py). Live-confirmed real Launchpad
   bug objects expose `.subscribe(person=...)`.
+
+## 89. SRU template wording: fixed wrapper + terser LLM reason (2026-07-14)
+
+* seb128 disliked the SRU-template bounce's verbose, self-restating text
+  ("It is missing the required sections... While it contains... it lacks
+  ...") and proposed a tighter merged sentence -- but his exact wording
+  hardcoded bug-specific content ("a reproduction recipe and upstream fix
+  are present"), which only holds for THIS bug.
+* Split the fix: the WRAPPER is now fixed and generic ("This looks like
+  an SRU, but the bug description doesn't follow the official SRU bug
+  template ({link}). {reason}"), used identically by all three call sites
+  (bug-side `triage_bug`, MP-side single-bug and multi-bug variants in
+  `_sru_template_check_for_mp`). The LLM's `reason` field is reworded
+  (`review_sru_template`'s prompt) to produce ONE short factual sentence
+  -- which sections are missing/inadequate, and what's present that
+  doesn't substitute for them -- instead of restating the general SRU
+  requirement (the wrapper already says that).
+* Live-verified on the nano MP trigger: "...doesn't follow the official
+  SRU bug template (...). Missing [Impact], [Test Plan], and [Where
+  problems could occur] sections; a reproduction recipe and upstream
+  patch reference do not substitute for these required sections." No
+  test breakage (existing assertions were substring-based). 464 tests.
