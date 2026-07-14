@@ -62,6 +62,10 @@ def test_sets_open_ubuntu_tasks_and_skips_others():
         "New",
         "Fix Released",
     ]
+    # #92: the real write is `task.status = X; task.lp_save()`, not a
+    # transitionToStatus() named operation (which was never actually
+    # available on a bug task -- found live, alsa-lib bug #2159614).
+    assert [t.saved for t in bug.bug_tasks] == [1, 1, 0, 0]
 
 
 def test_dry_run_changes_nothing():

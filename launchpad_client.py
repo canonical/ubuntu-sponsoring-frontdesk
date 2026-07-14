@@ -391,6 +391,16 @@ class LPClient:
         mutating status must not look like a contributor change next run (the
         same invariant that keeps an MP's queue_status out of facts -- see
         facts.py).
+
+        The write itself is a plain attribute set + ``lp_save()`` (#92):
+        ``transitionToStatus`` looked like the right named operation and
+        matched older Launchpad API examples, but it was never actually
+        available on a bug task for this account -- found live (alsa-lib
+        bug #2159614) on the very first real Incomplete write this bot
+        ever attempted; every earlier dry-run/declined attempt had masked
+        the gap. seb128 confirmed the same edit works from the Launchpad
+        web UI and pointed at a working script using ``task.status = ...;
+        task.lp_save()``.
         """
         resource_type = lp_obj.resource_type_link.split("#")[-1]
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
@@ -417,7 +427,8 @@ class LPClient:
                 )
                 continue
             try:
-                task.transitionToStatus(status="Incomplete")
+                task.status = "Incomplete"
+                task.lp_save()
                 changed[name] = "Incomplete"
                 self._record_write(
                     url=target,
@@ -475,7 +486,8 @@ class LPClient:
                 )
                 continue
             try:
-                task.transitionToStatus(status="New")
+                task.status = "New"
+                task.lp_save()
                 changed[name] = "New"
                 self._record_write(
                     url=target,
@@ -557,7 +569,8 @@ class LPClient:
                 )
                 continue
             try:
-                task.transitionToStatus(status="Fix Released")
+                task.status = "Fix Released"
+                task.lp_save()
                 changed[name] = "Fix Released"
                 self._record_write(
                     url=target,

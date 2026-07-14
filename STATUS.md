@@ -961,13 +961,23 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
 
-## `--interactive` run continued, 2026-07-15 (#91)
+## `--interactive` run continued, 2026-07-15 (#91-#92)
 
 - **New-bug grace period** (#91): a bug filed less than 10 minutes ago is
   skipped (write modes; dry-run proceeds) -- the Launchpad "new bug" form
   can't set everything a report needs (series targets, linked MPs), so
   submitters commonly finish it in an edit/comment right after filing.
   Bugs only. See "Triage-level pre-gates" in GLOSSARY.md.
+- **Bug status writes were broken since day one** (#92, alsa-lib bug
+  #2159614): `set_bug_tasks_incomplete`/`_new`/`_fix_released` called
+  `task.transitionToStatus(...)`, which was never a real operation on a
+  bug task for this account -- masked until now because every earlier
+  attempt in `audit.jsonl` was `dry-run` or `declined`. The comment half
+  of that write DID land for real (dedup will skip re-posting it on
+  retry). Fixed to the working shape: `task.status = X; task.lp_save()`.
+  **Not yet re-verified with a fresh real write** -- only fakes-based
+  tests and seb128's own reference script confirm the new call shape;
+  watch the next bug bounce this fires on.
 
 ## Known residual edges (documented in code)
 

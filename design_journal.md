@@ -1154,3 +1154,40 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * `tests/fakes.py`: `OLD_ENOUGH` constant + `FakeBug.date_created`
   (defaults to `OLD_ENOUGH` so every pre-#91 test is unaffected).
   479 tests (6 new in test_new_bug_grace_period.py).
+
+## 92. Bug status writes: transitionToStatus was never real (2026-07-15)
+
+* Trigger: alsa-lib bug #2159614, the first real Incomplete write this bot
+  ever attempted for real (every earlier bug-status write in `audit.jsonl`
+  had been `dry-run` or `declined` -- this masked the gap since design
+  #17). Comment posted fine (real write, "y" approved); the status write
+  failed: `object has no attribute 'transitionToStatus'`.
+* Live-probed (read-only) with the bot's own authenticated session: the
+  operation is absent on EVERY bug task checked (dmidecode, autopkgtest,
+  llvm-toolchain-19, alsa-lib -- different bugs, packages, series),
+  confirmed authenticated as `~ubuntu-sponsoring-bot`, confirmed a fresh
+  reload from `self_link` doesn't help either. `transitionToStatus` was
+  never a real operation for this account on bug tasks -- not a
+  permission gap on this specific bug (seb128 confirmed he can change
+  the same field from the Launchpad web UI, and status "Incomplete" not
+  locked like e.g. "Triaged"), just a wrong API call in the bot all
+  along.
+* Fix (seb128 supplied a working script snippet): the real write shape
+  is a plain attribute set + `lp_save()` --
+  `task.status = "Incomplete"; task.lp_save()` -- not a named operation.
+  Applied to all three status-writing methods in launchpad_client.py:
+  `set_bug_tasks_incomplete`, `set_bug_tasks_new`,
+  `set_bug_tasks_fix_released`.
+* `tests/fakes.py`: `FakeTask.transitionToStatus` replaced with
+  `lp_save()` (tracks a `saved` counter so tests can confirm the real
+  write shape ran, not just that `.status` ended up right --
+  `test_sets_open_ubuntu_tasks_and_skips_others` now asserts on it too);
+  `FakeTriageClient`'s three duplicate status-setters updated to match.
+  479 tests, no new file (existing coverage already exercised these
+  methods against `FakeTask`, which is exactly where the fix landed).
+* Not yet re-verified for real: the alsa-lib #2159614 comment already
+  posted (dedup would skip re-posting it), so a clean re-run wouldn't
+  fully replicate the original failure; seb128 noted this. The fix is
+  live-probe-informed (the read-only checks above) but the actual
+  `lp_save()` write itself is confirmed only by the fakes-based tests
+  and seb128's own working reference script, not a fresh end-to-end run.

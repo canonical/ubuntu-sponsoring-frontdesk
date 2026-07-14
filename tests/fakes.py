@@ -131,9 +131,16 @@ class FakeTask:
         # Launchpad maintains this on transition to Incomplete; the sweep
         # (#66) uses it as the bounce reference time.
         self.date_incomplete = date_incomplete
+        self.saved = 0
 
-    def transitionToStatus(self, status):
-        self.status = status
+    def lp_save(self):
+        # Real writes are `task.status = X; task.lp_save()` (#92 --
+        # transitionToStatus was never a real bug_task operation; found
+        # live when the first real Incomplete write hit an AttributeError).
+        # status is already set as a plain attribute by the caller before
+        # this runs; just record that a save happened, for tests that
+        # want to confirm the real write shape was used.
+        self.saved += 1
 
 
 # A harmless plain patch (touches no debian/ file): attachment-content
@@ -345,7 +352,8 @@ class FakeTriageClient:
         changed = {}
         for task in bug.bug_tasks:
             if "(Ubuntu" in task.bug_target_name and task.status not in resolved:
-                task.transitionToStatus(status="Incomplete")
+                task.status = "Incomplete"
+                task.lp_save()
                 changed[task.bug_target_name] = "Incomplete"
                 self.write_outcomes.append(self.write_outcome)
         return changed
@@ -359,7 +367,8 @@ class FakeTriageClient:
         changed = {}
         for task in bug.bug_tasks:
             if "(Ubuntu" in task.bug_target_name and task.status == "Incomplete":
-                task.transitionToStatus(status="New")
+                task.status = "New"
+                task.lp_save()
                 changed[task.bug_target_name] = "New"
                 self.write_outcomes.append(self.write_outcome)
         return changed
@@ -376,7 +385,8 @@ class FakeTriageClient:
             name = task.bug_target_name or ""
             if name.endswith("(Ubuntu)") or name.endswith(f"(Ubuntu {DEVEL_SERIES})"):
                 if task.status not in terminal:
-                    task.transitionToStatus(status="Fix Released")
+                    task.status = "Fix Released"
+                    task.lp_save()
                     changed[name] = "Fix Released"
                     self.write_outcomes.append(self.write_outcome)
         return changed
