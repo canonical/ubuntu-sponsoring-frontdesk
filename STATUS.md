@@ -868,9 +868,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#84)
+## `--interactive` run continued, 2026-07-13/14 (#74-#86)
 
-Eleven more live-found improvements, all same-day (journal #74-#84):
+Thirteen more live-found improvements, all same-day (journal #74-#86):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -913,6 +913,16 @@ Eleven more live-found improvements, all same-day (journal #74-#84):
   against devel and not seen as an SRU; `_TARGET_SERIES_RE` now accepts
   the pocket suffixes. Whether to suggest retargeting to `-devel` is
   backlog 5e.
+- **Check 7 wording made assertive, still advisory** (#85): the finding
+  now reads as a must-check-and-reflect requirement, not an optional
+  suggestion, without changing tier/vote -- the underlying evidence is
+  still soft (bug-metadata proxies only).
+- **SRU template check now reaches MPs too** (#86, same nano MP -- its
+  bug had no SRU template at all and the bot said nothing): an SRU-shaped
+  MP's linked bug(s) must all pass `review_sru_template`; any failure
+  blocks (`INCOMPLETE`, vote=Needs Fixing) before the changelog-quality
+  review even runs. Also fixed the MP-side duplicate of #84's
+  pocket-branch regex gap (`_MP_TARGET_SERIES_RE`).
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

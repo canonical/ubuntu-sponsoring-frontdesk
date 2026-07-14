@@ -52,7 +52,13 @@ _SYNC_TITLE_DETAIL_RE = re.compile(
 # imports this module, so it can't be imported from there): git-ubuntu MP
 # targets are 'ubuntu/<series>-devel' for an SRU, 'ubuntu/devel' for the
 # development series.
-_MP_TARGET_SERIES_RE = re.compile(r"ubuntu/(?P<series>[a-z0-9.]+?)(?:-devel)?$")
+# Kept in sync with checks._TARGET_SERIES_RE by hand (this module can't
+# import checks -- checks imports it). #84: also accepts the git-ubuntu
+# pocket branches (ubuntu/jammy-updates etc), not just '-devel'.
+_MP_TARGET_SERIES_RE = re.compile(
+    r"ubuntu/(?P<series>[a-z0-9.]+?)"
+    r"(?:-(?:devel|proposed|updates|security|backports))?$"
+)
 
 
 def _is_sru(tags, description):
@@ -871,20 +877,90 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         devel = archive_lookup.devel_codename(self.lp) if self.lp else None
         return series != devel
 
+    def _sru_template_check_for_mp(self, lp_obj):
+        """
+        For an SRU-shaped MP (#86), every bug it's linked to must follow the
+        SRU template -- the sponsoring request is equally bound by the SRU
+        process whether it's reviewed on the bug or the MP, and an MP-linked
+        SRU bug otherwise never gets this check at all (`triage_bug` only
+        runs it when the BUG is the queue entry). Requires ALL linked bugs
+        to pass (seb128: "they all need to match [the] requirement" -- one
+        good description doesn't excuse another bug's blank template),
+        listing which ones don't when there's more than one.
+
+        Returns a comment string (fail -- caller treats this like
+        `triage_bug`'s INCOMPLETE, same tier as a bug-side SRU template
+        bounce) or None: the MP isn't SRU-shaped, has no linked bug, or
+        every linked bug's description passes. A failure to read the
+        linked bugs logs and returns None (skip, don't block) rather than
+        inconclusive/retry -- unlike the deterministic checks, triage_mp
+        doesn't have that tri-state wired in, and it runs once per pass
+        already past the inconclusive gate.
+        """
+        if not self._targets_stable_series(lp_obj):
+            return None
+        try:
+            bugs = list(lp_obj.bugs)
+        except Exception as e:
+            logger.warning(
+                "triage_mp: couldn't read the MP's linked bugs (%s); "
+                "skipping the SRU template check.",
+                e,
+            )
+            return None
+        if not bugs:
+            return None
+
+        failures = [
+            (bug, feedback)
+            for bug, (passed, feedback) in (
+                (bug, self.review_sru_template(getattr(bug, "description", "")))
+                for bug in bugs
+            )
+            if not passed
+        ]
+        if not failures:
+            return None
+
+        if len(bugs) == 1:
+            _bug, feedback = failures[0]
+            return (
+                "This looks like an SRU, but the bug description template "
+                "needs a bit more work before it can be sponsored:\n\n"
+                f"{feedback}"
+            )
+        detail = "\n\n".join(
+            f"Bug #{bug.id}:\n{feedback}" for bug, feedback in failures
+        )
+        return (
+            "This looks like an SRU with multiple linked bugs, but the "
+            "description template needs a bit more work on the following "
+            f"before this can be sponsored:\n\n{detail}"
+        )
+
     def triage_mp(self, lp_obj, diff_text=None):
         """
         Main entrypoint for LLM Merge Proposal triage (design #47).
 
         `diff_text` is the full preview-diff text (main.py passes
         checks.diff_text(lp_obj); this module can't import checks -- checks
-        imports it). Reviews the new changelog stanza for quality and the
-        debian/ diff for consistency with what the stanza claims, plus a
-        Feature Freeze compliance classification. All findings are advisory:
-        returns ("ADVISORY", [(kind, bullet), ...]) -- main.py maps each
-        pair to a question-tier Finding with that kind -- or
-        ("READY_FOR_HUMAN", reason) when there is nothing to say (including
-        every skip and fail-safe path).
+        imports it). First, for an SRU-shaped MP, every linked bug's
+        description must pass the SRU template check (#86) -- failing that
+        returns INCOMPLETE immediately (same tier/vote as a bug-side SRU
+        template bounce), skipping the diff review below entirely (nothing
+        else is worth reviewing, or spending tokens on, until the
+        description itself is fixed). Otherwise reviews the new changelog
+        stanza for quality and the debian/ diff for consistency with what
+        the stanza claims, plus a Feature Freeze compliance classification.
+        Those findings are advisory: returns ("ADVISORY", [(kind, bullet),
+        ...]) -- main.py maps each pair to a question-tier Finding with
+        that kind -- or ("READY_FOR_HUMAN", reason) when there is nothing
+        to say (including every skip and fail-safe path).
         """
+        sru_template_comment = self._sru_template_check_for_mp(lp_obj)
+        if sru_template_comment is not None:
+            return "INCOMPLETE", sru_template_comment
+
         if not isinstance(diff_text, str) or not diff_text.strip():
             # An unfetchable diff (None) already made the deterministic pass
             # inconclusive before the LLM phase; an absent/empty one (False,

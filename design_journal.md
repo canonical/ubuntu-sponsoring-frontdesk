@@ -985,3 +985,52 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   retargeting advisory is deliberately NOT decided: seb128 wants to
   understand the difference first (backlog 5e); the bot stays silent
   about the branch choice.
+
+## 85. Check 7 wording: assertive, still advisory (2026-07-14)
+
+* Trigger: same rclone/nano review round -- seb128: the wording "there is
+  no indication that the issue is fixed... if it is already fixed there,
+  please update the bug tasks... otherwise the fix should be uploaded"
+  read as optional, when SRU policy actually requires it.
+* Confirmed the finding stays question-tier/no-vote (the evidence really
+  is soft: the check only reads bug-metadata proxies, not whether the fix
+  landed; see #58's original reasoning) -- but the WORDING should be
+  unambiguous that checking and reflecting the status is a must, not a
+  suggestion. New text: "It seems like this bug isn't fixed in the newer
+  Ubuntu series ({series}) yet, which SRU policy requires (...). Please
+  check whether it's fixed there, and reflect the status clearly in the
+  bug description (and the bug tasks, if you have the rights to nominate
+  them). If it isn't fixed yet, the newer series should be updated before
+  this SRU." The silent "bug text already says it's fixed" branch is
+  unchanged (seb128: "it should stay silent, it is likely to be correct").
+
+## 86. SRU template check reaches MP-linked bugs too (2026-07-14)
+
+* Trigger: same nano MP #508284 -- seb128 noticed the bug behind an SRU MP
+  had no SRU template at all (just a reproduction recipe), and the bot
+  said nothing. `review_sru_template` only ever ran from `triage_bug`
+  (the `is_sru` branch), which only fires when the BUG itself is the
+  queue entry -- an SRU sponsored via its MP never got this check.
+* Fix: new `LLMReviewer._sru_template_check_for_mp`, called first thing
+  in `triage_mp`. For an SRU-shaped MP (`_targets_stable_series`), reads
+  `lp_obj.bugs` and runs `review_sru_template` against EVERY linked bug's
+  description (seb128: "they all need to match [the] requirement... list
+  the ones which don't" -- one good bug doesn't excuse another's blank
+  template). Any failure -> `("INCOMPLETE", comment)`, same tier/vote as
+  a bug-side SRU template bounce, returned immediately -- the changelog-
+  quality/consistency LLM call is skipped entirely (nothing else is worth
+  reviewing, or worth the tokens, until the description itself is fixed;
+  same reasoning as #59's FF-question skip for SRU MPs). A single linked
+  bug reuses the bug-side wording verbatim; multiple bugs get a
+  "the following need work" listing naming only the failing ones by id.
+  Read failure on `lp_obj.bugs` logs and returns None (skip, don't block)
+  -- `triage_mp` runs past the inconclusive gate already and has no
+  tri-state None convention wired in, unlike the deterministic checks.
+* Also fixed while touching this: `llm_reviewer._MP_TARGET_SERIES_RE` is
+  a hand-kept duplicate of `checks._TARGET_SERIES_RE` (this module can't
+  import checks) and had the same #84 pocket-branch gap -- an SRU MP
+  targeting `ubuntu/jammy-updates` wouldn't have been recognized as
+  SRU-shaped for this check either. Same fix applied.
+* Live-verified on the trigger: the SRU template failure now blocks with
+  vote=Needs Fixing, alongside Check 7's (#85-reworded) advisory in the
+  same aggregate. 459 tests (24 new in test_triage_mp.py).

@@ -2445,10 +2445,13 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     focused question -- does the bug text state the issue is already fixed
     there? (Task tables are often stale: updating them needs privileges
     most submitters don't have, while the description frequently documents
-    'newer series ship version X which has the fix'.) Yes -> a soft
-    'please update the bug tasks' note; no -> the full advisory. Both are
-    question-tier/advisory: per seb128 this is never a reject reason, the
-    ask is that the bug reflects reality and the fix lands newest-first.
+    'newer series ship version X which has the fix'.) Yes -> silent, there
+    is nothing actionable left to ask (updating the task table needs
+    nomination rights most submitters lack); no -> the advisory. Still
+    question-tier/no-vote (#85: seb128 confirmed this stays advisory, the
+    evidence here is inherently soft -- but the wording is assertive that
+    checking and reflecting the status is a must, not a suggestion, so it
+    doesn't read as skippable).
 
     Returns a Finding ("question"/advisory), False (not an SRU, or all
     newer series handled), or None (a Launchpad/LLM lookup failed --
@@ -2670,14 +2673,13 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     )
     return Finding(
         "question",
-        f"This looks like an SRU targeting {target_series}, but there is no "
-        f"indication that the issue is fixed in the newer Ubuntu series "
-        f"({series_list}). Per the SRU requirements "
-        "(https://ubuntu.com/project/docs/SRU/reference/requirements) the "
-        "fix should land in the development release first, and ideally in "
-        "the newer stable series too. If it is already fixed there, please "
-        "update the bug tasks to reflect that; otherwise the fix should be "
-        "uploaded to the newer series before this update.",
+        f"It seems like this bug isn't fixed in the newer Ubuntu series "
+        f"({series_list}) yet, which SRU policy requires "
+        "(https://ubuntu.com/project/docs/SRU/reference/requirements). "
+        "Please check whether it's fixed there, and reflect the status "
+        "clearly in the bug description (and the bug tasks, if you have "
+        "the rights to nominate them). If it isn't fixed yet, the newer "
+        "series should be updated before this SRU.",
         kind="advisory",
     )
 

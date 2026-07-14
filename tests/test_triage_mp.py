@@ -9,7 +9,7 @@ import llm_reviewer
 import main
 import release_schedule
 from state import StateManager
-from fakes import CLEAN_DIFF_TEXT, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -397,6 +397,131 @@ def test_advisory_plus_blocking_finding_split_into_sections(tmp_path):
     assert "Nice to have" in lp.comments[0]
     assert lp.votes == ["Needs Fixing"]
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+
+
+# --- SRU template check on the linked bug (#86) --------------------------------
+# An SRU-shaped MP (target names a stable series, not devel) is bound by the
+# same SRU template requirement as a bug-side SRU request -- but until #86,
+# triage_mp never checked it: only triage_bug did, and that only runs when
+# the BUG itself is the queue entry.
+
+
+def _sru_template_reply(verdict="pass", reason=""):
+    return f"```yaml\nverdict: {verdict}\nreason: {reason!r}\n```\n"
+
+
+class QueuedReviewer(llm_reviewer.LLMReviewer):
+    """LLMReviewer replaying a queue of canned _query_llm replies in order,
+    one per call -- needed here because a single triage_mp invocation can
+    make multiple LLM calls (the SRU template check(s), then the changelog
+    review) that must answer differently."""
+
+    def __init__(self, replies):
+        super().__init__()
+        self.replies = list(replies)
+        self.prompts = []
+
+    def _query_llm(self, prompt, model="high-complexity"):
+        self.prompts.append(prompt)
+        return self.replies.pop(0)
+
+
+def test_non_sru_mp_skips_the_template_check_entirely():
+    # ubuntu/devel target: not SRU-shaped, so no linked-bug lookup, no
+    # extra LLM call -- only the changelog-review reply is consumed.
+    r = ScriptedReviewer(_reply())
+    mp = FakeMP(target="refs/heads/ubuntu/devel", bugs=[FakeBug(id=1)])
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+    assert len(r.prompts) == 1
+
+
+def test_sru_mp_without_a_linked_bug_skips_the_template_check():
+    r = ScriptedReviewer(_reply())
+    mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[])
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+
+
+def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
+    r = QueuedReviewer([_sru_template_reply("fail", "Missing [Test Plan].")])
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")]
+    )
+    status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "INCOMPLETE"
+    assert "Missing [Test Plan]" in comment
+    # Only the template-check call happened -- the changelog review (which
+    # would need a second queued reply) never ran.
+    assert len(r.prompts) == 1
+
+
+def test_sru_mp_single_bug_passing_template_falls_through_to_the_diff_review():
+    r = QueuedReviewer([_sru_template_reply("pass"), _reply()])
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")]
+    )
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+    assert len(r.prompts) == 2
+
+
+def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
+    # seb128: every linked bug's template must pass; list the ones that don't.
+    r = QueuedReviewer(
+        [
+            _sru_template_reply("pass"),
+            _sru_template_reply("fail", "Missing [Impact]."),
+        ]
+    )
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel",
+        bugs=[FakeBug(id=10, description="ok"), FakeBug(id=20, description="bad")],
+    )
+    status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "INCOMPLETE"
+    assert "Bug #20" in comment
+    assert "Missing [Impact]" in comment
+    assert "Bug #10" not in comment
+
+
+def test_sru_mp_multiple_bugs_all_passing_falls_through():
+    r = QueuedReviewer(
+        [_sru_template_reply("pass"), _sru_template_reply("pass"), _reply()]
+    )
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel",
+        bugs=[FakeBug(id=10, description="ok"), FakeBug(id=20, description="ok")],
+    )
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+
+
+def test_sru_mp_unreadable_linked_bugs_skips_rather_than_blocks():
+    class _BrokenMP(FakeMP):
+        @property
+        def bugs(self):
+            raise TimeoutError("simulated Launchpad timeout")
+
+        @bugs.setter
+        def bugs(self, value):
+            pass
+
+    r = ScriptedReviewer(_reply())
+    mp = _BrokenMP(target="refs/heads/ubuntu/noble-devel")
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+
+
+def test_sru_mp_pocket_branch_target_is_still_sru_shaped():
+    # #84's fix applied to the MP-side duplicate regex too.
+    r = QueuedReviewer([_sru_template_reply("fail", "Missing sections.")])
+    mp = FakeMP(
+        target="refs/heads/ubuntu/jammy-updates",
+        bugs=[FakeBug(id=1, description="x")],
+    )
+    status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "INCOMPLETE"
 
 
 def test_main_passes_memoized_diff_text_to_triage_mp(tmp_path):

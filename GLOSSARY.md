@@ -195,7 +195,15 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   delta justification; MPs: the #47 content review, see "MP content review")
   and never holds write credentials itself — it returns a recommendation,
   `main.py` performs the write (#9).
-- **MP content review** — `triage_mp` (#47): one LLM call over the new
+- **MP content review** — `triage_mp` (#47). First, for an SRU-shaped MP
+  (target names a stable series, not devel — same shape Check 7 detects),
+  every linked bug's description must pass the SRU template check (#86):
+  any failure returns `INCOMPLETE` immediately (same tier/vote as a
+  bug-side SRU template bounce via `triage_bug`), skipping the rest of
+  this review entirely — until #86 an SRU sponsored via its MP never got
+  this check at all, since `review_sru_template` only ran from
+  `triage_bug`. All linked bugs must pass (not just one); multiple
+  failing bugs are listed by id. Otherwise, one LLM call over the new
   changelog stanza + the `debian/` diff (capped; upstream files listed by
   path only) judging stanza quality (`observations`, `kind="advisory"`),
   changelog-vs-diff consistency (`mismatches`, `kind="verify"`, #53), and a

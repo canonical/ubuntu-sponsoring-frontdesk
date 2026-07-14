@@ -91,7 +91,7 @@ def test_mp_targeting_a_pocket_branch_is_an_sru(monkeypatch):
     bug = _bug([FakeTask("testpkg (Ubuntu Jammy)", "In Progress")])
     mp = _sru_mp([bug], target="refs/heads/ubuntu/jammy-updates")
     finding = checks.check_sru_newer_series("url", mp, _LP(), FakeLLM())
-    assert finding and "targeting jammy" in finding.message
+    assert finding and "noble, resolute, stonking" in finding.message
 
 
 def test_mp_targeting_devel_is_not_an_sru():
@@ -226,7 +226,7 @@ def test_unhandled_newer_series_fires_the_advisory():
     finding = checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), llm)
     assert finding.tier == "question" and finding.kind == "advisory"
     assert "resolute, stonking" in finding.message
-    assert "SRU requirements" in finding.message
+    assert "SRU policy" in finding.message
     # The LLM was asked exactly about the unhandled series, labeled with
     # their release versions (codenames postdate its training data).
     assert llm.newer_series_queries[0][1] == [
