@@ -3225,3 +3225,142 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
     if not _PPA_VERSION_RE.search(proposed_version):
         return False
     return _ppa_version_finding(url, proposed_version)
+
+
+_XSBC_ORIGINAL_MAINTAINER_RE = re.compile(
+    r"^\+XSBC-Original-Maintainer:", re.MULTILINE | re.IGNORECASE
+)
+
+
+def _is_first_ubuntu_delta(old_version, proposed_version):
+    """True when `old_version` (what the package looked like before this
+    change) carries no 'ubuntu' revision but `proposed_version` does --
+    the package's first-ever Ubuntu delta, the case
+    https://ubuntu.com/project/docs/contributors/updating/
+    make-changes-to-a-package/#updating-the-maintainer asks for an
+    XSBC-Original-Maintainer field."""
+    return "ubuntu" not in old_version.lower() and "ubuntu" in proposed_version.lower()
+
+
+def _xsbc_original_maintainer_finding(url):
+    logger.info(
+        "[%s] first Ubuntu delta with no XSBC-Original-Maintainer field. "
+        "Adding an advisory finding.",
+        url,
+    )
+    return Finding(
+        "question",
+        "This looks like the package's first Ubuntu delta, but "
+        "`debian/control` doesn't add an `XSBC-Original-Maintainer` field "
+        "preserving the Debian maintainer -- see "
+        "https://ubuntu.com/project/docs/contributors/updating/"
+        "make-changes-to-a-package/#updating-the-maintainer. Please add "
+        "it if you can; otherwise a sponsor can do it before upload.",
+        kind="advisory",
+    )
+
+
+def check_xsbc_original_maintainer(url, lp_obj, lp_client):
+    """
+    Check 12: a package's first Ubuntu delta should add an
+    `XSBC-Original-Maintainer` field to `debian/control`, preserving the
+    Debian maintainer once `Maintainer:` is reassigned to Ubuntu (or a
+    team/flavor's own address -- deliberately not verified here, seb128:
+    matching that content would be flaky, teams tweak it). Detected by
+    comparing the proposed version against the version before this
+    change: no 'ubuntu' revision before, one now.
+
+    "Before this change" comes from the changelog diff's own context
+    (`_old_changelog_version`/`_old_changelog_version_from_lines`, free --
+    already used by Check 8), falling back to the archive's currently
+    published version for the target series when the diff doesn't show
+    enough context (same lazy-lookup shape as Check 8's nativeness
+    check). Exempt: merge MPs and sync requests (their proposed version
+    is not a delta at all).
+
+    Advisory, not blocking (seb128): "do it if you can, but otherwise can
+    be done by the maintainer before upload" -- a sponsor can trivially
+    add this at upload time, so it doesn't need to bounce the
+    contribution back.
+
+    Returns a Finding (question/advisory), False (not a first delta, or
+    the field is already present), or None (diff/archive lookup failed --
+    retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        if llm_reviewer._is_sync(
+            getattr(bug, "title", ""), getattr(bug, "description", "")
+        ):
+            return False
+        target = attachments.review_target(bug)
+        if target is None:
+            return None
+        if target is False:
+            return False
+        _attachment, text = target
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        if not stanza:
+            return False
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        if not header:
+            return False
+        package = header.group("pkg")
+        proposed_version = header.group("version")
+        suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+        info = attachments.classify_diff(text)
+        old_version = (
+            _old_changelog_version_from_lines(info["changelog_lines"])
+            if info["changelog_lines"]
+            else None
+        )
+        target_series = suite
+    elif resource_type == "branch_merge_proposal":
+        merge = _is_merge_proposal(lp_obj)
+        if merge is None:
+            return None
+        if merge:
+            return False
+        package = _source_package_from_mp(lp_obj)
+        proposed_version, _entry = _proposed_changelog_entry(lp_obj)
+        if proposed_version is None:
+            return None
+        if proposed_version is False:
+            return False
+        old_version = _old_changelog_version(lp_obj)
+        target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
+    else:
+        return False
+
+    if not package:
+        return False
+
+    if old_version is None:
+        # Diff context too short to see the prior entry -- fall back to
+        # what's currently published for the target series.
+        if not target_series:
+            return None
+        versions = archive_lookup.ubuntu_versions(
+            lp_client.lp, package, [target_series]
+        )
+        if versions is None:
+            return None
+        old_version = _max_published_version(versions)
+        if old_version is None:
+            # Nothing published there at all (a new package) -- no
+            # baseline to compare against.
+            return False
+
+    if not _is_first_ubuntu_delta(old_version, proposed_version):
+        return False
+
+    if resource_type == "branch_merge_proposal":
+        full_text = diff_text(lp_obj)
+    else:
+        full_text = text
+    if not isinstance(full_text, str):
+        return None
+    if _XSBC_ORIGINAL_MAINTAINER_RE.search(full_text):
+        return False
+    return _xsbc_original_maintainer_finding(url)

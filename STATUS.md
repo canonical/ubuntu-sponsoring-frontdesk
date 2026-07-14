@@ -961,7 +961,7 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
 
-## `--interactive` run continued, 2026-07-15 (#91-#92)
+## `--interactive` run continued, 2026-07-15 (#91-#93)
 
 - **New-bug grace period** (#91): a bug filed less than 10 minutes ago is
   skipped (write modes; dry-run proceeds) -- the Launchpad "new bug" form
@@ -978,6 +978,12 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   **Not yet re-verified with a fresh real write** -- only fakes-based
   tests and seb128's own reference script confirm the new call shape;
   watch the next bug bounce this fires on.
+- **Check 12: `XSBC-Original-Maintainer`** (#93): a package's first
+  Ubuntu delta should preserve the Debian maintainer in that field once
+  `Maintainer:` is reassigned -- checks only that the field gets added,
+  not any specific content (teams/flavors tweak the Maintainer value).
+  Question-tier/advisory: a sponsor can add it at upload time, so it
+  doesn't block. MP + bug-debdiff dual path, live smoke-tested clean.
 
 ## Known residual edges (documented in code)
 

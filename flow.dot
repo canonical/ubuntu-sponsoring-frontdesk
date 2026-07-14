@@ -57,15 +57,17 @@ digraph SponsoringBot {
     c9 [label="Check 9: missing_changelog_stanza (#61)\nno debian/changelog entry in the diff\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c10 [label="Check 10: patch_not_debdiff (#64)\nplain code patch on a bug\n→ ask for a debdiff, incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c11 [label="Check 11: ppa_version_suffix (#90)\nproposed version has ~ppaN\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c12 [label="Check 12: xsbc_original_maintainer (#93)\nfirst Ubuntu delta missing the field\nMPs + debdiff attachments on bugs\n→ question/advisory Finding", shape=box, fillcolor="#FFFFFF"];
     c6 -> c8;
     c8 -> c9;
     c9 -> c10;
     c10 -> c11;
+    c11 -> c12;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];
     silent  [label="post NOTHING, skip LLM,\npersist nothing -- the aggregate\nmust not claim completeness (#44)", shape=box, fillcolor="#ECEFF1"];
-    c11 -> incgate;
+    c12 -> incgate;
     incgate -> silent [label="yes"];
 
     // ---- LLM phase ----

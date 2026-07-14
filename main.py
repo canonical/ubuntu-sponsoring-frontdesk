@@ -386,6 +386,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif result:
         findings.append(result)
 
+    # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
+    # Deterministic, pre-gate.
+    result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)
+    checkpoint("check_xsbc_original_maintainer")
+    logger.debug("check_xsbc_original_maintainer -> %s", result)
+    if result is None:
+        inconclusive = True
+    elif result:
+        findings.append(result)
+
     if inconclusive:
         # Design #31's addendum: the aggregated comment presents itself as
         # the complete list of what to fix this round, so posting it while

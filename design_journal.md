@@ -1191,3 +1191,40 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   live-probe-informed (the read-only checks above) but the actual
   `lp_save()` write itself is confirmed only by the fakes-based tests
   and seb128's own working reference script, not a fresh end-to-end run.
+
+## 93. Check 12: XSBC-Original-Maintainer on a package's first Ubuntu delta (2026-07-15)
+
+* Request (seb128): https://ubuntu.com/project/docs/contributors/
+  updating/make-changes-to-a-package/#updating-the-maintainer -- when a
+  package's version was previously a plain Debian version and this
+  change gives it its first Ubuntu delta (an `ubuntuN` revision), the
+  Maintainer field is typically reassigned (to Ubuntu Developers, or a
+  team/flavor's own address) and the original Debian maintainer should
+  be preserved in a new `XSBC-Original-Maintainer` field.
+* Design confirmed: detect "first delta" by comparing old vs proposed
+  version for an `ubuntu` substring (old: none, proposed: has one); DON'T
+  verify the `Maintainer:` field's actual content changed to anything
+  specific -- seb128: "some teams or flavor do tweak the Maintainer to
+  their group, it would be flaky to try to match the content". Only
+  check that `XSBC-Original-Maintainer:` gets ADDED somewhere in the
+  diff.
+* `checks.check_xsbc_original_maintainer` (Check 12): "before" version
+  from the changelog diff's own context (`_old_changelog_version`,
+  reused from #60), falling back to the archive's currently-published
+  version for the target series when the diff doesn't show enough
+  context (same lazy-lookup shape as Check 8's nativeness check, #77).
+  Exempt: merge MPs (their proposed version isn't a delta), sync
+  requests (bug-side, no patch to inspect). MP + bug-debdiff dual path,
+  same shape as Checks 6/8/9/10/11.
+* Tier: `question`/`kind="advisory"` -- NOT blocking (seb128: "do it if
+  you can, but otherwise can be done by the maintainer before upload").
+  A sponsor can trivially add the field at upload time, so there's no
+  reason to bounce the contribution back for it.
+* Live smoke-tested against a real MP (nano #508284): runs cleanly,
+  correctly returns False (not a first delta). 490 tests (11 new in
+  test_xsbc_original_maintainer.py). One test-authoring gotcha hit along
+  the way: `FakeMP`'s DEFAULT source branch name
+  (`merge-1.2-3-stonking`) looks merge-shaped to `_is_merge_proposal`,
+  silently exempting fixtures that didn't override `source=` -- several
+  early test failures traced back to this before the fixtures were
+  fixed to use a fix-shaped branch name explicitly.

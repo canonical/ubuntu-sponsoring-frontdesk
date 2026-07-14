@@ -170,6 +170,17 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   (STATUS.md 5f) of validating the whole Ubuntu version-string
   convention, maybe by building on a colleague's `ubuntu-lint` dput hook
   rather than reimplementing it from the doc.
+- **XSBC-Original-Maintainer check** — Check 12,
+  `check_xsbc_original_maintainer` (#93): a package's first Ubuntu delta
+  (proposed version has an `ubuntu` revision, the version before it
+  didn't) should add an `XSBC-Original-Maintainer` field to
+  `debian/control` preserving the Debian maintainer
+  (https://ubuntu.com/project/docs/contributors/updating/make-changes-
+  to-a-package/#updating-the-maintainer). Only checks the field gets
+  added — deliberately not whether `Maintainer:` changed to any specific
+  value (teams/flavors tweak it, matching content would be flaky).
+  Question-tier/advisory, not blocking: a sponsor can add it at upload
+  time. MP + bug-debdiff dual path; exempt merge MPs and sync requests.
 - **Stale-bounce sweep (Rule B)** — `sweep.py` (#66): after every
   `--all` pass, bugs the bot bounced get revisited using
   `bug_task.date_incomplete` as the clock. A new usable-diff attachment
