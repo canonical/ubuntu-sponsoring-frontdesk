@@ -914,3 +914,27 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   summary "(pkg (Ubuntu): Fix Committed)" made the post longer without
   adding value -- the bug page shows the statuses. Dropped from the
   comment; the log line keeps it.
+
+## 82. mp_review: series coverage, not first-match (2026-07-14)
+
+* Trigger: libinput bug #2156749, an SRU targeting noble/resolute/
+  stonking (+devel task) with one MP per series. The proposed comment
+  quoted the first qualifying MP's URL as "the" review venue -- wrong
+  with three MPs, and the check never verified the OTHER open series had
+  MPs at all. Partial coverage (e.g. two series with MPs, the third's
+  fix only a debdiff on the bug) would have silently dropped that series
+  from the report by unsubscribing the bug.
+* Fix: collect ALL qualifying MPs (active, git-ubuntu venue, review
+  signal) and close as mp_review only when every series the bug still
+  asks sponsoring for is covered; partial coverage -> leave for a human
+  (debug log names the uncovered series). Review signal required per
+  covered MP (an MP without ~ubuntu-sponsors as reviewer isn't a queue
+  entry; closing the bug would lose that series' request).
+* Found during live verification: a 'devel'-venue MP and the devel
+  codename's series task are the same upload -- #2156749 has both the
+  plain (Ubuntu) task and a Stonking task open, and the ubuntu/devel MP
+  is the stonking fix. Either devel spelling now covers both asks;
+  devel-codename lookup stays lazy (only on a devel/codename mismatch).
+* Wording (seb128): generic and singular/plural-aware -- "reviewed on
+  the merge proposal(s) linked to this bug", no URL; the links are on
+  the bug page already and quoting one of several is misleading.

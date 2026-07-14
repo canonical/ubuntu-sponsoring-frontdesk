@@ -34,7 +34,7 @@ digraph SponsoringBot {
     // ---- closing-tier checks (short-circuit: already resolved) ----
     c1  [label="Check 1: administrative_state\n(closing)", shape=box, fillcolor="#FFFFFF"];
     c1b [label="Check 1b: nothing_to_sponsor\n(bugs only, closing -- #46)", shape=box, fillcolor="#FFFFFF"];
-    c1bnote [label="linked MP with ~ubuntu-sponsors\nreviewer or an actual review ->\nreview lives on the MP\n(#71: only a real venue -- git-ubuntu\nbranch for a series open on the bug,\nnot Merged; team forks don't count);\nno MP + no patch (sync exempt) ->\nnothing to review yet, UNLESS a\nhuman is engaged in the comments (#72);\nneeds-packaging + package published in\ndevel or in its upload queue ->\n'uploaded' close, engagement-proof (#79)", shape=note, fillcolor="#FFFDE7"];
+    c1bnote [label="linked MPs with ~ubuntu-sponsors\nreviewer or an actual review ->\nreview lives on the MPs, IF every\nopen series is covered by one (#82:\ncoverage not first-match; partial ->\nhuman; devel MP = devel-codename task)\n(#71: only a real venue -- git-ubuntu\nbranch for a series open on the bug,\nnot Merged; team forks don't count);\nno MP + no patch (sync exempt) ->\nnothing to review yet, UNLESS a\nhuman is engaged in the comments (#72);\nneeds-packaging + package published in\ndevel or in its upload queue ->\n'uploaded' close, engagement-proof (#79)", shape=note, fillcolor="#FFFDE7"];
     c1b -> c1bnote [style=dotted, arrowhead=none];
 
     // ---- finding-collecting checks (keep evaluating -- #31/#44) ----

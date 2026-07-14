@@ -293,8 +293,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   (git-ubuntu closes via status change; the janitor posts on bugs).
 - **Nothing to sponsor** — `check_nothing_to_sponsor` (#46), closing tier,
   bugs only: unsubscribes ~ubuntu-sponsors when the bug's fix is under
-  review on a linked MP (sponsors-as-reviewer or an actual review vote —
-  the bug is a duplicate queue entry) or when there is no patch and no
+  review on linked MPs (sponsors-as-reviewer or an actual review vote —
+  the bug is a duplicate queue entry), provided EVERY series the bug
+  still asks sponsoring for is covered by such an MP (#82, multi-series
+  SRUs ship one MP per series; partial coverage is left for a human,
+  and a `ubuntu/devel` MP also covers the devel codename's series task
+  — same upload). The close comment is generic, "the merge proposal(s)
+  linked to this bug", no URL. Also fires when there is no patch and no
   linked MP at all (sync requests exempt — they legitimately carry no
   patch). Runs before the LLM, so a patch-less bug is never LLM-reviewed.
   The MP must be a real sponsoring venue (#71): not Merged, a

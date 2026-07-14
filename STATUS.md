@@ -862,9 +862,9 @@ Seven live-found issues, all fixed same-day (journal #67-#73):
   (libfprint) bounced (declined comment on #2069291 predates the #72
   fix). Remaining queue items to continue through.
 
-## `--interactive` run continued, 2026-07-13/14 (#74-#81)
+## `--interactive` run continued, 2026-07-13/14 (#74-#82)
 
-Eight more live-found improvements, all same-day (journal #74-#81):
+Nine more live-found improvements, all same-day (journal #74-#82):
 
 - **Queue walked newest-first** (#74): the report is oldest-first, fresh
   items now come before the tail of unchanged skips. Backlog 5c: a
@@ -892,6 +892,11 @@ Eight more live-found improvements, all same-day (journal #74-#81):
 - **~brian-murray is a service account** (#80): the needs-packaging
   Wishlist automation still posts with his token; backlog 5d removes it
   once the automation gets its own account.
+- **mp_review is a coverage check** (#82, libinput #2156749 -- an SRU
+  with one MP per series): every open series must have a qualifying MP
+  before the bug entry closes; partial coverage is left for a human, a
+  `ubuntu/devel` MP also covers the devel codename's task, and the
+  comment uses generic plural-aware wording without an MP URL.
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.

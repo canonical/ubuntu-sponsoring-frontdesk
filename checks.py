@@ -604,13 +604,17 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
 
     Two cases (seb128, 2026-07-06, found live on bug #2139024):
 
-    - "mp_review": the bug has a linked merge proposal that either names
-      ~ubuntu-sponsors as a requested reviewer or has already received a
-      review vote. The MP is the better review venue and (in the reviewer
-      case) already its own sponsoring-queue entry -- the bug is a duplicate,
-      so unsubscribe ~ubuntu-sponsors from it and let the review continue on
-      the MP. A linked MP with neither signal proves nothing (it may not be
-      in the queue at all), so it is left for a human. Qualifying MPs must
+    - "mp_review": every series the bug still asks sponsoring for is covered
+      by a linked merge proposal that names ~ubuntu-sponsors as a requested
+      reviewer or has already received a review vote (#82: coverage, not
+      first-match -- multi-series SRUs come with one MP per series, and a
+      series whose fix lives only on the bug must not vanish from the
+      report). The MPs are the better review venue and (in the reviewer
+      case) already their own sponsoring-queue entries -- the bug is a
+      duplicate, so unsubscribe ~ubuntu-sponsors from it and let the review
+      continue on the MPs. A linked MP with neither signal proves nothing
+      (it may not be in the queue at all); partial coverage is left for a
+      human. Qualifying MPs must
       actually be sponsoring venues (seb128, found live on gnocchi bug
       #2148798 whose linked MPs were a team packaging fork's): not Merged,
       target branch following the git-ubuntu convention (`ubuntu/devel`,
@@ -644,32 +648,52 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
             if mp.queue_status not in _INACTIVE_MP_STATUSES
         ]
         devel_open, series_open = _bug_open_ubuntu_series(bug)
-        for mp in active_mps:
+        live_mps = [mp for mp in active_mps if mp.queue_status != "Merged"]
+
+        # Multi-series SRUs come with one MP per series (found live on
+        # libinput bug #2156749, three MPs for noble/resolute/stonking).
+        # Unsubscribing the bug is only safe when EVERY series the bug
+        # still asks sponsoring for has its own qualifying MP -- those are
+        # the queue entries the review continues on; a series covered only
+        # by a debdiff on the bug would silently vanish from the report
+        # otherwise (#82). So: coverage check, not first-match.
+        # The plain '(Ubuntu)' task and a 'devel'-venue MP match without
+        # knowing the devel codename ('devel' is its own ask key); the
+        # codename lookup only happens when one side is explicit and the
+        # other says 'devel', exactly like the pre-#82 first-match code.
+        open_asks = set(series_open)
+        if devel_open:
+            open_asks.add("devel")
+
+        covered = set()
+        covering_mps = 0
+        for mp in live_mps:
             # Only a git-ubuntu MP whose target branch corresponds to a
             # series this bug still asks sponsoring for is "the review
             # venue" -- a team fork's master/stable/* MP is not, however
             # reviewed it is (gnocchi bug #2148798). Merged is also out:
             # that review is over, it can't be where the review continues.
-            if mp.queue_status == "Merged":
-                continue
             venue_series = _bug_sponsoring_venue_series(mp)
             if venue_series is None:
                 continue
-            if venue_series == "devel":
-                if not devel_open:
-                    devel_name = archive_lookup.devel_codename(lp_client.lp)
-                    if devel_name is None:
-                        return None
-                    if devel_name not in series_open:
-                        continue
-            elif venue_series not in series_open:
-                if not devel_open:
-                    continue
+            # Which open asks does this MP satisfy? A 'devel'-venue MP and
+            # the devel codename's series task are the same upload (live on
+            # #2156749: the ubuntu/devel MP is the stonking fix, and the bug
+            # has both the plain (Ubuntu) task and a Stonking task open), so
+            # either devel spelling covers both asks.
+            asks = {venue_series} & open_asks
+            if (venue_series == "devel" and series_open) or (
+                venue_series != "devel" and devel_open
+            ):
                 devel_name = archive_lookup.devel_codename(lp_client.lp)
                 if devel_name is None:
                     return None
-                if venue_series != devel_name:
-                    continue
+                if venue_series == "devel":
+                    asks |= {devel_name} & series_open
+                elif venue_series == devel_name:
+                    asks.add("devel")
+            if not asks:
+                continue
             sponsors_requested = False
             reviewed = False
             for vote in mp.votes:
@@ -678,32 +702,46 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
                 if vote.comment_link is not None:
                     reviewed = True
             logger.debug(
-                "check_nothing_to_sponsor: linked MP %s sponsors_requested=%s "
-                "reviewed=%s",
+                "check_nothing_to_sponsor: linked MP %s (series %s) "
+                "sponsors_requested=%s reviewed=%s",
                 mp.web_link,
+                ", ".join(sorted(asks)),
                 sponsors_requested,
                 reviewed,
             )
             if sponsors_requested or reviewed:
-                logger.info(
-                    "[%s] fix is under review on linked MP %s. Unsubscribing "
-                    "~ubuntu-sponsors from the bug.",
-                    url,
-                    mp.web_link,
-                )
-                lp_client.comment(
-                    bug,
-                    f"The fix proposed here is being reviewed on {mp.web_link}, "
-                    "so there is no need for a separate sponsoring-queue entry "
-                    "for this bug. Cleaning up the queue by unsubscribing "
-                    "~ubuntu-sponsors; the review continues on the merge "
-                    "proposal.",
-                )
-                lp_client.unsubscribe_sponsors(bug)
-                return "mp_review"
+                covered |= asks
+                covering_mps += 1
+        if open_asks and open_asks <= covered:
+            plural = "s" if covering_mps > 1 else ""
+            logger.info(
+                "[%s] fix is under review on the linked MP%s (all open "
+                "series covered: %s). Unsubscribing ~ubuntu-sponsors from "
+                "the bug.",
+                url,
+                plural,
+                ", ".join(sorted(covered)),
+            )
+            lp_client.comment(
+                bug,
+                f"The fix proposed here is being reviewed on the merge "
+                f"proposal{plural} linked to this bug, so there is no need "
+                "for a separate sponsoring-queue entry for the bug itself. "
+                "Cleaning up the queue by unsubscribing ~ubuntu-sponsors; "
+                f"the review continues on the merge proposal{plural}.",
+            )
+            lp_client.unsubscribe_sponsors(bug)
+            return "mp_review"
         if active_mps:
-            # An MP exists but shows no review signal yet; can't tell which
-            # entry the queue should keep. Leave it for a human.
+            # MPs exist but don't cover every open series with a review
+            # signal; can't tell which entries the queue should keep.
+            # Leave it for a human.
+            if open_asks - covered:
+                logger.debug(
+                    "check_nothing_to_sponsor: series without a qualifying "
+                    "MP: %s; leaving for a human.",
+                    ", ".join(sorted(open_asks - covered)),
+                )
             return False
 
         # Sync requests legitimately have no patch to attach.

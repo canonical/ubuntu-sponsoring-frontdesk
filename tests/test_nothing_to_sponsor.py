@@ -95,7 +95,11 @@ def test_linked_mp_with_sponsors_reviewer_fires_mp_review():
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
     assert len(lp.comments) == 1
-    assert mp.web_link in lp.comments[0]
+    # #82: generic wording -- the MP links are already on the bug page, and
+    # quoting one of possibly several would be misleading (libinput bug
+    # #2156749 had three, one per SRU series).
+    assert mp.web_link not in lp.comments[0]
+    assert "reviewed on the merge proposal linked" in lp.comments[0]
     assert lp.unsubscribed == 1
 
 
@@ -181,6 +185,121 @@ def test_closed_series_task_does_not_qualify_the_mp():
     )
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+
+
+# --- multi-series coverage (#82, libinput bug #2156749) ------------------------
+
+
+def _sru_bug(mps, statuses=("In Progress", "In Progress")):
+    noble, resolute = statuses
+    return FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu Noble)", noble),
+            FakeTask("foo (Ubuntu Resolute)", resolute),
+        ],
+        linked_merge_proposals=mps,
+    )
+
+
+def _series_mp(series, **kwargs):
+    kwargs.setdefault("votes", [FakeVote("~ubuntu-sponsors")])
+    return FakeMP(target=f"refs/heads/ubuntu/{series}-devel", **kwargs)
+
+
+def test_all_open_series_covered_fires_with_plural_wording():
+    bug = _sru_bug([_series_mp("noble"), _series_mp("resolute")])
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
+    assert "merge proposals linked" in lp.comments[0]
+    assert lp.unsubscribed == 1
+
+
+def test_uncovered_series_is_left_for_a_human():
+    # Noble has a qualifying MP; the resolute fix lives only on the bug.
+    # Closing the bug entry would drop resolute from the report.
+    bug = _sru_bug([_series_mp("noble")])
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+
+
+def test_series_mp_without_review_signal_does_not_cover_it():
+    # Both series have MPs, but resolute's has no sponsors reviewer and no
+    # review -- it may not be a queue entry at all, so no close.
+    bug = _sru_bug(
+        [_series_mp("noble"), _series_mp("resolute", votes=[FakeVote("~rr")])]
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+    assert lp.comments == []
+
+
+def test_closed_series_needs_no_mp_coverage():
+    # Resolute is Won't Fix: the noble MP alone covers every open ask.
+    bug = _sru_bug([_series_mp("noble")], statuses=("In Progress", "Won't Fix"))
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
+    assert "merge proposal linked" in lp.comments[0]
+    assert "merge proposals" not in lp.comments[0]
+
+
+def test_open_devel_task_needs_coverage_too():
+    # The noble MP covers noble, but the plain (Ubuntu) task is also open
+    # (devel is stonking here) and has no MP -- the devel ask would vanish
+    # from the report.
+    from fakes import FakeRoot
+
+    bug = FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu)", "New"),
+            FakeTask("foo (Ubuntu Noble)", "In Progress"),
+        ],
+        linked_merge_proposals=[_series_mp("noble")],
+    )
+    lp = FakeTriageClient(
+        objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking")
+    )
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
+
+
+def test_devel_mp_covers_the_devel_codename_series_task_too():
+    # Live on #2156749: the ubuntu/devel MP IS the stonking fix, and the
+    # bug has both the plain (Ubuntu) task and a Stonking task open --
+    # one MP, two spellings of the same ask.
+    from fakes import FakeRoot
+
+    bug = FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu)", "In Progress"),
+            FakeTask("foo (Ubuntu Stonking)", "In Progress"),
+        ],
+        linked_merge_proposals=[
+            FakeMP(
+                target="refs/heads/ubuntu/devel",
+                votes=[FakeVote("~ubuntu-sponsors")],
+            )
+        ],
+    )
+    lp = FakeTriageClient(
+        objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking")
+    )
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
+    # One MP covering two asks is still ONE merge proposal in the comment.
+    assert "merge proposal linked" in lp.comments[0]
+    assert "merge proposals" not in lp.comments[0]
+
+
+def test_devel_ask_covered_by_codename_targeted_mp(monkeypatch):
+    # Cross-matching devel task <-> explicit codename target resolves the
+    # devel codename, as pre-#82.
+    from fakes import FakeRoot
+
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu)", "New")],
+        linked_merge_proposals=[_series_mp("noble")],
+    )
+    lp = FakeTriageClient(objects={URL: bug}, lp=FakeRoot(devel_series_name="noble"))
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
 
 
 def test_rejected_mp_is_ignored_and_no_patch_fires():
