@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-14_
+_Last updated: 2026-07-15_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -960,6 +960,14 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
 - Writes performed: #2158959 (cloud-hypervisor) closed (comment landed,
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
+
+## `--interactive` run continued, 2026-07-15 (#91)
+
+- **New-bug grace period** (#91): a bug filed less than 10 minutes ago is
+  skipped (write modes; dry-run proceeds) -- the Launchpad "new bug" form
+  can't set everything a report needs (series targets, linked MPs), so
+  submitters commonly finish it in an edit/comment right after filing.
+  Bugs only. See "Triage-level pre-gates" in GLOSSARY.md.
 
 ## Known residual edges (documented in code)
 

@@ -1135,3 +1135,22 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   once (transient Launchpad blip on the diff fetch, correctly retried
   rather than cached as clean) before firing cleanly on retry. 473 tests
   (9 new in test_ppa_version_suffix.py).
+
+## 91. New-bug grace period (2026-07-15)
+
+* Request (seb128): "can we skip bugs that have been opened for less than
+  10 min? ... the rationale is to avoid [commenting] while the submitter
+  might still be working on the report (things like referencing PRs,
+  targeting for series, etc can't be done from the new bug form so will
+  be done after posting)".
+* `main._triage_url`: new guard right after the #76 queue-membership
+  guard, before `build_facts`. Bugs only (an MP's diff/branch is already
+  complete when created, unlike a bug's report). `_NEW_BUG_GRACE =
+  timedelta(minutes=10)`, compared against `now - bug.date_created`.
+  Under the grace period: write modes skip (nothing persisted, retried
+  next run, same shape as #76); `--dry-run` proceeds with a warning (no
+  writes, useful to preview). A read failure on `date_created` is
+  inconclusive (skip, retry), not "assume old enough".
+* `tests/fakes.py`: `OLD_ENOUGH` constant + `FakeBug.date_created`
+  (defaults to `OLD_ENOUGH` so every pre-#91 test is unaffected).
+  479 tests (6 new in test_new_bug_grace_period.py).

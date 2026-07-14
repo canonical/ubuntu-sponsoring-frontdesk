@@ -1,10 +1,15 @@
 """Lightweight stand-ins for launchpadlib objects used across the test suite."""
 
+import datetime
 import types
 
 BOT = "https://api.launchpad.net/devel/~ubuntu-sponsoring-bot"
 HUMAN = "https://api.launchpad.net/devel/~marco"
 DEVEL_SERIES = "Noble"
+
+# Well past any grace period (#91) -- the default for fakes whose tests
+# don't care about bug age, so existing tests aren't affected by it.
+OLD_ENOUGH = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
 
 
 class FakePerson:
@@ -180,6 +185,7 @@ class FakeBug:
         linked_merge_proposals=None,
         id=1,
         subscriptions=None,
+        date_created=None,
     ):
         self.id = id
         # Direct subscriptions; queue items carry a sponsoring team (#76).
@@ -189,6 +195,9 @@ class FakeBug:
             if subscriptions is not None
             else [FakeSubscription("~ubuntu-sponsors")]
         )
+        # New-bug grace period (#91). Default well past it so existing
+        # tests are unaffected; pass a recent timestamp to exercise it.
+        self.date_created = date_created if date_created is not None else OLD_ENOUGH
         # The bug's reporter -- the submitter for the #72 human-engaged
         # check, mirroring FakeMP.registrant_link.
         self.owner_link = HUMAN

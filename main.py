@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import logging
 import shutil
 import sys
@@ -16,6 +17,13 @@ import notify
 from llm_reviewer import LLMReviewer
 
 logger = logging.getLogger(__name__)
+
+# #91: the Launchpad "new bug" form can't set everything a report needs
+# (targeted series, linked MPs/PRs, etc) -- submitters commonly finish the
+# report in an edit or follow-up comment right after filing. Wait this long
+# before triaging a bug at all, so the bot doesn't comment over a report
+# that's still being written.
+_NEW_BUG_GRACE = datetime.timedelta(minutes=10)
 
 
 def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=None):
@@ -94,6 +102,42 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 "a queue item. Skipping (nothing persisted)."
             )
             return
+
+    # New-bug grace period (#91): give the submitter time to finish the
+    # report (the filing form can't set series targets, linked MPs, etc --
+    # those come in an edit/follow-up comment right after). Bugs only: an
+    # MP's diff/branch is already complete when it's created. Dry-run
+    # bypasses (no writes, useful to preview); write modes skip and retry
+    # next run once the bug has aged past the grace period.
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        try:
+            created = bug.date_created
+        except Exception as e:
+            logger.warning(
+                "Could not read the bug's creation date (%s); skipping "
+                "(nothing persisted, retried next run).",
+                e,
+            )
+            return
+        age = datetime.datetime.now(datetime.timezone.utc) - created
+        if age < _NEW_BUG_GRACE:
+            if lp_client.mode == "dry-run":
+                logger.warning(
+                    "Bug filed %s ago (< %s grace period) -- may still be "
+                    "edited. Continuing because dry-run performs no writes.",
+                    age,
+                    _NEW_BUG_GRACE,
+                )
+            else:
+                logger.info(
+                    "Bug filed %s ago (< %s grace period) -- may still be "
+                    "edited. Skipping (nothing persisted, retried next run).",
+                    age,
+                    _NEW_BUG_GRACE,
+                )
+                return
 
     # Fingerprint the contributor-controlled signals. We (re-)triage only when
     # these change; an unchanged snapshot means nothing has happened since we

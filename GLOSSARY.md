@@ -194,6 +194,18 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   or referenced in its commit message/description. A touched changelog
   without a new header (appending to an UNRELEASED entry) is clean;
   merge MPs are exempt.
+- **Triage-level pre-gates** — two guards in `main._triage_url`, both
+  before `build_facts`, both skip-and-retry-next-run (nothing persisted)
+  in write modes while `--dry-run` proceeds (no writes, useful to
+  preview): **queue-membership** (#76) skips a bug without a direct
+  `~ubuntu-sponsors`/`~ubuntu-security-sponsors` subscription -- not a
+  real queue item (a mistaken `--url`, e.g. the bug an MP links to);
+  **new-bug grace period** (#91) skips a bug filed under 10 minutes ago
+  (`_NEW_BUG_GRACE`) -- the Launchpad "new bug" form can't set everything
+  a report needs (series targets, linked MPs), so submitters commonly
+  finish it in an edit/comment right after filing. Bugs only, both --
+  an MP's diff/branch is complete and a real queue entry the moment it's
+  created.
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,
