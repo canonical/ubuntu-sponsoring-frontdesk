@@ -1338,3 +1338,36 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   review.` -- reaches `check_nothing_to_sponsor` (#95's fix) and attempts
   the no_patch unsubscribe; dedup found an identical comment already on
   Launchpad and skipped re-posting (nothing new to do). Commit `e7baeea`.
+
+## 97. Check 7: Read a Bug Attachment's Real Changelog Target, Not Just Its Filename
+
+* **Trigger:** live `--interactive` run on neutron bug #2150285 -- Check 7
+  bounced with "isn't fixed in the newer Ubuntu series (stonking) yet", but
+  seb128 declined: "but the bug has an attachment to sponsor for stonking..."
+* **Diagnosis:** `_series_evidence`'s attachment check only matched when the
+  series name literally appeared in the attachment's *filename*
+  (`series_name.lower() in title`). The bug actually had two debdiffs:
+  `lp2150285_28.0.0-0ubuntu1.1.debdiff` (resolute-style SRU version) and
+  `lp2150285_28.0.0-0ubuntu2.debdiff` (a plain increment -- the stonking/
+  devel upload) -- neither filename mentions a series at all, since
+  Launchpad names attachments after the bug number and version, not the
+  target. The mechanical evidence check had nothing to match against.
+* **Fix:** new `_bug_attachment_target_series(bug)` fetches each patch/
+  debdiff attachment's content (`attachments.patch_attachments` +
+  `attachments.attachment_text`), parses its new changelog stanza
+  (`llm_reviewer._new_changelog_stanza` + `_CHANGELOG_HEADER_RE`, same
+  pattern as Checks 6/8/11/12), and reads the stanza's own `suite` field
+  (pocket-stripped) -- the actual upload target, authoritative regardless of
+  filename. Computed once per bug (not once per newer series, since
+  attachment content doesn't change) and passed into `_series_evidence`,
+  which now checks it before falling back to the weaker filename-substring
+  match (kept for attachments that don't parse). Raises on a fetch failure,
+  mapped to inconclusive by the existing try/except in
+  `check_sru_newer_series`.
+* **Tests:** two new tests in test_sru_newer_series.py -- a stonking debdiff
+  whose filename doesn't say so still counts as handled, and a control
+  proving it doesn't also (wrongly) cover an unrelated still-open series.
+  500 tests, `make lint` clean.
+* **Live-verified** on neutron bug #2150285 itself: `target='resolute'
+  newer=['stonking'] unhandled=[]` -- Check 7 no longer bounces. Commit
+  `515941f`.
