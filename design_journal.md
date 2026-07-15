@@ -1228,3 +1228,73 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   silently exempting fixtures that didn't override `source=` -- several
   early test failures traced back to this before the fixtures were
   fixed to use a fix-shaped branch name explicitly.
+
+## 94. Human Engagement No Longer Suppresses Blocking Findings
+
+* **Trigger:** live `--interactive` run on opkssh MP #507446. `check_stale_version`
+  fired a `tier="incomplete"` finding (archive already has this exact version
+  published, but with different content -- needs a rebase), yet the bot
+  suppressed it and skipped the LLM phase entirely because a reviewer had
+  commented since the current diff. seb128: "the package is in
+  resolute-proposed so that should trump the human review... any idea where our
+  logic fails there?"
+* **Diagnosis:** design #35's engagement-suppression (main.py, two sites: the
+  early skip-LLM-phases gate and the end-of-pass aggregate gate) suppressed
+  *all* findings once a human was engaged, `tier="incomplete"` included. That
+  was right for judgment-based findings (LLM review comments, advisory
+  nitpicks) but wrong for facts about archive/technical state: a version
+  collision isn't resolved by a human's engagement, and git-ubuntu itself
+  can't auto-close the MP because the archive upload's content genuinely
+  differs from what's proposed.
+* **Also asked, and set aside:** could the bot detect the specific case where a
+  sponsor tried to help by editing the changelog to reference the patch name,
+  confusing git-ubuntu's content match? seb128: no good way to catch that
+  without an LLM in the loop; the existing "different content, same version"
+  bounce is good enough regardless of *why* the content diverged.
+* **Fix:** both suppression sites now only silence `tier="question"` findings.
+  `tier="incomplete"` findings are never suppressed by engagement -- the early
+  gate no longer takes its skip-LLM-and-suppress shortcut if a blocking
+  finding is already on the board (the remaining phases still run, since they
+  might add more), and the end-of-pass gate filters `findings` down to just
+  the blocking ones before posting, rather than suppressing everything.
+* **Test fallout:** two of #35's own original tests (`test_engaged_reviewer_
+  suppresses_the_aggregate`, `test_engaged_reviewer_suppresses_a_bug_bounce_
+  too`) turned out to be exercising blocking findings (conflicts,
+  patch-not-debdiff) under the old, now-corrected behavior -- renamed and
+  flipped to assert the new correct outcome. Two new tests added: a
+  blocking-only scenario (still bounces) and a mixed blocking+question
+  scenario (blocking posts, question is dropped). 492 tests, `make lint`
+  clean.
+* **Live verification:** attempted three retries against the opkssh MP;
+  Launchpad's archive-changelog fetch for this specific publication kept
+  timing out on every attempt (not the usual one-shot blip), so no clean
+  end-to-end confirmation landed. seb128: "ok, I guess not, let's commit
+  without validation then." Commit `393fc46`.
+
+## 95. check_nothing_to_sponsor: a Merged MP Must Not Block the no_patch Fallback
+
+* **Trigger:** live run on ghostty bug #2155110 -- `ghostty (Ubuntu)` was Fix
+  Released (landed via a Merged devel MP), `ghostty (Ubuntu Resolute)` was
+  still In Progress with no linked MP and no attachment for it. seb128:
+  "shouldn't that one get sponsors unsubscribe? I don't see anything left to
+  sponsor?"
+* **Diagnosis:** `check_nothing_to_sponsor` builds `live_mps` (excludes
+  Merged) to compute per-series review coverage, but its "leave for a human"
+  guard tested `active_mps` (only excludes Rejected/Superseded) instead --
+  so a Merged MP, offering zero coverage, was still enough to bail out before
+  ever reaching the `no_patch` fallback that would otherwise have unsubscribed
+  `~ubuntu-sponsors`.
+* **Fix:** guard on `live_mps` instead of `active_mps` (checks.py:735). A bug
+  whose only linked MP is Merged now falls through exactly like a bug with no
+  linked MP at all.
+* **Test fallout:** `test_merged_mp_is_not_a_review_venue` was itself
+  exercising the bug (asserted `False`, no comment) -- updated to assert
+  `"no_patch"` + unsubscribe. Added a covering-MP-alongside-a-Merged-MP test
+  (the live MP still correctly defers to a human) and a ghostty-shaped
+  regression test (Fix Released devel task + In Progress SRU task + Merged
+  devel MP + no attachment -> no_patch). 494 tests, `make lint` clean.
+* **Live-verified** against ghostty bug #2155110 itself: the fix correctly
+  reaches the `no_patch` path now (previously never got there); it then
+  stays silent because `~mruffell` has since commented -- the pre-existing
+  #72 "no_patch with an engaged human" exemption working as designed, not a
+  new bug. Commit `ce5a5ce`.
