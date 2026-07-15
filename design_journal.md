@@ -1298,3 +1298,43 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   stays silent because `~mruffell` has since commented -- the pre-existing
   #72 "no_patch with an engaged human" exemption working as designed, not a
   new bug. Commit `ce5a5ce`.
+
+## 96. check_human_engaged: Rank by Most Recent Comment, Not "Any Comment"
+
+* **Trigger:** ghostty bug #2155110, the same one #95 fixed. seb128: "I think
+  I said in one of the previous sessions that we should ignore bugs if the
+  last activity is from someone who isn't the contributor, but in this case
+  the most recent comment is from the contributor which should be the signal
+  to review again?" Live message history confirmed it exactly: `~mruffell`
+  asked for an SRU template (2026-07-13 02:45), the bug's owner `~pushkarnk`
+  replied with one (2026-07-13 05:35) -- the ball was back with the review
+  queue, but the bot stayed silent.
+* **Why the old rule was "any qualifying comment counts":** design #35's
+  origin case (firmware-sof MP #504187) was a one-shot human comment with no
+  reply -- "any" and "most recent" were equivalent in every scenario that
+  shaped the design. seb128's stated preference at the time was explicitly
+  simplicity over completeness. The case of a *continuing* conversation on
+  the same diff/attachment never came up until now.
+* **seb128 asked for the tradeoffs before approving:** explained the
+  side-effect risk -- a submitter reply that doesn't actually answer the
+  reviewer's ask (a question, partial answer, chatter) would still resume
+  review and could talk over an unfinished conversation; no cheap way to
+  tell "answered" from "said something" without an LLM judgment call, so
+  this is an accepted trade-off, not a solved case. seb128: "yes."
+* **Fix:** `_check_human_engaged` (checks.py) now collects all qualifying
+  comments (submitter's own included, service accounts and the bot's own
+  comments excluded, anchor-filtered as before) and ranks them by timestamp.
+  If the submitter has the most recent one, return False (resume). A
+  comment without a timestamp can't be ordered against the rest, so its
+  presence falls back to the pre-#96 "any qualifying comment counts" rule
+  rather than guessing at an order.
+* **Tests:** all 17 pre-existing tests in test_human_engaged.py needed no
+  changes (every one is a single-comment scenario, order-independent). Four
+  new tests: submitter-replies-last (resumes), reviewer-replies-after-
+  submitter (stays engaged), undated-comment-forces-conservative-fallback,
+  and the bug-side live trigger shape. 498 tests, `make lint` clean.
+* **Live-verified** on ghostty bug #2155110 itself: `[engaged] most recent
+  comment since the current attachment is from the submitter; resuming
+  review.` -- reaches `check_nothing_to_sponsor` (#95's fix) and attempts
+  the no_patch unsubscribe; dedup found an identical comment already on
+  Launchpad and skipped re-posting (nothing new to do). Commit `e7baeea`.
