@@ -137,14 +137,50 @@ def test_team_fork_mp_is_not_a_review_venue():
 
 
 def test_merged_mp_is_not_a_review_venue():
-    # A Merged MP's review is over; it can't be where the review continues.
+    # A Merged MP's review is over; it can't be where the review continues,
+    # and (#95) it must not block the no_patch fallback either -- a Merged
+    # MP offers no coverage for the still-open ask, so with nothing else
+    # attached this bug has genuinely nothing left to sponsor.
     mp = FakeMP(
         queue_status="Merged", votes=[FakeVote("~rr", comment_link="/c/1")]
     )
     bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
+    assert lp.unsubscribed == 1
+
+
+def test_merged_mp_still_defers_to_a_live_mp_covering_the_rest():
+    # (#95) A Merged MP alongside a live, uncovering MP: the live one is
+    # still ambiguous, so it (not the Merged one) is what defers to a human.
+    merged = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        queue_status="Merged",
+        votes=[FakeVote("~rr", comment_link="/c/1")],
+    )
+    live = FakeMP(target="refs/heads/ubuntu/devel", votes=[FakeVote("~rr")])
+    bug = _devel_ask_bug(linked_merge_proposals=[merged, live])
+    lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
     assert lp.comments == []
+
+
+def test_merged_devel_mp_does_not_block_no_patch_for_an_open_sru_series():
+    # Live regression (#95, ghostty bug #2155110): devel already landed via
+    # a Merged MP (task Fix Released), Resolute is still In Progress with
+    # no MP and no attachment for it. The Merged devel MP must not shield
+    # the queue -- there's nothing left to sponsor for Resolute.
+    mp = FakeMP(target="refs/heads/ubuntu/devel", queue_status="Merged")
+    bug = FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu)", "Fix Released"),
+            FakeTask("foo (Ubuntu Resolute)", "In Progress"),
+        ],
+        linked_merge_proposals=[mp],
+    )
+    lp = FakeTriageClient(objects={URL: bug})
+    assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
+    assert lp.unsubscribed == 1
 
 
 def test_mp_for_a_series_the_bug_does_not_ask_about_is_ignored():

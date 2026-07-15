@@ -620,7 +620,12 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
       target branch following the git-ubuntu convention (`ubuntu/devel`,
       `ubuntu/<series>[-devel]`, or `debian/sid`/`debian/experimental` for
       a merge, which lands via devel), and that series still open on the
-      bug (a series task, or the plain Ubuntu task for devel).
+      bug (a series task, or the plain Ubuntu task for devel). A Merged MP
+      is excluded as a coverage source but (#95, found live on ghostty bug
+      #2155110) must not shield the queue from the no_patch fallback below
+      either -- its review is over and it offers no signal on a still-open
+      series, so a bug whose only linked MP is Merged falls through exactly
+      like a bug with no linked MP at all.
 
     - "no_patch": no linked MP and no patch attached (Launchpad's patch flag,
       or a *.debdiff/*.diff/*.patch filename) -- nothing to sponsor yet, so
@@ -732,10 +737,15 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
             )
             lp_client.unsubscribe_sponsors(bug)
             return "mp_review"
-        if active_mps:
-            # MPs exist but don't cover every open series with a review
-            # signal; can't tell which entries the queue should keep.
-            # Leave it for a human.
+        if live_mps:
+            # Live (non-Merged) MPs exist but don't cover every open series
+            # with a review signal; can't tell which entries the queue
+            # should keep. Leave it for a human. A Merged MP alone doesn't
+            # trigger this: it's already landed, offers no review-venue
+            # coverage for a still-open series, and shouldn't block falling
+            # through to the no_patch case below (#95, found live on
+            # ghostty bug #2155110: a Merged devel MP was blocking the
+            # resolute task's no-patch unsubscribe).
             if open_asks - covered:
                 logger.debug(
                     "check_nothing_to_sponsor: series without a qualifying "
