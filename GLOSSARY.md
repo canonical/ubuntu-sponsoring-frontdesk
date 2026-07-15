@@ -131,7 +131,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   comes from `ubuntu-distro-info --supported` (#83), not Launchpad
   series statuses — those lag EOL
   (questing read `Supported` after going end-of-life) and count
-  ESM-only series as `Supported` forever.
+  ESM-only series as `Supported` forever. The patch-attachment evidence
+  reads each attachment's own new changelog stanza `suite` field
+  (`_bug_attachment_target_series`, #97), not just its filename — a
+  debdiff is usually named after the bug number and version, not the
+  series, so an SRU bug with one debdiff per series needs the content,
+  not the name, to register as handled. The filename-substring match
+  stays as a weaker fallback for attachments that don't parse.
 - **Direct source-edit check** — Check 8, `check_direct_source_edit`
   (#60): a fix MP whose diff touches files outside `debian/` gets an
   incomplete-tier bounce — changes to upstream code must be provided as
@@ -327,22 +333,32 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   greeting/sign-off of their own (the LLM's SRU/sync messages included,
   #46). An inconclusive pass posts no aggregate at all and skips the LLM —
   the comment must not claim to be the complete list when it isn't.
-- **Human-engaged suppression** — #45 (designed as #35): if anyone other
-  than the MP's submitter, the bot itself, and known `SERVICE_ACCOUNTS`
-  commented since the current `preview_diff` was created, the whole
-  aggregate is silenced (facts persist; quiet until a new push) — a human
-  review is in progress and the bot must not talk over it. Only ever
-  suppresses findings-tier output; closing-tier outcomes are decided before
-  it is consulted. Bugs too since #72: the anchor is the newest usable
-  diff attachment's upload date (none → any qualifying comment counts),
-  the reporter is the submitter, and `check_nothing_to_sponsor` also
-  consults it before the no_patch close (an engaged reviewer contradicts
-  "nothing is happening here") — archive-fact closes stay unaffected.
-  Since #73 the check is memoized per item and consulted right after the
-  deterministic checks: engaged means Check 7's LLM hatch and the whole
-  LLM phase are skipped (sync-shaped bugs exempt — SYNCED is an
-  archive-fact close), suppressing immediately instead of after spending
-  tokens on findings that could never post.
+- **Human-engaged suppression** — #45 (designed as #35): if the most
+  recent qualifying comment since the current `preview_diff` was created
+  is from someone other than the MP's submitter, the bot itself, or a
+  known `SERVICE_ACCOUNTS` entry, the item is treated as actively
+  reviewed and the aggregate is silenced (facts persist; quiet until a
+  new push) — a human review is in progress and the bot must not talk
+  over it. Only ever suppresses `tier="question"` findings; `tier=
+  "incomplete"` (blocking) findings are never suppressed (#94: they're
+  facts about archive/technical state, e.g. a version collision, that a
+  human's engagement doesn't resolve), and closing-tier outcomes are
+  decided before this is ever consulted. **Ranked by most recent
+  comment, not "any comment" (#96):** if the submitter's own reply is
+  the last word since the anchor — e.g. answering a reviewer's ask — the
+  item resumes normal triage instead of staying suppressed forever. A
+  comment without a timestamp can't be ordered, so its presence falls
+  back to the pre-#96 "any qualifying comment counts" rule. Bugs too
+  since #72: the anchor is the newest usable diff attachment's upload
+  date (none → any qualifying comment counts), the reporter is the
+  submitter, and `check_nothing_to_sponsor` also consults it before the
+  no_patch close (an engaged reviewer contradicts "nothing is happening
+  here") — archive-fact closes stay unaffected. Since #73 the check is
+  memoized per item and consulted right after the deterministic checks:
+  engaged (and no blocking finding yet on the board) means Check 7's LLM
+  hatch and the whole LLM phase are skipped (sync-shaped bugs exempt —
+  SYNCED is an archive-fact close), suppressing immediately instead of
+  after spending tokens on findings that could never post.
 - **`SERVICE_ACCOUNTS`** — frozenset in `checks.py` of Launchpad usernames
   whose comments never count as human engagement (`~ubuntu-sponsoring-bot`,
   `~git-ubuntu-bot`, `~git-ubuntu-import`, `~janitor`). Empirically
@@ -369,7 +385,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   published in devel or waiting in its upload queue — if so, the
   "uploaded" close fires (comment + unsubscribe, tasks untouched), and
   being an archive-fact close it is never suppressed by an engaged
-  human.
+  human. The "leave for a human" guard gates on `live_mps` (excludes
+  Merged), not `active_mps` (only excludes Rejected/Superseded) (#95):
+  a Merged MP offers zero review coverage for a still-open series and
+  must not block the no_patch fallback — a bug whose only linked MP is
+  Merged falls through exactly like a bug with no linked MP at all.
 
 - **Operator notifications** — `notify.py` (#48): best-effort pings to a
   Mattermost incoming webhook, strictly for anomalies the bot detected but
@@ -417,4 +437,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   it the bot acts directly (transition behavior). Mode gating and audit
   stay in `LPClient`; helper exit != 0 counts as a failed write (facts
   withheld, retried). The bug activity log attributes the unsubscribe to
-  the helper account.
+  the helper account. **Stuck-login diagnosis (#98):** a stale/expired/
+  revoked helper token doesn't fail fast -- launchpadlib can hang
+  retrying rather than erroring out, so the subprocess timeout alone was
+  indistinguishable from a generic Launchpad slowdown.
+  `LPClient._run_helper_unsubscribe` now catches that timeout
+  specifically and logs a hint pointing at `python3 privileged_helper.py
+  login`; in `--interactive` mode with a TTY it pauses and offers one
+  retry after giving the operator a chance to re-run login elsewhere.

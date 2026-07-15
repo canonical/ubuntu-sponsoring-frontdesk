@@ -961,7 +961,7 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   unsubscribe 401'd -> done by hand; helper `login` fixes the next one),
   #2159516 pending re-run with the final wording.
 
-## `--interactive` run continued, 2026-07-15 (#91-#93)
+## `--interactive` run continued, 2026-07-15 (#91-#98)
 
 - **New-bug grace period** (#91): a bug filed less than 10 minutes ago is
   skipped (write modes; dry-run proceeds) -- the Launchpad "new bug" form
@@ -984,6 +984,41 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   not any specific content (teams/flavors tweak the Maintainer value).
   Question-tier/advisory: a sponsor can add it at upload time, so it
   doesn't block. MP + bug-debdiff dual path, live smoke-tested clean.
+- **Human engagement no longer suppresses blocking findings** (#94, opkssh
+  MP #507446): `tier="incomplete"` findings (facts about archive/technical
+  state, e.g. `check_stale_version`'s "same version, different content
+  already published") are never suppressed by a human reviewer's
+  engagement -- only `tier="question"` findings are. A human commenting
+  doesn't resolve a version collision. Not live-re-verified (Launchpad's
+  archive-changelog fetch for the trigger MP kept timing out on retry);
+  committed on test coverage alone per seb128.
+- **check_nothing_to_sponsor: a Merged MP must not block the no_patch
+  fallback** (#95, ghostty bug #2155110): the "leave for a human" guard
+  tested `active_mps` instead of `live_mps`, so a Merged MP offering zero
+  review coverage was enough to stop the bug from ever reaching the
+  no_patch unsubscribe. Fixed to gate on `live_mps`. Live-verified.
+- **check_human_engaged ranks by most recent comment, not "any comment"**
+  (#96, same ghostty bug): a reviewer asked for something, the submitter
+  answered on the same diff/attachment, but the bot stayed suppressed
+  forever because "any qualifying comment" had already fired once. Now
+  ranks all qualifying comments (submitter's own included) by timestamp;
+  if the submitter has the last word, the item resumes normal triage.
+  Live-verified.
+- **Check 7 reads a bug attachment's real changelog target, not just its
+  filename** (#97, neutron bug #2150285): the newer-series evidence check
+  only matched a series name literally in the attachment's filename, but
+  debdiffs are usually named after the bug number and version. New
+  `_bug_attachment_target_series` parses each attachment's own changelog
+  stanza suite field instead. Live-verified.
+- **A stuck helper login is now distinguished from a generic infra
+  timeout** (#98, bug #2152688): the `~ubuntu-sponsors` unsubscribe helper
+  hung for the full 120s with a stale/expired credential, indistinguishable
+  from an ordinary Launchpad slowdown. `LPClient._run_helper_unsubscribe`
+  now catches that timeout specifically, logs a hint pointing at `python3
+  privileged_helper.py login`, and in `--interactive` mode with a TTY
+  offers one retry after giving the operator a chance to re-run login
+  elsewhere. Not live-verified (can't cheaply reproduce a stuck real
+  token); covered by unit tests.
 
 ## Known residual edges (documented in code)
 
