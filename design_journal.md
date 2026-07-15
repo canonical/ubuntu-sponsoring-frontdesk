@@ -1371,3 +1371,40 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * **Live-verified** on neutron bug #2150285 itself: `target='resolute'
   newer=['stonking'] unhandled=[]` -- Check 7 no longer bounces. Commit
   `515941f`.
+
+## 98. Distinguish a Stuck Helper Login from a Generic Infra Timeout
+
+* **Trigger:** live `--interactive` run on bug #2152688 -- the unsubscribe
+  helper hung for the full 120s and failed with a generic
+  `Command '[...]' timed out after 120 seconds` message. seb128 had to
+  separately realize `python3 privileged_helper.py login` was needed, since
+  nothing in the bot's output hinted at that. Asked for early detection, an
+  interactive prompt-and-retry, and a clearer non-interactive hint.
+* **Diagnosis:** `unsubscribe_sponsors` delegates to `privileged_helper.py`
+  (#78) -- a subprocess with its own OAuth token from a team-member account.
+  A stale/expired/revoked token doesn't fail fast inside launchpadlib; it
+  can hang retrying against Launchpad rather than erroring out. The only
+  signal available was `subprocess.run`'s 120s timeout (`TimeoutExpired`),
+  landing in the same generic `except Exception` as any other failure --
+  indistinguishable from an ordinary Launchpad slowdown (which this session
+  saw plenty of, e.g. #94's opkssh retries).
+* **Fix:** new `LPClient._run_helper_unsubscribe(bug_id)` factors out the
+  subprocess call and catches `subprocess.TimeoutExpired` specifically:
+  logs a distinguishing hint pointing at `python3 privileged_helper.py
+  login` rather than a bare timeout message. In `--interactive` mode with a
+  real TTY, pauses with `input()` to give the operator a chance to run the
+  login command in another terminal, then retries once; a second timeout
+  after the retry gets its own clear error. In dry-run/`--yes`/no-TTY modes,
+  just logs the hint -- no prompting where nothing can read a reply.
+  Doesn't perfectly distinguish "credentials expired" from "Launchpad was
+  genuinely just slow" (both look identical from outside the subprocess),
+  but correctly points at the most likely, most actionable cause instead of
+  a bare infra-sounding message.
+* **Tests:** three new tests in test_privileged_helper.py -- non-interactive
+  timeout logs the hint, interactive timeout prompts and retries
+  successfully, interactive timeout twice gives a clear final error (not a
+  crash). 503 tests, `make lint` clean.
+* **Not live-verified** -- reproducing a genuinely stuck/expired helper
+  token on demand isn't practical without breaking real credentials;
+  covered by unit tests against a faked `subprocess.TimeoutExpired` instead.
+  Commit `efb448f`.
