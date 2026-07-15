@@ -416,14 +416,21 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # human reviewer is engaged, Check 7's escape hatch and the LLM review
     # can only produce findings-tier output that the end of the pass would
     # suppress anyway -- skip them and suppress now, sparing the tokens.
-    # Exception: a sync-shaped bug keeps its LLM phase, whose SYNCED
-    # outcome is an archive-fact close that must never be skipped. None
-    # (unreadable history) falls through: only the end-of-pass consult
+    # Exception #1: a sync-shaped bug keeps its LLM phase, whose SYNCED
+    # outcome is an archive-fact close that must never be skipped.
+    # Exception #2 (#94): a blocking (tier="incomplete") finding already on
+    # the board -- e.g. check_stale_version catching the archive holding a
+    # different upload under the same version -- is a fact about archive
+    # state, not a review opinion; a human's engagement doesn't resolve it,
+    # so it's never suppressed (see the end-of-pass consult below) and the
+    # remaining phases still need to run in case they add more findings.
+    # None (unreadable history) falls through: only the end-of-pass consult
     # (memoized, so it's free) decides whether that matters.
     engaged = checks.check_human_engaged(lp_obj, lp_client)
     checkpoint("check_human_engaged")
     logger.debug("check_human_engaged -> %s", engaged)
-    if engaged is True and not checks.is_sync_shaped(lp_obj):
+    already_blocking = any(f.tier == "incomplete" for f in findings)
+    if engaged is True and not checks.is_sync_shaped(lp_obj) and not already_blocking:
         logger.info(
             "A human reviewer is already engaged; skipping the LLM phases "
             "and suppressing %d deterministic finding(s).",
@@ -527,6 +534,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         # tiers already returned above and are never suppressed. Suppression
         # silenced output but never skipped evaluation (the #35 amendment) --
         # all checks and the LLM already ran by this point.
+        # #94: blocking (tier="incomplete") findings are the exception --
+        # they're facts about archive/technical state (e.g. a version
+        # collision), not a review opinion, so a human's engagement doesn't
+        # resolve them and they're never suppressed. Only the non-blocking
+        # (tier="question") findings get silenced when a human is engaged.
         engaged = checks.check_human_engaged(lp_obj, lp_client)
         checkpoint("check_human_engaged")
         logger.debug("check_human_engaged -> %s", engaged)
@@ -538,23 +550,34 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             )
             return
         if engaged:
-            # A determined, stable state -- persist facts like a clean pass,
-            # so the facts-unchanged gate skips this URL until a genuinely
-            # new push (new diff) changes the fingerprint and real checking
-            # resumes.
+            blocking_findings = [f for f in findings if f.tier == "incomplete"]
+            if not blocking_findings:
+                # A determined, stable state -- persist facts like a clean
+                # pass, so the facts-unchanged gate skips this URL until a
+                # genuinely new push (new diff) changes the fingerprint and
+                # real checking resumes.
+                logger.info(
+                    "A human reviewer already commented on the current "
+                    "revision; suppressing %d finding(s) and leaving the "
+                    "review to them.",
+                    len(findings),
+                )
+                state_manager.update_status(
+                    url,
+                    "READY_FOR_HUMAN",
+                    f"{len(findings)} finding(s) suppressed: "
+                    "a human reviewer is already engaged.",
+                    facts=persistable_facts(),
+                )
+                return
             logger.info(
-                "A human reviewer already commented on the current revision; "
-                "suppressing %d finding(s) and leaving the review to them.",
-                len(findings),
+                "A human reviewer already commented on the current "
+                "revision, but %d blocking finding(s) remain -- posting "
+                "those and suppressing %d non-blocking finding(s).",
+                len(blocking_findings),
+                len(findings) - len(blocking_findings),
             )
-            state_manager.update_status(
-                url,
-                "READY_FOR_HUMAN",
-                f"{len(findings)} finding(s) suppressed: "
-                "a human reviewer is already engaged.",
-                facts=persistable_facts(),
-            )
-            return
+            findings = blocking_findings
         aggregated = checks.render_findings_comment(
             findings, for_bug=resource_type in ("bug", "bug_task")
         )

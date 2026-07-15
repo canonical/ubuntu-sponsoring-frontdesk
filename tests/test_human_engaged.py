@@ -1,8 +1,10 @@
 """Design #35: once a human reviewer commented on the current revision,
-suppress the incomplete/question-tier findings (the bot is for early feedback,
-not for talking over an ongoing review). Closing-tier outcomes are never
-suppressed, and suppression never skips evaluation -- it only silences the
-aggregated comment at the very end of the pass."""
+suppress the question-tier findings (the bot is for early feedback, not for
+talking over an ongoing review). Closing-tier outcomes are never suppressed,
+and suppression never skips evaluation -- it only silences the aggregated
+comment at the very end of the pass. #94: blocking (tier="incomplete")
+findings are also never suppressed -- they're facts about archive/technical
+state (e.g. a version collision), not a review opinion."""
 
 import datetime
 
@@ -172,10 +174,10 @@ def test_bug_comment_after_the_current_attachment_counts():
 # --- end-to-end ---------------------------------------------------------------
 
 
-def test_engaged_reviewer_suppresses_the_aggregate(tmp_path):
-    # Two findings fire (wrong target branch + conflicts), but a reviewer
-    # already commented on the current revision: nothing posts, no vote, and
-    # facts persist so the item is skipped until a new push changes the diff.
+def test_engaged_reviewer_does_not_suppress_a_blocking_finding(tmp_path):
+    # Conflicts (tier="incomplete") is a fact about the branch's mergeable
+    # state, not a review opinion -- a reviewer already commenting doesn't
+    # make it go away, so it still posts and votes despite engagement (#94).
     sm = _state(tmp_path)
     mp = _mp(
         [FakeMPComment(REVIEWER, "fix the conflict and I'll sponsor", AFTER_DIFF)],
@@ -192,17 +194,16 @@ def test_engaged_reviewer_suppresses_the_aggregate(tmp_path):
 
     main.triage_url(URL, sm, lp, FakeLLM())
 
-    assert lp.comments == []
-    assert lp.votes == []
-    assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
-    assert "suppressed" in sm.get_status(URL)[1]
-    assert sm.get_facts(URL) is not None
+    assert len(lp.comments) == 1
+    assert "conflict" in lp.comments[0].lower()
+    assert lp.votes == ["Needs Fixing"]
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
 
 
-def test_engaged_reviewer_suppresses_a_bug_bounce_too(tmp_path):
-    # Bug-side #72: a plain code patch would bounce (Check 10), but a
-    # reviewer commented after that attachment -- stay quiet, tasks stay
-    # open.
+def test_engaged_reviewer_does_not_suppress_a_blocking_bug_bounce(tmp_path):
+    # Bug-side #72/#94: a plain code patch bounces (Check 10, tier=
+    # "incomplete") even though a reviewer commented after the attachment --
+    # a sponsor still can't turn a plain patch into an upload themselves.
     sm = _state(tmp_path)
     bug = FakeBug(
         tasks=[FakeTask("foo (Ubuntu)", "New")],
@@ -219,10 +220,9 @@ def test_engaged_reviewer_suppresses_a_bug_bounce_too(tmp_path):
 
     main.triage_url(bug_url, sm, lp, FakeLLM())
 
-    assert lp.comments == []
-    assert bug.bug_tasks[0].status == "New"
-    assert sm.get_status(bug_url)[0] == "READY_FOR_HUMAN"
-    assert "suppressed" in sm.get_status(bug_url)[1]
+    assert len(lp.comments) == 1
+    assert bug.bug_tasks[0].status == "Incomplete"
+    assert sm.get_status(bug_url)[0] == "WAITING_ON_CONTRIBUTOR"
 
 
 def test_closing_outcome_still_fires_despite_engaged_reviewer(tmp_path):
@@ -286,3 +286,71 @@ def test_no_reviewer_comment_still_bounces_normally(tmp_path):
     assert "should target" in lp.comments[0]
     assert lp.votes == ["Needs Fixing"]
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+
+
+# --- #94: blocking findings survive engagement --------------------------------
+
+
+def test_blocking_finding_still_bounces_despite_engaged_reviewer(monkeypatch, tmp_path):
+    # A version collision (check_stale_version, tier="incomplete") is a fact
+    # about archive state, not a review opinion -- a reviewer's comment
+    # doesn't resolve it, so it must still post and vote Needs Fixing.
+    monkeypatch.setattr(
+        checks,
+        "check_stale_version",
+        lambda url, lp_obj, lp_client: checks.Finding(
+            "incomplete",
+            "An upload with the same version but different content already "
+            "exists in the archive. Your change needs to be rebased.",
+            kind="advisory",
+        ),
+    )
+    sm = _state(tmp_path)
+    mp = _mp(
+        [FakeMPComment(REVIEWER, "fix the conflict and I'll sponsor", AFTER_DIFF)],
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT, date_created=DIFF_DATE),
+    )
+    lp = _client({URL: mp})
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    assert len(lp.comments) == 1
+    assert "rebased" in lp.comments[0]
+    assert lp.votes == ["Needs Fixing"]
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+
+
+def test_mixed_findings_keep_blocking_and_drop_question_when_engaged(
+    monkeypatch, tmp_path
+):
+    # Both a blocking and a non-blocking finding fire; engagement should
+    # only silence the non-blocking one.
+    monkeypatch.setattr(
+        checks,
+        "check_stale_version",
+        lambda url, lp_obj, lp_client: checks.Finding(
+            "incomplete", "needs a rebase", kind="advisory"
+        ),
+    )
+    monkeypatch.setattr(
+        checks,
+        "check_ppa_version_suffix",
+        lambda url, lp_obj, lp_client: checks.Finding(
+            "question", "the version contains a stray ~ppa suffix", kind="advisory"
+        ),
+    )
+    sm = _state(tmp_path)
+    mp = _mp(
+        [FakeMPComment(REVIEWER, "looking at this", AFTER_DIFF)],
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT, date_created=DIFF_DATE),
+    )
+    lp = _client({URL: mp})
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    assert len(lp.comments) == 1
+    assert "rebase" in lp.comments[0]
+    assert "ppa" not in lp.comments[0].lower()
+    assert lp.votes == ["Needs Fixing"]
