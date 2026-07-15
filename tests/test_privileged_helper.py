@@ -4,6 +4,7 @@ account) so the bot account itself can leave the team -- a member's MP vote
 claims the team review slot and permanently drops the MP from the
 sponsoring report."""
 
+import subprocess
 import types
 
 from audit import AuditLog
@@ -76,6 +77,69 @@ def test_unconfigured_helper_falls_back_to_the_direct_call(tmp_path, monkeypatch
     client.unsubscribe_sponsors(bug)
     assert bug.unsubscribes == 1
     assert client.write_outcomes == ["performed"]
+
+
+# --- #98: a helper timeout gets a distinct diagnosis, not a generic one -------
+
+
+def test_helper_timeout_hints_at_reauth_in_non_interactive_modes(
+    tmp_path, monkeypatch, caplog
+):
+    monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: True)
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+    monkeypatch.setattr(launchpad_client.subprocess, "run", fake_run)
+    client = _client(tmp_path)  # mode="yes" -- no TTY prompt possible either way
+    with caplog.at_level("WARNING"):
+        client.unsubscribe_sponsors(_CountingBug(id=1))
+
+    assert client.write_outcomes == ["error"]
+    assert "privileged_helper.py login" in caplog.text
+
+
+def test_interactive_timeout_prompts_and_retries_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: True)
+    monkeypatch.setattr(launchpad_client.sys.stdin, "isatty", lambda: True)
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        return types.SimpleNamespace(returncode=0, stdout="unsubscribed", stderr="")
+
+    monkeypatch.setattr(launchpad_client.subprocess, "run", fake_run)
+    # First input() is _decide's [y/N] prompt; the second is the
+    # timeout's "press Enter to retry" prompt.
+    answers = iter(["y", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    audit = AuditLog(path=str(tmp_path / "audit.jsonl"))
+    client = LPClient(mode="interactive", audit=audit, lp=FakeRoot())
+    client.unsubscribe_sponsors(_CountingBug(id=1))
+
+    assert len(calls) == 2  # one retry after the prompt
+    assert client.write_outcomes == ["performed"]
+
+
+def test_interactive_timeout_twice_gives_a_clear_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: True)
+    monkeypatch.setattr(launchpad_client.sys.stdin, "isatty", lambda: True)
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+    monkeypatch.setattr(launchpad_client.subprocess, "run", fake_run)
+    answers = iter(["y", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    audit = AuditLog(path=str(tmp_path / "audit.jsonl"))
+    client = LPClient(mode="interactive", audit=audit, lp=FakeRoot())
+    client.unsubscribe_sponsors(_CountingBug(id=1))
+
+    assert client.write_outcomes == ["error"]
 
 
 # --- the helper script itself -------------------------------------------------

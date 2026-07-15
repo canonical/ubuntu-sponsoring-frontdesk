@@ -261,6 +261,75 @@ class LPClient:
         except Exception as e:
             logger.warning("Could not subscribe to %s: %s", target, e)
 
+    _HELPER_TIMEOUT_SECONDS = 120
+
+    def _run_helper_unsubscribe(self, bug_id):
+        """
+        Runs privileged_helper.py's unsubscribe-sponsors action, with a
+        distinct diagnosis for the timeout case (#98). A stale/expired/
+        revoked helper OAuth token doesn't fail fast: launchpadlib can hang
+        retrying against Launchpad rather than erroring out, so the
+        subprocess-level timeout is the only signal we get -- and by far
+        the most common cause of that timeout in practice is "someone
+        needs to re-run `python3 privileged_helper.py login`", not a
+        generic infra hiccup. Surface that distinction instead of just
+        relaying subprocess.TimeoutExpired's generic message.
+
+        In --interactive mode with a real TTY, offers one retry after
+        giving the operator a chance to run the login command in another
+        terminal. Everywhere else (dry-run/--yes/no TTY), just logs the
+        hint -- no prompting where nothing can read a reply.
+
+        Raises on failure (a non-zero exit or an unrecovered timeout); the
+        caller's existing except-block records that as a write error.
+        """
+        cmd = [sys.executable, _HELPER_SCRIPT, "unsubscribe-sponsors", str(bug_id)]
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=self._HELPER_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "  [helper] timed out after %ds unsubscribing bug #%s. This "
+                "usually means the helper's Launchpad credentials need "
+                "reauthorizing (an expired/revoked OAuth token doesn't fail "
+                "fast) -- not a generic infra timeout. Run 'python3 "
+                "privileged_helper.py login' to reauthorize.",
+                self._HELPER_TIMEOUT_SECONDS,
+                bug_id,
+            )
+            if self.mode == "interactive" and sys.stdin.isatty():
+                input(
+                    "  Run 'python3 privileged_helper.py login' in another "
+                    "terminal now, then press Enter here to retry (anything "
+                    "else to give up): "
+                )
+                try:
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True,
+                        timeout=self._HELPER_TIMEOUT_SECONDS,
+                    )
+                except subprocess.TimeoutExpired:
+                    raise RuntimeError(
+                        "privileged helper timed out again after the retry; "
+                        "its Launchpad credentials likely still need "
+                        "reauthorizing -- run 'python3 privileged_helper.py "
+                        "login'"
+                    ) from None
+            else:
+                raise RuntimeError(
+                    "privileged helper timed out; its Launchpad credentials "
+                    "likely need reauthorizing -- run 'python3 "
+                    "privileged_helper.py login'"
+                )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"privileged helper exited {result.returncode}: "
+                f"{result.stderr.strip()}"
+            )
+        return result
+
     def unsubscribe_sponsors(self, lp_obj):
         """
         Unsubscribes ubuntu-sponsors from a bug.
@@ -329,18 +398,7 @@ class LPClient:
                 # Delegated to the privileged helper (#78): a separate
                 # process, separate token, separate account -- see the
                 # module docstring in privileged_helper.py.
-                result = subprocess.run(
-                    [sys.executable, _HELPER_SCRIPT, "unsubscribe-sponsors",
-                     str(lp_obj.id)],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"privileged helper exited {result.returncode}: "
-                        f"{result.stderr.strip()}"
-                    )
+                result = self._run_helper_unsubscribe(lp_obj.id)
                 logger.info("privileged helper: %s", result.stdout.strip())
             else:
                 lp_obj.unsubscribe(person=sponsors_team)
