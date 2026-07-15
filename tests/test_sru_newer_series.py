@@ -155,6 +155,57 @@ def test_series_named_patch_attachment_counts_as_handled():
     )
 
 
+_STONKING_DEBDIFF = """\
+diff -Nru testpkg-1.2/debian/changelog testpkg-1.2/debian/changelog
+--- testpkg-1.2/debian/changelog\t2026-06-01 10:00:00.000000000 +0200
++++ testpkg-1.2/debian/changelog\t2026-07-11 10:00:00.000000000 +0200
+@@ -1,3 +1,7 @@
++testpkg (1.2-4ubuntu2) stonking; urgency=medium
++
++  * Fix things.
++
++ -- Dev <dev@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ testpkg (1.2-4ubuntu1) resolute; urgency=medium
+"""
+
+
+def test_series_attachment_without_a_series_named_filename_still_counts():
+    # Live regression (#97, neutron bug #2150285): the debdiff's filename is
+    # named after the bug number and version, not the series ('lp2150285_
+    # 28.0.0-0ubuntu2.debdiff') -- the changelog stanza's own suite field
+    # ('stonking') is what actually tells us where it targets.
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu Resolute)", "In Progress")],
+        attachments=[
+            FakeAttachment(
+                "lp2150285_1.2-4ubuntu2.debdiff",
+                type="Patch",
+                content=_STONKING_DEBDIFF,
+            ),
+        ],
+    )
+    assert checks.check_sru_newer_series("url", bug, _LP(), FakeLLM()) is False
+
+
+def test_series_attachment_content_does_not_match_the_wrong_series():
+    # Control: the stonking debdiff above doesn't also cover a still-open
+    # noble ask that nothing addresses.
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu Noble)", "In Progress")],
+        attachments=[
+            FakeAttachment(
+                "lp2150285_1.2-4ubuntu2.debdiff",
+                type="Patch",
+                content=_STONKING_DEBDIFF,
+            ),
+        ],
+    )
+    finding = checks.check_sru_newer_series("url", bug, _LP(), FakeLLM())
+    assert finding and "resolute" in finding.message
+    assert "stonking" not in finding.message
+
+
 # --- the removed-package exemption (#69) --------------------------------------
 
 

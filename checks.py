@@ -2449,12 +2449,48 @@ def _classify_against_publication_bug(
 _SERIES_TASK_RE = re.compile(r"^(?P<pkg>\S+) \(Ubuntu (?P<series>[A-Za-z]+)\)$")
 
 
-def _series_evidence(bug, package, series_name, is_devel, devel_name):
+def _bug_attachment_target_series(bug):
+    """
+    All series named by this bug's patch/debdiff attachments, read from
+    each one's new changelog stanza 'suite' field (pocket suffix stripped) --
+    the actual upload target, not the filename. Debdiff filenames are
+    usually named after the bug number and version ('lp2150285_28.0.0-
+    0ubuntu2.debdiff'), which rarely spells out the series, so the SRU
+    'one debdiff per series' shape needs the changelog content itself
+    (design_journal.md #97, found live on neutron bug #2150285: a Stonking
+    debdiff attached, but its filename didn't say so, so Check 7 missed it).
+
+    Attachments that aren't diff-shaped or carry no new changelog entry are
+    silently skipped (the title-substring fallback in _series_evidence
+    still covers those). Raises on a fetch failure -- the caller maps that
+    to inconclusive.
+    """
+    targets = set()
+    for attachment in attachments.patch_attachments(bug):
+        text = attachments.attachment_text(attachment)
+        if text is None:
+            raise RuntimeError(
+                f"could not fetch attachment {attachment.title!r}"
+            )
+        if text is False:
+            continue
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        if not stanza:
+            continue
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        if not header:
+            continue
+        targets.add(_POCKET_SUFFIX_RE.sub("", header.group("suite").lower()))
+    return targets
+
+
+def _series_evidence(bug, package, series_name, is_devel, devel_name, attachment_targets):
     """
     Whether `bug` shows the fix for `package` is handled in `series_name`:
     its bug task is Fix Released/Committed, a linked (active) MP targets
-    that series, or a patch attachment names it. Purely mechanical -- the
-    'bug text says it's fixed there' case is the LLM's question, not ours.
+    that series, or a patch attachment's own changelog stanza (or, as a
+    weaker fallback, its filename) names it. Purely mechanical -- the 'bug
+    text says it's fixed there' case is the LLM's question, not ours.
     Raises on Launchpad read failures (callers map that to inconclusive).
     """
     task_name = f"{package} (Ubuntu)" if is_devel else f"{package} (Ubuntu {series_name.title()})"
@@ -2472,6 +2508,10 @@ def _series_evidence(bug, package, series_name, is_devel, devel_name):
         mp_series = match.group("series")
         if mp_series == series_name or (is_devel and mp_series in ("devel", devel_name)):
             return True
+    if series_name in attachment_targets or (
+        is_devel and devel_name in attachment_targets
+    ):
+        return True
     for attachment in bug.attachments:
         title = (attachment.title or "").lower()
         if series_name.lower() in title:
@@ -2622,10 +2662,22 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     newer = series_names[series_names.index(target_series) + 1 :]
     unhandled = []
     try:
+        # Computed once per bug (not once per newer series) -- attachment
+        # content is the same regardless of which series we're checking.
+        attachment_targets_by_bug = {
+            id(bug): _bug_attachment_target_series(bug) for bug in bugs
+        }
         for series_name in newer:
             is_devel = series_name == devel_name
             if not any(
-                _series_evidence(bug, package, series_name, is_devel, devel_name)
+                _series_evidence(
+                    bug,
+                    package,
+                    series_name,
+                    is_devel,
+                    devel_name,
+                    attachment_targets_by_bug[id(bug)],
+                )
                 for bug in bugs
             ):
                 unhandled.append(series_name)
