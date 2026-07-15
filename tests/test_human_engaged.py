@@ -106,6 +106,55 @@ def test_missing_diff_timestamp_still_counts_reviewer_comment():
     assert checks.check_human_engaged(mp, _client({URL: mp})) is True
 
 
+def test_submitter_reply_after_reviewer_resumes_review():
+    # #96: the reviewer asked for something, the submitter answered on the
+    # same diff -- the ball is back with the queue, so the bot should look
+    # again rather than stay suppressed forever.
+    mp = _mp(
+        [
+            FakeMPComment(REVIEWER, "please fix X", AFTER_DIFF),
+            FakeMPComment(
+                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
+            ),
+        ],
+        diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
+    )
+    assert checks.check_human_engaged(mp, _client({URL: mp})) is False
+
+
+def test_reviewer_reply_after_submitter_stays_engaged():
+    # The submitter answered, but the reviewer came back afterward -- still
+    # their conversation, still engaged.
+    mp = _mp(
+        [
+            FakeMPComment(REVIEWER, "please fix X", AFTER_DIFF),
+            FakeMPComment(
+                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
+            ),
+            FakeMPComment(
+                REVIEWER, "still not right", AFTER_DIFF + datetime.timedelta(hours=2)
+            ),
+        ],
+        diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
+    )
+    assert checks.check_human_engaged(mp, _client({URL: mp})) is True
+
+
+def test_undated_comment_falls_back_to_any_qualifying_comment_counts():
+    # A comment without a timestamp can't be ranked against the rest --
+    # conservatively treat that as still engaged, same as the pre-#96 rule.
+    mp = _mp(
+        [
+            FakeMPComment(
+                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
+            ),
+            FakeMPComment(REVIEWER, "please fix X", None),
+        ],
+        diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
+    )
+    assert checks.check_human_engaged(mp, _client({URL: mp})) is True
+
+
 def test_unreadable_comment_history_is_inconclusive():
     class _BrokenCommentsMP(FakeMP):
         @property
@@ -169,6 +218,21 @@ def test_bug_comment_after_the_current_attachment_counts():
         ],
     )
     assert checks.check_human_engaged(bug, _client({URL: bug})) is True
+
+
+def test_bug_reporter_reply_after_reviewer_resumes_review():
+    # #96, the live trigger (ghostty bug #2155110): a reviewer asked for an
+    # SRU template, the reporter added one afterward -- resume, don't stay
+    # suppressed.
+    bug = _bug(
+        [
+            FakeBugMessage(REVIEWER, "needs a SRU template", AFTER_DIFF),
+            FakeBugMessage(
+                HUMAN, "added the template", AFTER_DIFF + datetime.timedelta(hours=1)
+            ),
+        ]
+    )
+    assert checks.check_human_engaged(bug, _client({URL: bug})) is False
 
 
 # --- end-to-end ---------------------------------------------------------------

@@ -142,19 +142,33 @@ def check_human_engaged(lp_obj, lp_client):
 
 def _check_human_engaged(lp_obj, lp_client):
     """
-    True if a human reviewer is already engaged on this item, i.e. someone
-    other than the submitter (and other than the bot itself) commented since
-    the current diff was pushed (design_journal.md #35). main.py uses this to
-    suppress the aggregated incomplete/question findings: the bot exists for
-    early feedback *before* a sponsor spends time on an item, so once one is
-    actively reviewing, a bot bounce is redundant at best and confusing at
-    worst. Only suppresses findings-tier output -- closing-tier outcomes
-    (already resolved) are decided before this is ever consulted.
+    True if a human reviewer is actively engaged on this item -- i.e. the
+    most recent qualifying comment since the current diff/attachment is from
+    someone other than the submitter or the bot itself (design_journal.md
+    #35, revised by #96). main.py uses this to suppress the aggregated
+    incomplete/question findings: the bot exists for early feedback *before*
+    a sponsor spends time on an item, so once one is actively reviewing, a
+    bot bounce is redundant at best and confusing at worst. Only suppresses
+    findings-tier output -- closing-tier outcomes (already resolved) are
+    decided before this is ever consulted.
+
+    #96: engagement is decided by who has the LAST word, not merely whether
+    a reviewer ever commented. Found live on ghostty bug #2155110: a
+    reviewer asked for an SRU template, the submitter replied with one on
+    the same attachment, and the old "any qualifying comment counts" rule
+    kept the bot silent forever even though the ball was back with the
+    review queue. If the submitter's own comment is the most recent one
+    since the anchor, the item is treated as not engaged (a fresh look is
+    due); a comment without a timestamp can't be ordered against the rest,
+    so its presence forces the older, more conservative "any comment counts"
+    behavior rather than guessing.
 
     Deliberately counts a comment from ANY non-submitter account, not just
     ~ubuntu-dev members: non-core contributors leave real review feedback
     too. Known service accounts (SERVICE_ACCOUNTS above) are excluded so an
-    automated comment can never silence the bot.
+    automated comment can never silence the bot, and the bot's own comments
+    are excluded from the ordering entirely (never "the submitter's last
+    word" nor "a reviewer's last word").
 
     A comment only counts if made after preview_diff.date_created (the same
     anchor as #30's grace period): a fresh push generates a new diff, so a
@@ -213,8 +227,9 @@ def _check_human_engaged(lp_obj, lp_client):
         else:
             return False
 
+        qualifying = []
         for author, date in comments:
-            if author in (me, submitter):
+            if author == me:
                 continue
             if author.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
                 logger.debug(
@@ -222,24 +237,51 @@ def _check_human_engaged(lp_obj, lp_client):
                     author,
                 )
                 continue
-            if anchor is not None and date is not None:
-                if date <= anchor:
-                    logger.debug(
-                        "  [engaged] ignoring comment by %s: predates the "
-                        "current %s (%s <= %s).",
-                        author,
-                        anchor_desc,
-                        date,
-                        anchor,
-                    )
-                    continue
+            if anchor is not None and date is not None and date <= anchor:
+                logger.debug(
+                    "  [engaged] ignoring comment by %s: predates the "
+                    "current %s (%s <= %s).",
+                    author,
+                    anchor_desc,
+                    date,
+                    anchor,
+                )
+                continue
+            qualifying.append((author, date))
+
+        if not qualifying:
+            return False
+
+        # #96: rank by timestamp to find who has the last word. A comment
+        # without one can't be ordered against the rest -- fall back to the
+        # pre-#96 conservative rule (any qualifying non-submitter comment
+        # means engaged) rather than guessing at an order.
+        if any(date is None for _, date in qualifying):
+            if all(author == submitter for author, _ in qualifying):
+                return False
             logger.info(
-                "  [engaged] human reviewer already engaged: comment by %s "
-                "since the current %s.",
-                author,
+                "  [engaged] human reviewer already engaged: comment(s) "
+                "since the current %s (a timestamp is missing, so the most "
+                "recent can't be determined).",
                 anchor_desc,
             )
             return True
+
+        latest_author, _ = max(qualifying, key=lambda item: item[1])
+        if latest_author == submitter:
+            logger.info(
+                "  [engaged] most recent comment since the current %s is "
+                "from the submitter; resuming review.",
+                anchor_desc,
+            )
+            return False
+        logger.info(
+            "  [engaged] human reviewer already engaged: most recent "
+            "comment since the current %s is from %s.",
+            anchor_desc,
+            latest_author,
+        )
+        return True
     except Exception as e:
         logger.warning(
             "  [engaged] could not read the comment history (%s); "
