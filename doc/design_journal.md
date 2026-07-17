@@ -1504,3 +1504,37 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   (7 new; 514 total).
 * Test-fake note: `tests/fakes.py` `FakeLLM` grew `start_item()` (records
   URLs in `started_items`) since main now calls it per item.
+
+## 101. Sweep State Advances Only When Its Writes Actually Landed
+
+* **Trigger:** the second High finding from the external reviews (see #99/
+  #100 for the first), re-verified against the code: `sweep.py`'s three
+  action paths (new-diff flip, response-addressed flip, 30-day close)
+  performed their Launchpad writes and then unconditionally called
+  `state_manager.update_status(...)`. In `--dry-run`, on a declined
+  `[y/N]`, or on an errored write nothing happened on Launchpad, yet the
+  bug's state still left WAITING_ON_CONTRIBUTOR -- dropping it from
+  `bounced_bugs()` forever, the sweep action silently never happening.
+  The exact bug class #36 fixed for the main triage path; the sweep
+  (built later, #66) never got the same gating, and its tests only used
+  an always-successful fake.
+* **Second latent bug found while fixing:** `_sweep_one` never called
+  `lp_client.start_item()`, so the sweep inherited the *previous queue
+  item's* write outcomes -- a stale failure from an unrelated item could
+  wrongly block a perfectly good sweep state advance (and the gating
+  now added would have made that visible).
+* **Fix:** `lp_client.start_item()` at the top of `_sweep_one`, and a
+  shared `_advance_state_if_writes_landed(...)` helper replacing the
+  three unconditional `update_status` calls: advance only when
+  `lp_client.all_writes_effective()`, else log ("dry-run/declined/no
+  TTY/error ... retrying next sweep") and leave the state untouched.
+  Comment dedup (#38) keeps the eventual retry from double-posting.
+* **Scope note:** the reviews' adjacent suggestion (remember which tasks
+  the bot itself set Incomplete so `set_bug_tasks_new` can't reset a
+  human-set Incomplete task) is deliberately NOT part of this -- it has
+  state-schema implications and goes to the backlog on its own merits.
+* Tests: 5 new in test_sweep.py (dry-run, declined, errored, happy path
+  still advances, stale-outcome reset), reusing FakeTriageClient's
+  existing `write_outcome` knob. 519 total. Not live-verifiable: Rule B
+  remains live-unexercised (no bug bounce has aged into the sweep yet),
+  same as #66 itself.

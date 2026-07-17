@@ -220,3 +220,61 @@ def test_one_broken_bug_does_not_kill_the_pass(tmp_path):
     lp = FakeTriageClient(objects={URL: bug})  # broken_url raises KeyError
     sweep.sweep_bounced_bugs(sm, lp, FakeLLM())
     assert sm.get_status(URL)[0] == "DONE"
+
+
+# --- write-effectiveness gating (external review finding, 2026-07-17) --------
+# A sweep write that didn't actually happen (dry-run, declined, error) must
+# not advance the stored state -- otherwise the bug drops out of
+# bounced_bugs() forever and the action silently never happens.
+
+
+def _run_with_outcome(tmp_path, bug, outcome, llm=None):
+    sm = _state(tmp_path)
+    lp = FakeTriageClient(objects={URL: bug}, write_outcome=outcome)
+    sweep.sweep_bounced_bugs(sm, lp, llm or FakeLLM())
+    return sm, lp
+
+
+def test_dry_run_diff_flip_does_not_advance_state(tmp_path):
+    bug = _bounced_bug(
+        attachments=[
+            FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=AFTER_BOUNCE)
+        ]
+    )
+    sm, lp = _run_with_outcome(tmp_path, bug, "dry-run")
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+    assert [u for u, _r in sm.bounced_bugs()] == [URL]  # still swept next run
+
+
+def test_declined_response_flip_does_not_advance_state(tmp_path):
+    llm = FakeLLM()
+    llm.bounce_addressed = True
+    bug = _bounced_bug(
+        messages=[FakeBugMessage(HUMAN, "Done, see the PPA", AFTER_BOUNCE)]
+    )
+    sm, lp = _run_with_outcome(tmp_path, bug, "declined", llm=llm)
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+
+
+def test_errored_sweep_close_does_not_advance_state(tmp_path):
+    bug = _bounced_bug(incomplete_since=OLD_BOUNCE)
+    sm, lp = _run_with_outcome(tmp_path, bug, "error")
+    assert len(lp.comments) == 1  # the attempt happened...
+    assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"  # ...but state waits
+
+
+def test_effective_writes_still_advance_state(tmp_path):
+    bug = _bounced_bug(incomplete_since=OLD_BOUNCE)
+    sm, lp = _run_with_outcome(tmp_path, bug, "performed")
+    assert sm.get_status(URL)[0] == "DONE"
+
+
+def test_stale_outcome_from_a_previous_item_does_not_block_the_sweep(tmp_path):
+    # start_item() must reset write tracking per swept bug: a failed write
+    # left over from the preceding queue item is not this bug's problem.
+    sm = _state(tmp_path)
+    bug = _bounced_bug(incomplete_since=OLD_BOUNCE)
+    lp = FakeTriageClient(objects={URL: bug})
+    lp.write_outcomes = ["error"]  # residue from an earlier item
+    sweep.sweep_bounced_bugs(sm, lp, FakeLLM())
+    assert sm.get_status(URL)[0] == "DONE"

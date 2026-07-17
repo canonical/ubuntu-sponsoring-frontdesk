@@ -1054,7 +1054,13 @@ issue and a plan for tomorrow, not yet implemented.
   (`llm_reviewer.py:184,203`) needs redaction for embargoed/private bug
   content.
 - **Sweep advances state without checking write effectiveness (High,
-  correctness).** `sweep.py`'s three write sites (`_sweep_one`, lines ~79,
+  correctness) -- DONE 2026-07-17, see design_journal.md #101.**
+  `_sweep_one` now calls `start_item()` and gates every `update_status`
+  on `all_writes_effective()`; 5 failure-mode tests added. A second
+  latent bug (stale write outcomes inherited from the previous queue
+  item) was found and fixed by the same change. The reviews' adjacent
+  suggestion (track which tasks the bot set Incomplete) went to the
+  backlog. Original finding, for the record: `sweep.py`'s three write sites (`_sweep_one`, lines ~79,
   104, 139) call `lp_client.set_bug_tasks_new()` / `comment()` /
   `unsubscribe_sponsors()` and then unconditionally call
   `state_manager.update_status(url, "READY_FOR_HUMAN"/"DONE", ...)` --

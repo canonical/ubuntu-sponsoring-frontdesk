@@ -56,7 +56,31 @@ def sweep_bounced_bugs(state_manager, lp_client, llm_reviewer):
             logger.exception("Sweep: unexpected error on %s; skipping.", url)
 
 
+def _advance_state_if_writes_landed(url, state_manager, lp_client, status, details):
+    """Advance a swept bug's stored state only when every write this item
+    actually took effect (external review finding, 2026-07-17; the #36
+    pattern applied to the sweep). In dry-run, on a declined [y/N], or on
+    an errored write, nothing happened on Launchpad -- advancing the state
+    anyway would drop the bug from bounced_bugs() forever and the sweep
+    action would silently never happen. Leaving WAITING_ON_CONTRIBUTOR
+    retries next run; comment dedup (#38) keeps the retry from
+    double-posting."""
+    if lp_client.all_writes_effective():
+        state_manager.update_status(url, status, details)
+        return
+    logger.info(
+        "[%s] a sweep write was not performed (dry-run/declined/no TTY/"
+        "error). Leaving WAITING_ON_CONTRIBUTOR; retrying next sweep.",
+        url,
+    )
+
+
 def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
+    # Fresh per-item write-outcome tracking: without this the sweep would
+    # inherit the last queue item's outcomes -- a stale failure could
+    # wrongly block a state advance here, and (worse, pre-fix) a clean
+    # slate was never guaranteed for the gating below.
+    lp_client.start_item()
     # #100: each swept bug is its own item for the LLM call budget.
     llm_reviewer.start_item(url)
     lp_obj = lp_client.load_url(url)
@@ -79,8 +103,10 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
             url,
         )
         lp_client.set_bug_tasks_new(bug)
-        state_manager.update_status(
+        _advance_state_if_writes_landed(
             url,
+            state_manager,
+            lp_client,
             "READY_FOR_HUMAN",
             "New attachment since the bounce; tasks set back to New.",
         )
@@ -104,8 +130,10 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
                     url,
                 )
                 lp_client.set_bug_tasks_new(bug)
-                state_manager.update_status(
+                _advance_state_if_writes_landed(
                     url,
+                    state_manager,
+                    lp_client,
                     "READY_FOR_HUMAN",
                     "Response addresses the bounce; tasks set back to New.",
                 )
@@ -140,8 +168,10 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
     )
     lp_client.comment(bug, SWEEP_COMMENT)
     lp_client.unsubscribe_sponsors(bug)
-    state_manager.update_status(
+    _advance_state_if_writes_landed(
         url,
+        state_manager,
+        lp_client,
         "DONE",
         "Swept: no response to the review feedback in over a month; "
         "~ubuntu-sponsors unsubscribed.",
