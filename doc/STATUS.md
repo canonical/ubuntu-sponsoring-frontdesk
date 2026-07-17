@@ -1032,9 +1032,13 @@ issue and a plan for tomorrow, not yet implemented.
   -- security core DONE 2026-07-17, see design_journal.md #99.** Tool-less
   `sponsoring-reviewer` opencode agent + flag dropped + agent-fallback
   stderr check + tool_use tripwire + 300s timeout, live-verified against a
-  real injection payload. Still open from this finding: prompt/reply DEBUG
-  logging redaction for embargoed/private bug content, and the resource
-  limits (queued as #100). Original finding, for the record:
+  real injection payload. **Resource limits DONE 2026-07-17, see
+  design_journal.md #100:** input caps on all free-text prompt sources,
+  per-item (6) + per-run (100) call budgets with a one-shot operator
+  notification on exhaustion, per-call usage records in `audit.jsonl`, and
+  an end-of-run summary line. Still open from this finding: prompt/reply
+  DEBUG logging redaction for embargoed/private bug content. Original
+  finding, for the record:
   `llm_reviewer._query_llm` (`llm_reviewer.py:185`) invokes `opencode run
   --format json --dangerously-skip-permissions`. Bug/MP text is
   attacker-controlled and goes straight into the prompt; the flag bypasses

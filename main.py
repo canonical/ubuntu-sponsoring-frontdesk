@@ -183,6 +183,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # write's outcome per item; a declined write is retried (re-prompted) on
     # the next run, same as a transient failure.
     lp_client.start_item()
+    # #100: reset the per-item LLM call budget and tag usage records.
+    llm_reviewer.start_item(url)
     # Fresh item, fresh diff-content memo (design_journal.md #39) -- checks
     # 2/5/6 share one fetch of the same preview diff within this item.
     checks.reset_diff_lines_cache()
@@ -739,7 +741,8 @@ def main():
         # run now produces).
         logger.error("Failed to authenticate to Launchpad: %s", e)
         sys.exit(1)
-    llm_reviewer = LLMReviewer(lp=lp_client.lp)
+    # #100: the shared audit trail also receives per-LLM-call usage records.
+    llm_reviewer = LLMReviewer(lp=lp_client.lp, audit=lp_client.audit)
 
     if args.url:
         triage_url(args.url, state_manager, lp_client, llm_reviewer, force=args.force)
@@ -750,6 +753,7 @@ def main():
         # Rule B (#66): after the queue pass, revisit the bugs we bounced
         # earlier and are still waiting on.
         sweep.sweep_bounced_bugs(state_manager, lp_client, llm_reviewer)
+    llm_reviewer.log_run_summary()
 
 
 if __name__ == "__main__":

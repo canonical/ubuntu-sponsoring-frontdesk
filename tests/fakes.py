@@ -409,6 +409,11 @@ class FakeLLM:
         self.bug_result = bug_result
         self.mp_result = mp_result
 
+    def start_item(self, url=""):
+        # #100: mirrors LLMReviewer.start_item (per-item budget/url reset).
+        self.started_items = getattr(self, "started_items", [])
+        self.started_items.append(url)
+
     def triage_bug(self, obj):
         return self.bug_result
 

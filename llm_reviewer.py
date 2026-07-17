@@ -6,6 +6,7 @@ import subprocess
 import yaml
 
 import archive_lookup
+import notify
 import release_schedule
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,18 @@ _OPENCODE_AGENT = "sponsoring-reviewer"
 # healthy calls observed live (large MP diffs) finish well under this.
 _LLM_TIMEOUT_SECONDS = 300
 
+# #100: cost/runaway guards. No healthy item needs more than a handful of
+# calls (an SRU MP makes one per linked bug plus the MP review); a run over
+# the run budget means either a pathological queue or a bug in the bot --
+# either way stop spending and tell the operator. Both numbers are first
+# guesses (seb128, 2026-07-17) -- tweak from live experience.
+_ITEM_LLM_CALL_BUDGET = 6
+_RUN_LLM_CALL_BUDGET = 100
+
+# #100: cap on each untrusted free-text prompt source (bug descriptions,
+# comment threads). The MP diff has its own cap (_MP_DIFF_CAP below).
+_PROMPT_TEXT_CAP = 20_000
+
 _MP_DIFF_CAP = 30_000
 
 # Cap on the non-debian/ path listing in the MP prompt. A vendored-tree MP
@@ -171,13 +184,58 @@ def _split_debian_diff(diff_text):
     return "".join(debian_sections), other_files
 
 
+def _cap_text(text, limit=_PROMPT_TEXT_CAP):
+    """Cap an untrusted prompt source at `limit` characters (#100).
+
+    Prompt sources like bug descriptions and comment threads have no
+    natural size bound; without a cap a pathological item could blow up
+    token spend (or exceed the model's context) on a single call. The
+    truncation is marked so the LLM knows it isn't seeing everything and
+    doesn't judge the text incomplete for the wrong reason.
+    """
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[... truncated by the bot: content exceeds the size cap]"
+
+
 class LLMReviewer:
-    def __init__(self, provider="placeholder", lp=None):
+    def __init__(self, provider="placeholder", lp=None, audit=None):
         self.provider = provider
         # Reuses the bot's already-authenticated launchpadlib session for the
         # Ubuntu archive lookups in _triage_sync (see archive_lookup.py). May
         # be None when no archive-backed checks are needed (e.g. in tests).
         self.lp = lp
+        # #100: per-call usage records land in the shared audit trail when
+        # one is provided (main passes lp_client.audit). Recorded directly,
+        # NOT through LPClient._record_write -- an LLM call is not a write
+        # and must not affect all_writes_effective().
+        self.audit = audit
+        self._current_url = ""
+        # #100: call budgets. The per-item counter resets in start_item();
+        # the per-run counters live for the LLMReviewer's lifetime (one
+        # instance per run). Both exhaust into the FAIL -> inconclusive
+        # path, so a budgeted-out item defers to the next run/a human
+        # rather than being judged on partial review.
+        self._item_calls = 0
+        self._run_calls = 0
+        self._run_budget_notified = False
+        self._run_usage_totals = {"total": 0, "cost": 0.0}
+
+    def start_item(self, url=""):
+        """Reset per-item LLM state (#100). Called by main/sweep at the
+        start of each URL, mirroring LPClient.start_item()."""
+        self._item_calls = 0
+        self._current_url = url or ""
+
+    def log_run_summary(self):
+        """One end-of-run line: LLM calls made and tokens/cost consumed."""
+        logger.info(
+            "[llm] run summary: %d call(s), %d token(s), cost $%.4f",
+            self._run_calls,
+            self._run_usage_totals["total"],
+            self._run_usage_totals["cost"],
+        )
 
     def _query_llm(self, prompt, model="high-complexity"):
         """
@@ -205,6 +263,32 @@ class LLMReviewer:
         checked for that fallback; and a reply whose event stream contains
         any tool_use event is discarded outright.
         """
+        # #100: budget checks before spending anything. Run budget first --
+        # once it trips, every remaining item this run defers, and the
+        # operator hears about it exactly once.
+        if self._run_calls >= _RUN_LLM_CALL_BUDGET:
+            if not self._run_budget_notified:
+                self._run_budget_notified = True
+                message = (
+                    "ubuntu-sponsoring-bot: LLM run budget exhausted "
+                    f"({_RUN_LLM_CALL_BUDGET} calls); the remaining items "
+                    "this pass are deferred. A pathological queue item or a "
+                    "bot bug is likely -- check the logs."
+                )
+                logger.warning(message)
+                notify.notify(message)
+            return "FAIL: LLM run call budget exhausted."
+        if self._item_calls >= _ITEM_LLM_CALL_BUDGET:
+            logger.warning(
+                "[llm] per-item call budget (%d) exhausted for %s; "
+                "deferring this item.",
+                _ITEM_LLM_CALL_BUDGET,
+                self._current_url or "<no url>",
+            )
+            return "FAIL: LLM per-item call budget exhausted."
+        self._item_calls += 1
+        self._run_calls += 1
+
         logger.info("--> [LLM Dispatcher] Querying opencode...")
         logger.debug("[llm] prompt sent to opencode:\n%s", prompt)
         cmd = ["opencode", "run", "--format", "json", "--agent", _OPENCODE_AGENT]
@@ -252,6 +336,25 @@ class LLMReviewer:
                 return "FAIL: LLM reply used tools."
             logger.debug("[llm] raw reply from opencode:\n%s", output)
             if usage is not None:
+                # #100: durable per-call usage record + run totals. Not a
+                # write, so recorded straight into the audit trail rather
+                # than via LPClient (which would gate facts persistence).
+                self._run_usage_totals["total"] += usage["total"]
+                self._run_usage_totals["cost"] += usage["cost"]
+                if self.audit is not None:
+                    self.audit.record(
+                        url=self._current_url,
+                        action="llm_call",
+                        target="opencode",
+                        mode="llm",
+                        outcome="performed",
+                        detail=(
+                            f"tokens={usage['total']} "
+                            f"cost=${usage['cost']:.4f} "
+                            f"item_call={self._item_calls} "
+                            f"run_call={self._run_calls}"
+                        ),
+                    )
                 logger.debug(
                     "[llm] token usage: total=%d input=%d output=%d "
                     "reasoning=%d cache_read=%d cache_write=%d cost=$%.4f",
@@ -404,6 +507,7 @@ class LLMReviewer:
         Evaluates if an SRU bug description has adequately filled out the required sections.
         Returns (True, "") if pass, or (False, "reason/comment") if fail.
         """
+        bug_description = _cap_text(bug_description)
         prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
 Review the bug description below and determine whether it follows the SRU
 (Stable Release Update) template. It must contain [Impact], [Test Plan], and
@@ -453,6 +557,7 @@ reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
         an LLM mistake can only mis-word a nudge, never block or vote), or
         None (the LLM invocation itself failed -- inconclusive, retry).
         """
+        bug_text = _cap_text(bug_text)
         series_list = ", ".join(series_names)
         prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This request is a Stable Release Update (SRU). SRU policy requires the fix to
@@ -520,7 +625,12 @@ verdict: not-stated   # use `fixed` if the text states or implies the issue is a
         back to the 30-day sweep timer), or None (the LLM invocation failed
         -- inconclusive, retry next run).
         """
-        joined = "\n\n---\n\n".join(comments)
+        # #100: keep the newest comments (the response to the feedback is
+        # usually last), cap each one, and cap the feedback itself.
+        bounce_reason = _cap_text(bounce_reason, limit=10_000)
+        joined = "\n\n---\n\n".join(
+            _cap_text(c, limit=4_000) for c in comments[-20:]
+        )
         prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This bug was earlier marked Incomplete with the review feedback quoted below,
 and the contributor (or someone else) has since commented. Decide whether the

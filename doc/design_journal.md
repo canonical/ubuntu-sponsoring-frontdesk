@@ -1469,3 +1469,38 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * **Follow-up queued as #100:** input caps on all prompt sources, per-item
   (6) and per-run (100) LLM call budgets with operator notification, and
   durable usage accounting in audit.jsonl.
+
+## 100. LLM Resource Limits: Input Caps, Call Budgets, Durable Usage
+
+* **Trigger:** the resource-limits half of the external reviews' findings
+  (see #99 for the security half): LLM calls had no timeout (fixed in
+  #99), no input bound on most prompt sources, no per-item or per-run call
+  limit, and token/cost data lived only in DEBUG logs.
+* **Input caps** (`_cap_text`, marker-suffixed so the LLM knows content is
+  cut): bug descriptions in `review_sru_template` and `review_sync_*`
+  (via their shared entry points) and the bug text in
+  `review_fixed_in_newer_series` at `_PROMPT_TEXT_CAP` (20k chars);
+  `review_bounce_response` keeps the newest 20 comments, each capped at
+  4k, and caps the quoted bounce feedback at 10k. The MP diff keeps its
+  existing 30k cap (#47).
+* **Call budgets** enforced inside `_query_llm`, both failing safe into
+  the existing "FAIL:" -> inconclusive/defer path, never a partial
+  judgment: per-item `_ITEM_LLM_CALL_BUDGET` (6; reset by the new
+  `LLMReviewer.start_item(url)`, wired next to `lp_client.start_item()`
+  in main and per swept bug in sweep) and per-run
+  `_RUN_LLM_CALL_BUDGET` (100; on exhaustion the LLM phase stops for the
+  rest of the pass and `notify.py` pings the operator exactly once).
+  Numbers are first guesses (seb128, 2026-07-17) -- tweak from live
+  experience.
+* **Durable usage accounting:** every completed call appends an
+  `action="llm_call"` record to the shared `audit.jsonl` (url, tokens,
+  cost, item/run call counters) -- recorded directly, NOT via
+  `LPClient._record_write`, so it can't perturb `all_writes_effective()`
+  facts gating. `log_run_summary()` logs one end-of-run total line from
+  main.
+* Live-verified with a real opencode call: reply, audit record
+  (`tokens=1951 cost=$0.0074 item_call=1 run_call=1`), and the summary
+  line all correct. Budget exhaustion and caps covered by unit tests
+  (7 new; 514 total).
+* Test-fake note: `tests/fakes.py` `FakeLLM` grew `start_item()` (records
+  URLs in `started_items`) since main now calls it per item.

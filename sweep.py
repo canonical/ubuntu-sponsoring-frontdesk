@@ -57,6 +57,8 @@ def sweep_bounced_bugs(state_manager, lp_client, llm_reviewer):
 
 
 def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
+    # #100: each swept bug is its own item for the LLM call budget.
+    llm_reviewer.start_item(url)
     lp_obj = lp_client.load_url(url)
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     bug = lp_obj.bug if resource_type == "bug_task" else lp_obj

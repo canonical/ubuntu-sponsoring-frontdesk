@@ -229,3 +229,115 @@ def test_query_llm_timeout_fails_safe(monkeypatch, caplog):
     with caplog.at_level("WARNING"):
         result = r._query_llm("prompt")
     assert result == "FAIL: LLM invocation timed out."
+
+
+# --- #100: call budgets, input caps, usage accounting -------------------------
+
+
+def _ok_run(monkeypatch, calls=None):
+    def fake_run(cmd, input, text, capture_output, check, timeout):
+        if calls is not None:
+            calls.append(input)
+        stdout = _ndjson(_text_event("reply"), _step_finish_event(total=10, cost=0.001))
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+
+def test_per_item_budget_defers_after_the_cap(monkeypatch):
+    calls = []
+    _ok_run(monkeypatch, calls)
+    r = LLMReviewer()
+    r.start_item("https://bugs.launchpad.net/bugs/1")
+    for _ in range(llm_reviewer._ITEM_LLM_CALL_BUDGET):
+        assert r._query_llm("p") == "reply"
+    assert r._query_llm("p") == "FAIL: LLM per-item call budget exhausted."
+    assert len(calls) == llm_reviewer._ITEM_LLM_CALL_BUDGET
+    # A new item gets a fresh budget.
+    r.start_item("https://bugs.launchpad.net/bugs/2")
+    assert r._query_llm("p") == "reply"
+
+
+def test_run_budget_defers_and_notifies_once(monkeypatch, caplog):
+    _ok_run(monkeypatch)
+    notifications = []
+    monkeypatch.setattr(llm_reviewer.notify, "notify", notifications.append)
+    r = LLMReviewer()
+    monkeypatch.setattr(llm_reviewer, "_ITEM_LLM_CALL_BUDGET", 10**6)
+    monkeypatch.setattr(llm_reviewer, "_RUN_LLM_CALL_BUDGET", 3)
+    for _ in range(3):
+        assert r._query_llm("p") == "reply"
+    with caplog.at_level("WARNING"):
+        assert r._query_llm("p") == "FAIL: LLM run call budget exhausted."
+        assert r._query_llm("p") == "FAIL: LLM run call budget exhausted."
+    assert len(notifications) == 1  # operator pinged exactly once
+    # start_item does NOT reset the run budget.
+    r.start_item("u")
+    assert r._query_llm("p") == "FAIL: LLM run call budget exhausted."
+
+
+def test_usage_is_recorded_in_the_audit_trail(monkeypatch):
+    _ok_run(monkeypatch)
+
+    class _Audit:
+        records = []
+
+        def record(self, **kw):
+            self.records.append(kw)
+
+    audit = _Audit()
+    r = LLMReviewer(audit=audit)
+    r.start_item("https://bugs.launchpad.net/bugs/7")
+    r._query_llm("p")
+    assert len(audit.records) == 1
+    entry = audit.records[0]
+    assert entry["action"] == "llm_call"
+    assert entry["url"] == "https://bugs.launchpad.net/bugs/7"
+    assert "tokens=10" in entry["detail"]
+    assert "cost=$0.0010" in entry["detail"]
+
+
+def test_run_summary_totals_usage(monkeypatch, caplog):
+    _ok_run(monkeypatch)
+    r = LLMReviewer()
+    r.start_item("u")
+    r._query_llm("p")
+    r._query_llm("p")
+    with caplog.at_level("INFO"):
+        r.log_run_summary()
+    assert "2 call(s)" in caplog.text
+    assert "20 token(s)" in caplog.text
+
+
+def test_cap_text_marks_truncation():
+    capped = llm_reviewer._cap_text("x" * 25_000)
+    assert len(capped) < 25_000
+    assert "truncated by the bot" in capped
+    assert llm_reviewer._cap_text("short") == "short"
+    assert llm_reviewer._cap_text(None) == ""
+
+
+def test_bounce_response_prompt_caps_comments(monkeypatch):
+    calls = []
+    _ok_run(monkeypatch, calls)
+    r = LLMReviewer()
+    r.start_item("u")
+    # 30 comments, one of them huge: prompt keeps the newest 20, each capped.
+    comments = [f"comment {i}" for i in range(29)] + ["y" * 50_000]
+    r.review_bounce_response("z" * 50_000, comments)
+    prompt = calls[0]
+    assert "comment 0" not in prompt  # oldest dropped
+    assert "comment 28" in prompt  # newest kept
+    assert prompt.count("truncated by the bot") == 2  # feedback + huge comment
+    assert "y" * 4_001 not in prompt
+    assert "z" * 10_001 not in prompt
+
+
+def test_sru_template_prompt_caps_the_description(monkeypatch):
+    calls = []
+    _ok_run(monkeypatch, calls)
+    r = LLMReviewer()
+    r.start_item("u")
+    r.review_sru_template("d" * 50_000)
+    assert "d" * 20_001 not in calls[0]
+    assert "truncated by the bot" in calls[0]
