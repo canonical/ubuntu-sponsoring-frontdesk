@@ -1588,3 +1588,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   linked-bug attachment), service-account comments don't change the
   digest, unreadable comments/linked bugs are None, and a None digest
   makes the pass inconclusive end-to-end. 528 total.
+
+## 103. Private Items Are Never Processed
+
+* **Trigger:** the last open piece of the external reviews' critical
+  finding (#99): `--verbose` logs every LLM prompt/reply at DEBUG, and
+  prompts embed full bug/MP content -- private or embargoed content would
+  land in logs (and, the bigger issue, at the third-party LLM provider)
+  with an audience Launchpad's ACLs never granted. Rather than redact
+  logs while still shipping the content to Copilot/OpenRouter, the fix
+  is upstream: don't process private items at all.
+* **Assessment shared with seb128:** moot today -- the bot's account
+  holds no privileges and the sponsoring report only carries public
+  items -- but the guard means a future privilege or queue change can't
+  silently start leaking (seb128: "it will be safeguard if one day we
+  change that constraint").
+* **Fix:** `main._triage_url` gains an early gate (right after
+  resource-type resolution, before facts/checks/LLM): a bug's or MP's
+  `private` attribute true -> log "leaving for a human, content never
+  sent to the LLM", return with nothing persisted -- so the item is
+  re-examined each pass and triages normally the moment it becomes
+  public. Same guard in `sweep._sweep_one` (the response judgment ships
+  bug comments to the LLM); the bug stays in `bounced_bugs()`.
+  Attribute name verified live on a real bug and a real MP.
+* Tests: tests/test_private_items.py (4) with a `_NeverCalledLLM` that
+  raises on any LLM entry point -- private bug skipped, private MP
+  skipped, public unaffected, private bounced bug not swept. 532 total.
+* **This closes every finding the bot team owns from the 2026-07-16
+  external reviews** except the explicitly-backlogged items (Incomplete-
+  task attribution for set_bug_tasks_new, dependency pinning, the
+  refactor/efficiency suggestions).

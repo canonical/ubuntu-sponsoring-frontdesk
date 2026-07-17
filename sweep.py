@@ -87,6 +87,18 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
 
+    # Private items are never processed (#103) -- the response judgment
+    # would ship the bug's comments to the LLM provider. Same guard as
+    # main's; the bug stays in bounced_bugs() and sweeps normally if it
+    # ever becomes public again.
+    if getattr(bug, "private", False):
+        logger.info(
+            "Sweep [%s]: bug is private -- leaving for a human, content "
+            "never sent to the LLM.",
+            url,
+        )
+        return
+
     incomplete_since = _incomplete_since(bug)
     if incomplete_since is None:
         # No Ubuntu task is Incomplete anymore -- someone else moved the

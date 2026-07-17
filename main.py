@@ -103,13 +103,32 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             )
             return
 
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+
+    # Private items are never processed (#103, external-review follow-up).
+    # Triage would ship the item's content to a third-party LLM provider
+    # and into DEBUG logs -- an audience Launchpad's ACLs never granted.
+    # Moot today (the bot's account holds no privileges and the sponsoring
+    # report only carries public items), but the guard means a future
+    # privilege or queue change can't silently start leaking. Nothing is
+    # persisted, so the item is re-examined every pass and gets normal
+    # triage the moment it becomes public.
+    private_obj = (
+        lp_obj.bug if resource_type == "bug_task" else lp_obj
+    )
+    if getattr(private_obj, "private", False):
+        logger.info(
+            "Private item -- leaving for a human, content never sent to "
+            "the LLM. Skipping (nothing persisted)."
+        )
+        return
+
     # New-bug grace period (#91): give the submitter time to finish the
     # report (the filing form can't set series targets, linked MPs, etc --
     # those come in an edit/follow-up comment right after). Bugs only: an
     # MP's diff/branch is already complete when it's created. Dry-run
     # bypasses (no writes, useful to preview); write modes skip and retry
     # next run once the bug has aged past the grace period.
-    resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type in ("bug", "bug_task"):
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
         try:
