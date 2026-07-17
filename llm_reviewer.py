@@ -101,6 +101,18 @@ def _parse_sync_title(title):
 # always sent whole; this only bounds the diff hunks. Chosen so a typical merge
 # fits untruncated while a new-upstream-version MP (libdfx #507588: 69KB) does
 # not blow up the prompt.
+# #99: LLM prompts embed attacker-controlled bug/MP text, so opencode runs
+# under this dedicated agent, defined (outside VCS, like the notify webhook
+# config) in ~/.config/opencode/opencode.jsonc with every tool disabled and
+# permissions denying as a second layer. _query_llm refuses to trust a run
+# where the agent wasn't found (opencode silently falls back to its default
+# tool-capable agent, exit 0) or whose event stream contains a tool_use.
+_OPENCODE_AGENT = "sponsoring-reviewer"
+
+# #99: a hung LLM call must not stall the whole queue pass; the longest
+# healthy calls observed live (large MP diffs) finish well under this.
+_LLM_TIMEOUT_SECONDS = 300
+
 _MP_DIFF_CAP = 30_000
 
 # Cap on the non-debian/ path listing in the MP prompt. A vendored-tree MP
@@ -179,10 +191,23 @@ class LLMReviewer:
         judging LLM cost/behavior without re-running by hand. It also
         sidesteps the old ANSI-stripping regex entirely: JSON text content
         has no terminal escape codes to begin with.
+
+        Security (#99): the prompts embed attacker-controlled bug/MP text,
+        so the call runs under a dedicated tool-less opencode agent
+        (_OPENCODE_AGENT, defined outside VCS in ~/.config/opencode/
+        opencode.jsonc with every tool disabled) and WITHOUT
+        --dangerously-skip-permissions -- if the tool config ever
+        regresses, the permission gate is back as a backstop instead of
+        being explicitly bypassed. Two runtime tripwires on top, both
+        failing safe to the FAIL/inconclusive path: opencode silently
+        falls back to the default (tool-capable!) agent with exit 0 when
+        the agent isn't defined (verified live on 1.18.3), so stderr is
+        checked for that fallback; and a reply whose event stream contains
+        any tool_use event is discarded outright.
         """
         logger.info("--> [LLM Dispatcher] Querying opencode...")
         logger.debug("[llm] prompt sent to opencode:\n%s", prompt)
-        cmd = ["opencode", "run", "--format", "json", "--dangerously-skip-permissions"]
+        cmd = ["opencode", "run", "--format", "json", "--agent", _OPENCODE_AGENT]
 
         # We can add model selection here if needed, e.g. cmd.extend(["--model", "gpt-4o"])
         # The prompt goes over stdin, not argv: prompts embedding a large MP
@@ -190,7 +215,12 @@ class LLMReviewer:
         # rust-sequoia-sqv MP vendoring 4600+ files -> E2BIG).
         try:
             proc = subprocess.run(
-                cmd, input=prompt, text=True, capture_output=True, check=False
+                cmd,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=_LLM_TIMEOUT_SECONDS,
             )
 
             if proc.returncode != 0:
@@ -199,7 +229,27 @@ class LLMReviewer:
                 )
                 return "FAIL: LLM invocation failed internally."
 
-            output, usage = self._parse_ndjson_reply(proc.stdout)
+            if f'agent "{_OPENCODE_AGENT}" not found' in (proc.stderr or ""):
+                # opencode fell back to its default agent -- which has
+                # tools. Don't trust anything that run produced.
+                logger.warning(
+                    "opencode agent %r is not defined (add it to "
+                    "~/.config/opencode/opencode.jsonc, see design_journal.md "
+                    "#99); discarding the reply from the fallback agent.",
+                    _OPENCODE_AGENT,
+                )
+                return "FAIL: LLM agent misconfigured."
+
+            output, usage, used_tools = self._parse_ndjson_reply(proc.stdout)
+            if used_tools:
+                # The tool-less agent must never produce tool events; if
+                # one appears, the config regressed (or the fallback
+                # slipped past the stderr check) -- discard the reply.
+                logger.warning(
+                    "[llm] reply contained tool_use event(s) despite the "
+                    "tool-less agent config; discarding it."
+                )
+                return "FAIL: LLM reply used tools."
             logger.debug("[llm] raw reply from opencode:\n%s", output)
             if usage is not None:
                 logger.debug(
@@ -221,6 +271,13 @@ class LLMReviewer:
 
             return output
 
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "opencode did not finish within %d seconds; giving up on "
+                "this call.",
+                _LLM_TIMEOUT_SECONDS,
+            )
+            return "FAIL: LLM invocation timed out."
         except FileNotFoundError:
             logger.warning("'opencode' command not found. Is the snap installed?")
             return "FAIL: opencode is not installed in the environment."
@@ -229,9 +286,12 @@ class LLMReviewer:
     def _parse_ndjson_reply(stdout):
         """
         Parse opencode's ``--format json`` NDJSON stream into (output_text,
-        usage_dict). usage_dict is None if no ``step_finish`` event was
-        found (an unexpected/older opencode output shape) -- callers must
-        fail safe to raw stdout in that case, never guess at usage numbers.
+        usage_dict, used_tools). usage_dict is None if no ``step_finish``
+        event was found (an unexpected/older opencode output shape) --
+        callers must fail safe to raw stdout in that case, never guess at
+        usage numbers. used_tools is True when any ``tool_use`` event
+        appears in the stream (#99 tripwire: the tool-less agent must
+        never produce one, so the caller discards such a reply).
 
         Text is concatenated across every ``text`` event in order (usually
         just one for these single-turn review prompts, but this stays
@@ -241,6 +301,7 @@ class LLMReviewer:
         """
         text_parts = []
         usage = None
+        used_tools = False
         for line in stdout.splitlines():
             line = line.strip()
             if not line:
@@ -254,7 +315,9 @@ class LLMReviewer:
                 # whole reply.
                 continue
             part = event.get("part") or {}
-            if event.get("type") == "text" and "text" in part:
+            if event.get("type") == "tool_use":
+                used_tools = True
+            elif event.get("type") == "text" and "text" in part:
                 text_parts.append(part["text"])
             elif event.get("type") == "step_finish":
                 tokens = part.get("tokens") or {}
@@ -278,12 +341,12 @@ class LLMReviewer:
                 usage["cost"] += part.get("cost", 0) or 0
 
         if text_parts:
-            return "".join(text_parts).strip(), usage
+            return "".join(text_parts).strip(), usage, used_tools
         # No parseable text event at all -- fall back to the raw stdout
         # (mirrors the pre-#42 behavior) rather than returning an empty
         # string, which _extract_verdict would otherwise fail safe on
         # anyway, but this preserves any diagnostic content for the logs.
-        return stdout.strip(), usage
+        return stdout.strip(), usage, used_tools
 
     def _extract_verdict(self, text):
         """

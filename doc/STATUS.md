@@ -1020,6 +1020,77 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   elsewhere. Not live-verified (can't cheaply reproduce a stuck real
   token); covered by unit tests.
 
+## Backlog: external review findings, 2026-07-16 (not yet started)
+
+Two independent technical reviews (`TECHNICAL_REVIEW.md`, Claude-authored, and
+`technical_review_gemini.md`, Gemini-authored) were done against the codebase
+as of #98. Their higher-severity findings were individually re-verified
+against the current code before adding them here; each is a real, confirmed
+issue and a plan for tomorrow, not yet implemented.
+
+- **Untrusted content reaches a tool-capable LLM agent (Critical, security)
+  -- security core DONE 2026-07-17, see design_journal.md #99.** Tool-less
+  `sponsoring-reviewer` opencode agent + flag dropped + agent-fallback
+  stderr check + tool_use tripwire + 300s timeout, live-verified against a
+  real injection payload. Still open from this finding: prompt/reply DEBUG
+  logging redaction for embargoed/private bug content, and the resource
+  limits (queued as #100). Original finding, for the record:
+  `llm_reviewer._query_llm` (`llm_reviewer.py:185`) invokes `opencode run
+  --format json --dangerously-skip-permissions`. Bug/MP text is
+  attacker-controlled and goes straight into the prompt; the flag bypasses
+  opencode's tool-use approval gate entirely, so an injected instruction could
+  in principle get the process to use a tool (read files, run commands) with
+  the bot's own credentials/filesystem/network access, not just fool the
+  verdict parser. Confirmed live in code: the flag is present, `model=` is
+  accepted by `_query_llm` but never forwarded to `cmd` (dead parameter, per
+  the comment on line 187), and there is no subprocess timeout.
+  **Plan:** drop `--dangerously-skip-permissions` (or move to a plain
+  tool-less inference call) so the review path has no tool access at all;
+  add a subprocess timeout; decide whether prompt/reply DEBUG logging
+  (`llm_reviewer.py:184,203`) needs redaction for embargoed/private bug
+  content.
+- **Sweep advances state without checking write effectiveness (High,
+  correctness).** `sweep.py`'s three write sites (`_sweep_one`, lines ~79,
+  104, 139) call `lp_client.set_bug_tasks_new()` / `comment()` /
+  `unsubscribe_sponsors()` and then unconditionally call
+  `state_manager.update_status(url, "READY_FOR_HUMAN"/"DONE", ...)` --
+  unlike `main.py`'s main triage path, it never calls `start_item()` or
+  checks `all_writes_effective()` first. A dry-run sweep pass, or one where
+  a write is declined/fails, still advances the stored status; the item then
+  drops out of `state_manager.bounced_bugs()` and is never revisited for
+  real. Confirmed live in code (no `all_writes_effective()` call anywhere in
+  `sweep.py`).
+  **Plan:** mirror `main.py`'s pattern -- `lp_client.start_item()` before the
+  writes, gate `update_status()` on `all_writes_effective()`, add sweep
+  tests covering dry-run/declined/error outcomes (existing sweep tests only
+  use an always-successful fake).
+- **Facts fingerprint omits fields the checks actually read (High,
+  correctness).** Confirmed four concrete gaps in `facts.py`'s bug/MP
+  snapshots against what `checks.py`/`llm_reviewer.py` consume:
+  - `bug.title` (read by `checks.py:1058`'s merge-bug detection) is not in
+    the bug fact snapshot -- retitling a bug won't retrigger triage.
+  - Bug comment content (read by `checks.py:617`'s
+    `_has_proposed_source_link`) is not fingerprinted -- only
+    `attachments`/`linked_mps` self-links are; a PPA/git link added in a
+    comment after a "nothing to sponsor" close won't reopen review.
+  - `source_git_path` (read by `checks.py:1038` for merge-vs-non-merge MP
+    classification) is missing from the MP fact snapshot -- only
+    `target_git_path` is stored.
+  - Linked-bug `description` (read by `llm_reviewer.py`'s SRU template
+    check, ~lines 895-925, once per linked bug) has no corresponding field
+    on the MP's own fact snapshot -- fixing a linked bug's SRU template
+    text won't rerun the MP's review.
+  **Plan:** extend `build_facts()` for both resource types to cover these
+  four fields; add a test per field asserting a targeted edit changes the
+  fingerprint (not just a general "facts differ" smoke test).
+
+Lower-priority items from the same two reviews (LLM call/token/timeout
+limits, unbounded network/content reads, `checks.py`/`_triage_url` size and
+mixed concerns, no dependency pinning in CI, global mutable check caches
+blocking future concurrency, sequential queue processing, stringly-typed
+finding tiers) are legitimate but not urgent -- left as backlog without a
+concrete plan yet; see the two review documents directly for details.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
