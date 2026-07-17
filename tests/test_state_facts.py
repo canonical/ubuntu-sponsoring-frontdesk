@@ -6,13 +6,19 @@ import facts
 import main
 from state import StateManager
 from fakes import (
+    BOT,
     CLEAN_DIFF_TEXT,
+    HUMAN,
     FakeArchive,
+    FakeAttachment,
+    FakeBug,
+    FakeBugMessage,
     FakeDiff,
     FakeLLM,
     FakeMP,
     FakePublication,
     FakeRoot,
+    FakeTask,
     FakeTriageClient,
 )
 
@@ -282,3 +288,105 @@ def test_force_bypasses_facts_gate(tmp_path):
     # unchanged facts but --force -> deterministic check runs again, comments again
     main.triage_url(URL, sm, lp, llm, force=True)
     assert len(lp.comments) == 2
+
+
+# --- #102: fingerprint completeness (external review finding) ----------------
+# Every field a check consumes must change the fingerprint when edited;
+# otherwise the facts-unchanged gate skips the item forever after an edit.
+
+
+def _bug_facts(**kwargs):
+    return facts.build_facts(FakeBug(**kwargs))
+
+
+def test_bug_title_is_part_of_the_fingerprint():
+    a = _bug_facts(title="Sync foo 1.0-1 from Debian unstable")
+    b = _bug_facts(title="Please merge foo 1.0-1 from Debian unstable")
+    assert a != b
+
+
+def test_bug_comment_content_is_part_of_the_fingerprint():
+    bug = FakeBug()
+    bug.messages = [FakeBugMessage(HUMAN, "initial report")]
+    a = facts.build_facts(bug)
+    bug.messages = [
+        FakeBugMessage(HUMAN, "initial report"),
+        FakeBugMessage(HUMAN, "packaging at ppa:marco/foo now"),
+    ]
+    b = facts.build_facts(bug)
+    assert a != b
+
+
+def test_service_account_comments_do_not_change_the_fingerprint():
+    bug = FakeBug()
+    bug.messages = [FakeBugMessage(HUMAN, "initial report")]
+    a = facts.build_facts(bug)
+    bug.messages = [
+        FakeBugMessage(HUMAN, "initial report"),
+        FakeBugMessage(BOT, "the bot's own bounce comment"),
+    ]
+    b = facts.build_facts(bug)
+    # The bot commenting must not look like a contributor change.
+    assert a == b
+
+
+def test_unreadable_comments_are_none_not_a_stable_value():
+    bug = FakeBug()
+
+    class _Boom:
+        def __iter__(self):
+            raise TimeoutError("lp timeout")
+
+    bug.messages = _Boom()
+    snapshot = facts.build_facts(bug)
+    assert snapshot["comments_digest"] is None
+
+
+def test_mp_source_branch_is_part_of_the_fingerprint():
+    a = facts.build_facts(FakeMP(source="refs/heads/merge-1.2-3"))
+    b = facts.build_facts(FakeMP(source="refs/heads/fix-crash"))
+    assert a != b
+
+
+def test_mp_linked_bug_description_is_part_of_the_fingerprint():
+    bug = FakeBug(description="[Impact]\nTBD")
+    a = facts.build_facts(FakeMP(bugs=[bug]))
+    bug.description = "[Impact]\nUsers crash on boot.\n[Test Plan]\n..."
+    b = facts.build_facts(FakeMP(bugs=[bug]))
+    assert a != b
+
+
+def test_mp_linked_bug_attachment_is_part_of_the_fingerprint():
+    bug = FakeBug()
+    a = facts.build_facts(FakeMP(bugs=[bug]))
+    bug.attachments = [FakeAttachment("fix.debdiff", content="x")]
+    b = facts.build_facts(FakeMP(bugs=[bug]))
+    assert a != b
+
+
+def test_mp_unreadable_linked_bugs_are_none(tmp_path):
+    class _BrokenBugs:
+        def __iter__(self):
+            raise TimeoutError("lp timeout")
+
+    mp = FakeMP()
+    mp.bugs = _BrokenBugs()
+    snapshot = facts.build_facts(mp)
+    assert snapshot["linked_bugs"] is None
+
+
+def test_comment_digest_lookup_failure_is_inconclusive_not_cached(tmp_path):
+    # main must treat a None lookup field like archive_version's (#37):
+    # inconclusive, nothing persisted, retried next run.
+    sm = _state(tmp_path)
+    bug = FakeBug(tasks=[FakeTask("foo (Ubuntu)", "New")])
+
+    class _Boom:
+        def __iter__(self):
+            raise TimeoutError("lp timeout")
+
+    bug.messages = _Boom()
+    bug_url = "https://bugs.launchpad.net/ubuntu/+source/foo/+bug/42"
+    lp = FakeTriageClient(objects={bug_url: bug})
+    main.triage_url(bug_url, sm, lp, FakeLLM())
+    assert sm.get_facts(bug_url) is None

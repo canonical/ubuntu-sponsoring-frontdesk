@@ -21,9 +21,85 @@ rationale was about fields the BOT mutates (feedback loops), which archive
 state is not.
 """
 
+import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _digest(text):
+    """Short stable digest of a text field. The fingerprint needs to know
+    *whether* content changed, not what it is -- storing full comment
+    threads or linked-bug descriptions in every state.db snapshot would
+    bloat it for zero extra sensitivity."""
+    return hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _comments_digest(bug):
+    """Digest of the bug's non-service-account comment texts, or None when
+    the read failed (retriable -- main treats it as inconclusive).
+
+    Comments feed real decisions (`_has_proposed_source_link`'s PPA/git
+    link exemption #50, sync detail in follow-ups, the sweep's response
+    judgment), so a new or edited comment must re-trigger triage.
+    Service-account comments (the bot's own included) are excluded,
+    mirroring how the checks themselves ignore them -- the bot commenting
+    must not look like a contributor change on the next run (the same
+    feedback-loop rule the module docstring states for queue_status).
+    """
+    from checks import SERVICE_ACCOUNTS
+
+    try:
+        texts = []
+        for message in bug.messages:
+            owner = getattr(message, "owner_link", "") or ""
+            if owner.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
+                continue
+            texts.append(getattr(message, "content", "") or "")
+    except Exception as e:
+        logger.warning("Could not read bug comments for the fingerprint: %s", e)
+        return None
+    return f"{len(texts)}:{_digest(chr(0).join(texts))}"
+
+
+def _linked_bug_signals(lp_obj):
+    """Per-linked-bug fingerprint entries for an MP, or None when the read
+    failed (retriable). Covers exactly what the MP-side checks consume
+    from linked bugs: title (merge-bug detection), description (the SRU
+    template review in triage_mp), task statuses and attachment links
+    (check_sru_newer_series' series evidence). Fixing a linked bug's SRU
+    template -- or attaching a debdiff there -- must re-trigger the MP's
+    triage even when the MP itself is untouched."""
+    try:
+        entries = []
+        for bug in lp_obj.bugs:
+            statuses = ",".join(
+                sorted(f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks)
+            )
+            attachment_links = ",".join(
+                sorted(
+                    getattr(a, "self_link", "") or ""
+                    for a in getattr(bug, "attachments", [])
+                )
+            )
+            entries.append(
+                "{}|{}|{}|{}".format(
+                    getattr(bug, "self_link", "") or "",
+                    _digest(
+                        (getattr(bug, "title", "") or "")
+                        + "\0"
+                        + (getattr(bug, "description", "") or "")
+                    ),
+                    statuses,
+                    attachment_links,
+                )
+            )
+    except Exception as e:
+        logger.warning(
+            "Could not read the MP's linked bugs for the fingerprint: %s", e
+        )
+        return None
+    return sorted(entries)
 
 
 def _archive_version(lp, lp_obj):
@@ -71,6 +147,13 @@ def build_facts(lp_obj, lp=None):
 
     if resource_type == "branch_merge_proposal":
         facts["target_git_path"] = getattr(lp_obj, "target_git_path", "") or ""
+        # The source branch name drives merge-vs-fix classification
+        # (checks._is_merge_proposal); renaming/repointing it must
+        # re-trigger triage.
+        facts["source_git_path"] = getattr(lp_obj, "source_git_path", "") or ""
+        # Linked-bug content the MP checks consume (SRU template text,
+        # task statuses, attachments) -- see _linked_bug_signals.
+        facts["linked_bugs"] = _linked_bug_signals(lp_obj)
         if lp is not None:
             facts["archive_version"] = _archive_version(lp, lp_obj)
         # A fresh push generates a new preview_diff with a new self_link, so the
@@ -90,9 +173,16 @@ def build_facts(lp_obj, lp=None):
 
     elif resource_type in ("bug", "bug_task"):
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        # The title drives sync/merge/needs-packaging detection (_is_sync,
+        # _parse_sync_title, the merge-bug title check); retitling must
+        # re-trigger triage.
+        facts["title"] = getattr(bug, "title", "") or ""
         # The description is what the LLM review reads; if the submitter edits the
         # SRU/sync template, this changes and we re-review.
         facts["description"] = getattr(bug, "description", "") or ""
+        # Non-service-account comment content (count + digest); a PPA link
+        # or new detail added in a comment must re-trigger triage.
+        facts["comments_digest"] = _comments_digest(bug)
         facts["tags"] = sorted(getattr(bug, "tags", []) or [])
         # Task statuses are set by humans (Fix Released/Committed), not the bot,
         # so they are a legitimate change signal for the administrative check.

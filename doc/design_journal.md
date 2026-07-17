@@ -1538,3 +1538,53 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   existing `write_outcome` knob. 519 total. Not live-verifiable: Rule B
   remains live-unexercised (no bug bounce has aged into the sweep yet),
   same as #66 itself.
+
+## 102. Facts Fingerprint Covers Everything the Checks Actually Read
+
+* **Trigger:** the third High finding from the external reviews (#99-#101
+  cover the others), each gap re-verified against the code: four inputs
+  that checks consume were absent from `facts.build_facts()`'s snapshot,
+  so editing them never re-triggered triage -- the facts-unchanged gate
+  skipped the item forever.
+  1. `bug.title` -- merge-bug detection (`_MERGE_BUG_TITLE_RE`) and sync
+     detection/parsing read it; a retitle was invisible.
+  2. Bug comments -- `_has_proposed_source_link` (#50's PPA/git-link
+     exemption) reads them; a PPA link added in a comment after a
+     "nothing to sponsor" close was invisible.
+  3. `source_git_path` -- merge-vs-fix MP classification reads it; only
+     `target_git_path` was fingerprinted.
+  4. Linked-bug content on MPs -- `triage_mp`'s SRU template review reads
+     each linked bug's description, Check 7's series evidence reads task
+     statuses and attachments, merge detection falls back to titles;
+     fixing a linked bug's SRU template never re-ran the MP review.
+* **Fix:** bugs gain `title` and `comments_digest` (count + 16-hex sha256
+  of non-service-account comment texts -- digest, not full text, to keep
+  state.db snapshots small; service accounts excluded exactly as the
+  checks exclude them, so the bot's own comments can't masquerade as
+  contributor changes). MPs gain `source_git_path` and `linked_bugs`
+  (sorted per-bug entries: self_link | title+description digest | task
+  statuses | attachment links).
+* **Failure semantics:** comment/linked-bug reads follow #37's
+  None-means-lookup-failed convention; main's inconclusive guard is
+  generalized from the single `archive_version` check to a loop over the
+  lookup-backed fields (`archive_version`, `comments_digest`,
+  `linked_bugs`) -- a failed read is never persisted, so it can't
+  silently compare equal next run.
+* **Migration effect, deliberate:** every stored snapshot lacks the new
+  fields, so the first pass after this lands re-triages the entire queue
+  once ("facts changed" everywhere). Idempotent (comment dedup + facts
+  persist only on effective writes), but slower and more LLM-hungry than
+  a normal pass -- the #100 run budget caps the worst case.
+* **Per-pass cost:** fingerprinting now reads `bug.messages` and an MP's
+  linked bugs even on the skip path (that is the point -- the gate must
+  see them). A few extra launchpadlib collection reads per item per pass.
+* Live-verified read-only (Launchpad up, sponsoring infra down): ghostty
+  bug #2155110 -> stable `comments_digest: 6:...` + title; its linked MP
+  505919 -> `source_git_path: refs/heads/fix-2155110`, one linked_bugs
+  entry carrying the description digest and task statuses; both snapshots
+  stable across rebuilds.
+* Tests: 9 new in test_state_facts.py -- one targeted-edit test per new
+  field (title, comment content, source branch, linked-bug description,
+  linked-bug attachment), service-account comments don't change the
+  digest, unreadable comments/linked bugs are None, and a None digest
+  makes the pass inconclusive end-to-end. 528 total.

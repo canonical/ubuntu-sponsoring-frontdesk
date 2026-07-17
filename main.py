@@ -164,16 +164,19 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # couldn't determine this run would never get re-checked.
     inconclusive = False
 
-    # The archive-version part of the fingerprint (design_journal.md #37)
-    # follows the same None-means-lookup-failed convention as the checks: a
-    # failed lookup must not be persisted (two consecutive failures would
-    # silently compare equal at the gate), so the whole pass is inconclusive.
-    if new_facts.get("archive_version", "") is None:
-        inconclusive = True
-        logger.info(
-            "Archive version lookup failed while fingerprinting; "
-            "treating this pass as inconclusive."
-        )
+    # Lookup-backed fingerprint fields (#37 archive_version; #102 comment
+    # digest and linked-bug signals) follow the same None-means-lookup-failed
+    # convention as the checks: a failed lookup must not be persisted (two
+    # consecutive failures would silently compare equal at the gate), so the
+    # whole pass is inconclusive.
+    for lookup_field in ("archive_version", "comments_digest", "linked_bugs"):
+        if new_facts.get(lookup_field, "") is None:
+            inconclusive = True
+            logger.info(
+                "%s lookup failed while fingerprinting; "
+                "treating this pass as inconclusive.",
+                lookup_field,
+            )
 
     # Facts must also not be persisted when an intended write didn't actually
     # take effect (dry-run, declined at [y/N], no TTY, or an error). Otherwise

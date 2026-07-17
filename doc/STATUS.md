@@ -1075,7 +1075,14 @@ issue and a plan for tomorrow, not yet implemented.
   tests covering dry-run/declined/error outcomes (existing sweep tests only
   use an always-successful fake).
 - **Facts fingerprint omits fields the checks actually read (High,
-  correctness).** Confirmed four concrete gaps in `facts.py`'s bug/MP
+  correctness) -- DONE 2026-07-17, see design_journal.md #102.** Bugs
+  gain `title` + `comments_digest` (non-service-account, hashed); MPs
+  gain `source_git_path` + `linked_bugs` (per-bug digest of
+  title/description + task statuses + attachment links); main's
+  inconclusive guard generalized to all lookup-backed fields. NOTE: the
+  first pass after this deploys re-triages the whole queue once (every
+  stored snapshot lacks the new fields). Original finding, for the
+  record: Confirmed four concrete gaps in `facts.py`'s bug/MP
   snapshots against what `checks.py`/`llm_reviewer.py` consume:
   - `bug.title` (read by `checks.py:1058`'s merge-bug detection) is not in
     the bug fact snapshot -- retitling a bug won't retrigger triage.
