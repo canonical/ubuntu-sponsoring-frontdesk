@@ -580,6 +580,33 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             return
         if engaged:
             blocking_findings = [f for f in findings if f.tier == "incomplete"]
+            if blocking_findings:
+                # #106: a blocking finding is never suppressed by
+                # engagement alone (#94), but if the reviewer's own
+                # comment(s) already substantively raise the same problem,
+                # repeating it is pure noise -- ask the LLM once, bundling
+                # every current blocking finding into a single call.
+                reviewer_comments = checks._engaged_reviewer_comment_texts(
+                    lp_obj, lp_client
+                )
+                if reviewer_comments:
+                    covered = llm_reviewer.review_findings_already_covered(
+                        blocking_findings, reviewer_comments
+                    )
+                    checkpoint("review_findings_already_covered")
+                    if covered:
+                        logger.info(
+                            "[%s] the engaged reviewer's own comment(s) "
+                            "already cover %d blocking finding(s); "
+                            "dropping them.",
+                            url,
+                            len(covered),
+                        )
+                        blocking_findings = [
+                            f
+                            for i, f in enumerate(blocking_findings, start=1)
+                            if i not in covered
+                        ]
             if not blocking_findings:
                 # A determined, stable state -- persist facts like a clean
                 # pass, so the facts-unchanged gate skips this URL until a

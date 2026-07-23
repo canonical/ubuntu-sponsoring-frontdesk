@@ -435,3 +435,12 @@ class FakeLLM:
         self.newer_series_queries = getattr(self, "newer_series_queries", [])
         self.newer_series_queries.append((bug_text, list(series_names)))
         return self.fixed_in_newer
+
+    # #106: which 1-based finding numbers the engaged reviewer's own
+    # comments already cover -- default empty, matching pre-#106 behavior.
+    covered_findings = set()
+
+    def review_findings_already_covered(self, findings, reviewer_comments):
+        self.covered_findings_queries = getattr(self, "covered_findings_queries", [])
+        self.covered_findings_queries.append((list(findings), list(reviewer_comments)))
+        return self.covered_findings

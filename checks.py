@@ -292,6 +292,70 @@ def _check_human_engaged(lp_obj, lp_client):
     return False
 
 
+def _engaged_reviewer_comment_texts(lp_obj, lp_client):
+    """The text of the qualifying reviewer comment(s) that make
+    check_human_engaged return True for this item -- same anchor/exclusion
+    rules (since the current diff/attachment, excluding the submitter, the
+    bot, and SERVICE_ACCOUNTS), but returning content instead of just
+    author/date. Only meaningful when check_human_engaged already returned
+    True for this item; deliberately mirrors its logic instead of sharing
+    code so a future change to the engagement threshold doesn't silently
+    start feeding the LLM comments that don't actually qualify (#106).
+
+    Returns a list of comment texts, oldest first, or [] if the comment
+    history can't be re-read -- a transient failure here just means #106's
+    covered-finding check is skipped for this pass (findings post as
+    usual), not that engagement itself is reconsidered.
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    lp = getattr(lp_client, "lp", None)
+    me = getattr(getattr(lp, "me", None), "self_link", None)
+    try:
+        if resource_type == "branch_merge_proposal":
+            submitter = lp_obj.registrant_link
+            diff = lp_obj.preview_diff
+            anchor = getattr(diff, "date_created", None) if diff is not None else None
+            comments = [
+                (c.author_link, getattr(c, "date_created", None), c.message_body or "")
+                for c in lp_obj.all_comments
+            ]
+        elif resource_type in ("bug", "bug_task"):
+            bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+            submitter = getattr(bug, "owner_link", None)
+            target = attachments.review_target(bug)
+            anchor = None
+            if target:
+                attachment, _text = target
+                anchor = getattr(
+                    getattr(attachment, "message", None), "date_created", None
+                )
+            comments = [
+                (m.owner_link, getattr(m, "date_created", None), m.content or "")
+                for m in bug.messages
+            ]
+        else:
+            return []
+
+        texts = []
+        for author, date, content in comments:
+            if author in (me, submitter):
+                continue
+            if author.rsplit("/", 1)[-1] in SERVICE_ACCOUNTS:
+                continue
+            if anchor is not None and date is not None and date <= anchor:
+                continue
+            if content.strip():
+                texts.append(content)
+        return texts
+    except Exception as e:
+        logger.warning(
+            "_engaged_reviewer_comment_texts: couldn't re-read the comment "
+            "history (%s).",
+            e,
+        )
+        return []
+
+
 # Teams whose direct bug subscription puts an item on a sponsoring queue
 # (direct subscription is the only mechanism the report uses -- #76).
 SPONSORING_TEAMS = frozenset({"~ubuntu-sponsors", "~ubuntu-security-sponsors"})

@@ -1053,6 +1053,20 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   noise once the real cause is named. Live-verified. See
   design_journal.md #105.
 
+## `--interactive` run continued, 2026-07-23 (#106)
+
+- **Blocking findings the engaged reviewer already covered are dropped**
+  (#106, freerdp3 bug #2161108): `check_stale_version` correctly fired
+  (per #94, blocking findings are never suppressed by engagement alone),
+  but the engaged reviewer (mdeslaur) had already told the submitter the
+  same thing in plain English two days earlier. New
+  `checks._engaged_reviewer_comment_texts` + one bundled
+  `LLMReviewer.review_findings_already_covered` call per item (only when
+  engaged and blocking findings exist) drops findings the reviewer's own
+  comment(s) substantively already raise; fails safe to posting
+  everything on LLM failure or no reviewer text. Live-verified against
+  the trigger bug. See design_journal.md #106.
+
 ## Backlog: external review findings, 2026-07-16 (not yet started)
 
 Two independent technical reviews (`TECHNICAL_REVIEW.md`, Claude-authored, and

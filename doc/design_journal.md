@@ -1690,3 +1690,38 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   check to check_missing_changelog_stanza / kept conflicts alone
   respectively, preserving each test's original intent. 535 total, lint
   clean.
+
+## 106. Blocking Findings the Engaged Reviewer Already Covered Are Dropped
+
+* **Trigger:** freerdp3 bug #2161108. `check_stale_version` fired
+  (proposed `3.24.2+dfsg-1ubuntu1.3` older than archive's
+  `3.30.0+dfsg-0ubuntu0.26.04.1`), correctly per #94 (blocking findings
+  are facts about archive state, never suppressed by engagement). But
+  mdeslaur, the engaged reviewer, had already told the submitter the
+  same thing in plain English two days earlier ("Ubuntu 26.04 LTS has
+  now been updated to freerdp 3.30, could you give it a retry?"). #94's
+  blanket "never suppressed" is right in general (a human commenting
+  doesn't resolve a version collision by itself) but produces pure noise
+  in the specific case where the reviewer's own words already name the
+  same problem. seb128: worth an LLM call for this, since it's rare.
+* **Fix:** new `checks._engaged_reviewer_comment_texts` -- mirrors
+  `_check_human_engaged`'s anchor/exclusion logic (since the current
+  diff/attachment, excluding the submitter/bot/SERVICE_ACCOUNTS) but
+  returns qualifying comment text instead of just author/date. New
+  `LLMReviewer.review_findings_already_covered(findings, comments)`
+  bundles every current blocking finding into ONE call (not one each,
+  budget-friendly) and returns the set of finding numbers the reviewer's
+  own comment(s) substantively (not just topically) already raise.
+  `main.py`'s existing engaged-with-blocking-findings branch drops the
+  covered ones before rendering; if that empties the blocking list, the
+  item falls through to the existing full-suppression path (READY_FOR_HUMAN).
+  Fails safe to unchanged behavior: no reviewer comment text -> LLM not
+  even called; LLM failure (None) -> nothing dropped, same as today.
+* Live-verified against freerdp3 #2161108:
+  `_engaged_reviewer_comment_texts` correctly extracts mdeslaur's
+  comment, and `review_findings_already_covered` correctly returns the
+  stale-version finding as covered.
+* Tests: tests/test_human_engaged.py +4 (covered finding dropped -> 
+  READY_FOR_HUMAN; not-covered finding still posts; LLM failure (None)
+  fails safe to posting; no reviewer text -> nothing to check). 539
+  total, lint clean.

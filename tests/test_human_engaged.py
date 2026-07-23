@@ -270,6 +270,105 @@ def test_engaged_reviewer_does_not_suppress_a_blocking_finding(tmp_path):
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
 
 
+# --- #106: LLM-judged "the reviewer already covered this finding" ------------
+
+
+_ONLY_FINDING_DIFF = """\
+diff --git a/debian/changelog b/debian/changelog
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,10 @@
++testpkg (1.2-3ubuntu2) stonking; urgency=medium
++
++  * Fix the resize crash.
++
++ -- Riku <riku@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ testpkg (1.2-3ubuntu1) stonking; urgency=medium
+
+   * Old entry.
+"""
+
+
+def _engaged_mp_with_conflicts(comment_text):
+    # A changelog-touching diff so check_missing_changelog_stanza doesn't
+    # add a second blocking finding alongside the conflicts one -- these
+    # tests are about the LLM covered-finding filter, not aggregation.
+    return _mp(
+        [FakeMPComment(REVIEWER, comment_text, AFTER_DIFF)],
+        target=".../ubuntu/devel",
+        source="refs/heads/fix-lp2000001",
+        diff=FakeDiff(
+            "/d/1",
+            50,
+            conflicts="foo.c",
+            diff_text=_ONLY_FINDING_DIFF,
+            date_created=DIFF_DATE,
+        ),
+    )
+
+
+def test_llm_covered_blocking_finding_is_dropped(tmp_path):
+    sm = _state(tmp_path)
+    mp = _engaged_mp_with_conflicts("please rebase, this has conflicts")
+    lp = _client({URL: mp})
+    llm = FakeLLM()
+    llm.covered_findings = {1}
+
+    main.triage_url(URL, sm, lp, llm)
+
+    assert lp.comments == []
+    assert lp.votes == []
+    assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
+    # The LLM was actually consulted with the finding and the comment text.
+    findings, comments = llm.covered_findings_queries[0]
+    assert "conflict" in findings[0].message.lower()
+    assert comments == ["please rebase, this has conflicts"]
+
+
+def test_llm_not_covered_blocking_finding_still_posts(tmp_path):
+    sm = _state(tmp_path)
+    mp = _engaged_mp_with_conflicts("looks good otherwise")
+    lp = _client({URL: mp})
+    llm = FakeLLM()
+    llm.covered_findings = set()  # explicit: reviewer didn't cover it
+
+    main.triage_url(URL, sm, lp, llm)
+
+    assert len(lp.comments) == 1
+    assert "conflict" in lp.comments[0].lower()
+    assert lp.votes == ["Needs Fixing"]
+
+
+def test_llm_failure_fails_safe_to_posting_the_finding(tmp_path):
+    # None (LLM invocation failed) must not be treated as "covered" --
+    # posting a redundant finding is cheap, hiding a real one isn't.
+    sm = _state(tmp_path)
+    mp = _engaged_mp_with_conflicts("thanks, looking at this")
+    lp = _client({URL: mp})
+    llm = FakeLLM()
+    llm.covered_findings = None
+
+    main.triage_url(URL, sm, lp, llm)
+
+    assert len(lp.comments) == 1
+    assert lp.votes == ["Needs Fixing"]
+
+
+def test_llm_not_consulted_when_reviewer_left_no_comment_text():
+    # A qualifying "comment" with no timestamp but also no content (or an
+    # engaged state reached without a real comment to compare against)
+    # shouldn't spend a call with nothing to check against.
+    mp = _mp(
+        [FakeMPComment(REVIEWER, "", AFTER_DIFF)],
+        target=".../ubuntu/devel",
+        source="refs/heads/fix-lp2000001",
+        diff=FakeDiff("/d/1", 50, conflicts="foo.c", date_created=DIFF_DATE),
+    )
+    lp = _client({URL: mp})
+    assert checks._engaged_reviewer_comment_texts(mp, lp) == []
+
+
 def test_engaged_reviewer_does_not_suppress_a_blocking_bug_bounce(tmp_path):
     # Bug-side #72/#94: a plain code patch bounces (Check 10, tier=
     # "incomplete") even though a reviewer commented after the attachment --
