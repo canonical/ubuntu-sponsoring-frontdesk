@@ -181,6 +181,58 @@ def test_merge_proposal_detection_returns_none_when_bugs_unreadable():
     assert checks._is_merge_proposal(_NoBugs()) is None
 
 
+_UBUNTU_BASED_DIFF = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,11 @@
++testpkg (1.4.0-0ubuntu1) stonking; urgency=medium
++
++  * New upstream release.
++
++ -- A B <a@b.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (1.3.1-10ubuntu1) stonking; urgency=medium
+
+   * Something
+"""
+
+
+def test_merge_shaped_branch_but_based_on_ubuntu_upload_is_not_a_merge():
+    # Trigger: rust-sequoia-sq MP #508836 -- branch/bug title say "merge",
+    # but the changelog base version already carries an ubuntuN suffix, so
+    # it's a version bump done in Ubuntu, not a rebase onto Debian.
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/merge-lp2161399-stonking",
+        diff=FakeDiff("/d/1", 20, diff_text=_UBUNTU_BASED_DIFF),
+    )
+    assert checks._is_merge_proposal(mp) is False
+    assert checks.check_target_branch("url", mp, _LP()) is False
+
+
+def test_merge_shaped_bug_title_but_based_on_ubuntu_upload_is_not_a_merge():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/some-branch",
+        bugs=[FakeBugRef("Please merge foo into Stonking")],
+        diff=FakeDiff("/d/1", 20, diff_text=_UBUNTU_BASED_DIFF),
+    )
+    assert checks._is_merge_proposal(mp) is False
+    assert checks.check_target_branch("url", mp, _LP()) is False
+
+
+def test_merge_shaped_branch_based_on_debian_version_is_still_a_merge():
+    mp = FakeMP(
+        target="refs/heads/ubuntu/devel",
+        source="refs/heads/merge-1.2-3-stonking",
+        diff=FakeDiff("/d/1", 20, diff_text=_CHANGELOG_DIFF.format(debian_suite="unstable")),
+    )
+    assert checks._is_merge_proposal(mp) is True
+    finding = checks.check_target_branch("url", mp, _LP())
+    assert finding.tier == "incomplete"
+
+
 def test_check_target_branch_returns_none_when_merge_status_undeterminable():
     mp = FakeMP(
         target="refs/heads/ubuntu/devel",

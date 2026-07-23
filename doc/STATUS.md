@@ -1020,6 +1020,23 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   elsewhere. Not live-verified (can't cheaply reproduce a stuck real
   token); covered by unit tests.
 
+## `--interactive` run continued, 2026-07-23 (#104)
+
+- **Merge detection required actual evidence of a Debian-based rebase**
+  (#104, rust-sequoia-sq MP #508836): `_is_merge_proposal` trusted the
+  branch-name/bug-title "merge" convention alone. This MP's branch was
+  `merge-lp2161399-stonking` and its bug "Please merge 1.4.0 into
+  Stonking", but its changelog base version was `1.3.1-10ubuntu1` (an
+  Ubuntu upload, not Debian) and the new version `1.4.0-0ubuntu1` -- a
+  plain version bump done in Ubuntu, correctly targeting `ubuntu/devel`.
+  seb128's diagnosis on the spot: a merge needs to be based on a Debian
+  revision, not a previous Ubuntu one. New
+  `checks._old_version_is_ubuntu_upload` reads the changelog diff's base
+  version (already cached) and overrides a branch/bug-title "merge" to
+  "not a merge" when that base already carries an `ubuntuN` suffix; no
+  evidence (base not visible) leaves the naming heuristic as-is. Live-
+  verified against the trigger MP. See design_journal.md #104.
+
 ## Backlog: external review findings, 2026-07-16 (not yet started)
 
 Two independent technical reviews (`TECHNICAL_REVIEW.md`, Claude-authored, and

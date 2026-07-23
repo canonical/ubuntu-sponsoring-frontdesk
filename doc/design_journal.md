@@ -1618,3 +1618,36 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   external reviews** except the explicitly-backlogged items (Incomplete-
   task attribution for set_bug_tasks_new, dependency pinning, the
   refactor/efficiency suggestions).
+
+## 104. Merge Detection Requires a Debian-Based Changelog Entry
+
+* **Trigger:** live false positive during an --interactive run --
+  rust-sequoia-sq MP #508836 (branch `merge-lp2161399-stonking`, linked
+  bug "Please merge 1.4.0 into Stonking") was bounced for targeting
+  `ubuntu/devel` instead of `debian/<suite>`, but it isn't a git-ubuntu
+  merge at all: its changelog base version is `1.3.1-10ubuntu1` -- an
+  Ubuntu upload -- and the new version is `1.4.0-0ubuntu1` (debian
+  revision "0": not rebased onto any specific Debian upload). It's a
+  plain version bump done in Ubuntu, correctly targeting `ubuntu/devel`.
+  seb128's diagnosis: `_is_merge_proposal` trusted branch/bug-title
+  naming convention alone; a real merge needs to be based on a Debian
+  revision, not a previous Ubuntu one.
+* **Fix:** new `checks._old_version_is_ubuntu_upload(lp_obj)` reads the
+  changelog entry the new stanza sits on top of (`_old_changelog_version`,
+  already fetched/cached this run) and checks it for an `ubuntuN` suffix.
+  `_is_merge_proposal` now treats a branch-name or bug-title "yes" as
+  overridable: if the diff shows the base version already has an
+  `ubuntuN` suffix, it's not a merge regardless of naming. None (base
+  version not visible in the diff) leaves the branch/bug-title heuristic
+  as-is -- no evidence, no override. No extra API call: reuses the
+  already-cached diff.
+* Live-verified against rust-sequoia-sq #508836:
+  `_is_merge_proposal` -> False, `check_target_branch` -> False (was
+  wrongly firing before the fix).
+* Tests: tests/test_mp_checks.py gained 3 (`_is_merge_proposal`/
+  `check_target_branch` overridden False for both branch-name and
+  bug-title paths when base version is Ubuntu-suffixed; still True when
+  based on a real Debian version). tests/test_direct_source_edit.py's
+  `test_merge_mp_is_exempt` fixture updated to a genuine Debian-based
+  merge diff (its old fixture had an Ubuntu-suffixed base, which is now
+  correctly no longer treated as a merge). 535 total, lint clean.

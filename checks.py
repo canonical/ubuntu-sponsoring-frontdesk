@@ -1027,6 +1027,16 @@ def _is_merge_proposal(lp_obj):
     follow the branch-naming convention -- costs one extra API call
     (`lp_obj.bugs`), so only made when the cheap check didn't already decide.
 
+    Both of those are naming *convention*, not proof: contributors/tooling
+    call any "bump to a new upstream version" MP a "merge" colloquially even
+    when it isn't a git-ubuntu rebase onto Debian. When the changelog diff is
+    available, `_old_version_is_ubuntu_upload` overrides a branch/bug-title
+    "yes" to "no" if the entry the new stanza sits on top of is already an
+    Ubuntu upload (has an `ubuntuN` suffix) -- direct evidence this is a
+    version bump done in Ubuntu, not a rebase onto a Debian revision
+    (trigger: rust-sequoia-sq MP #508836, "merge-lp2161399-stonking"/"Please
+    merge 1.4.0 into Stonking", but based on 1.3.1-10ubuntu1).
+
     Returns True/False/None: None means the branch name wasn't decisive and
     the `lp_obj.bugs` fallback call itself failed (a genuine API/network
     error), as opposed to succeeding and finding no merge-shaped bug title
@@ -1037,11 +1047,19 @@ def _is_merge_proposal(lp_obj):
     """
     source_branch_name = getattr(lp_obj, "source_git_path", "") or ""
     if _MERGE_BRANCH_RE.search(source_branch_name):
-        logger.debug(
-            "_is_merge_proposal: source branch %r looks like a merge branch.",
-            source_branch_name,
-        )
-        return True
+        if _old_version_is_ubuntu_upload(lp_obj):
+            logger.debug(
+                "_is_merge_proposal: source branch %r looks like a merge "
+                "branch, but the changelog diff shows it's based on a "
+                "previous Ubuntu upload, not Debian; not a merge.",
+                source_branch_name,
+            )
+        else:
+            logger.debug(
+                "_is_merge_proposal: source branch %r looks like a merge branch.",
+                source_branch_name,
+            )
+            return True
 
     try:
         bugs = list(lp_obj.bugs)
@@ -1056,6 +1074,14 @@ def _is_merge_proposal(lp_obj):
 
     for bug in bugs:
         if _MERGE_BUG_TITLE_RE.match(bug.title or ""):
+            if _old_version_is_ubuntu_upload(lp_obj):
+                logger.debug(
+                    "_is_merge_proposal: linked bug %r looks like a merge "
+                    "bug, but the changelog diff shows it's based on a "
+                    "previous Ubuntu upload, not Debian; not a merge.",
+                    bug.title,
+                )
+                continue
             logger.debug(
                 "_is_merge_proposal: source branch %r isn't merge-shaped, "
                 "but linked bug %r looks like a merge bug.",
@@ -1071,6 +1097,18 @@ def _is_merge_proposal(lp_obj):
         [b.title for b in bugs],
     )
     return False
+
+
+def _old_version_is_ubuntu_upload(lp_obj):
+    """True if the changelog entry this MP's new stanza sits on top of
+    already carries an `ubuntuN` suffix -- i.e. it's a previous Ubuntu
+    upload, not a Debian one. None when the base version isn't visible in
+    the diff context (short context, fetch failure): callers must not
+    override a merge-shaped branch/bug-title name without this evidence."""
+    old_version = _old_changelog_version(lp_obj)
+    if old_version is None:
+        return None
+    return bool(_UBUNTU_SUFFIX_RE.search(old_version))
 
 
 _CHANGELOG_HEADER_RE = re.compile(

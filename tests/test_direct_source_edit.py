@@ -39,6 +39,11 @@ diff --git a/src/framebuffer.cpp b/src/framebuffer.cpp
 # New upstream version: upstream component changes 1.2 -> 1.3.
 UPSTREAM_BUMP_DIFF = DIRECT_EDIT_DIFF.replace("1.2-3ubuntu2", "1.3-0ubuntu1")
 
+# A real merge shape: rebased onto a Debian version (no ubuntuN suffix on
+# the base entry), not a previous Ubuntu upload -- see _is_merge_proposal /
+# _old_version_is_ubuntu_upload.
+MERGE_DIFF = DIRECT_EDIT_DIFF.replace("1.2-3ubuntu1) stonking", "1.2-3) unstable")
+
 # The nux #508190 shape: source edit, no changelog change at all.
 NO_STANZA_DIFF = """\
 diff --git a/src/framebuffer.cpp b/src/framebuffer.cpp
@@ -95,7 +100,7 @@ def test_debian_only_changes_are_clean():
 
 
 def test_merge_mp_is_exempt():
-    mp = _mp(DIRECT_EDIT_DIFF, source="refs/heads/merge-1.2-3-stonking")
+    mp = _mp(MERGE_DIFF, source="refs/heads/merge-1.2-3-stonking")
     assert checks.check_direct_source_edit(URL, mp, _LP()) is False
 
 
