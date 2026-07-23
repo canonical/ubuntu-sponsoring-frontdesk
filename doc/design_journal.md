@@ -9,26 +9,36 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 
 - **Triage state machine** — [`flow.svg`](flow.svg) / [`flow.png`](flow.png)
   ([`flow.dot`](flow.dot)): per-URL pipeline in `triage_url` — dispatch →
-  facts-change gate → the six deterministic checks (admin / target branch /
-  conflicts / empty diff / changelog bug reference / stale version) → LLM
-  phase → the conclusive states (`DONE`, `WAITING_ON_CONTRIBUTOR`,
-  `READY_FOR_HUMAN`, `PENDING_ARCHIVE_IMPORT`). Every conclusive path
-  persists `facts=new_facts` (see #10) **except** `PENDING_ARCHIVE_IMPORT`
-  (#27) and any path where a check returned `None` instead of a plain bool
+  private-item gate (#103) → facts-change gate → twelve deterministic
+  checks (administrative state / target branch / conflicts / empty diff /
+  changelog bug reference / stale version / SRU newer-series / direct
+  source edit / missing changelog stanza / patch-not-debdiff / PPA version
+  suffix / XSBC-Original-Maintainer) → LLM phase → the conclusive states
+  (`DONE`, `WAITING_ON_CONTRIBUTOR`, `READY_FOR_HUMAN`,
+  `PENDING_ARCHIVE_IMPORT`). Every conclusive path persists
+  `facts=new_facts` (see #10) **except** `PENDING_ARCHIVE_IMPORT` (#27) and
+  any path where a check returned `None` instead of a plain bool
   (`inconclusive=True`, #28) — both deliberately omit `facts=` so the next
   run retries rather than getting cached as "nothing to do." Target branch
-  (check 2) only applies to merge MPs, per the merge/fix/SRU classification
-  in #20; changelog bug reference (check 5, #26) and stale version (check
-  6, #27) apply to any MP. `--verbose` (#24) traces every check's
-  fired/skipped decision, not shown on the diagram itself. MP bounces post
-  a review vote, not a status write (#25); check 6 is the one check whose
-  fired result can mean several different outcomes (`DONE`,
-  `WAITING_ON_CONTRIBUTOR`, or `PENDING_ARCHIVE_IMPORT` when a matching
-  upload is too recent), shown as separate outgoing edges. Checks 2, 5, and
-  6 can also return `None` (a lookup failed, not "nothing to flag") rather
-  than firing or cleanly passing — noted on the diagram but not drawn as a
-  separate branch, since the check just continues to the next one either
-  way; only the final facts-persistence decision cares.
+  (check 2) covers both merge MPs (merge/fix/SRU classification in #20,
+  refined by #104 to require the changelog base actually be a Debian
+  revision, not a previous Ubuntu upload) and SRU-shaped MPs targeting the
+  wrong series branch (#105, which also suppresses check 3's conflicts
+  finding for the pass when check 2 already fired); changelog bug
+  reference (check 5, #26) and stale version (check 6, #27) apply to any
+  MP. `--verbose` (#24) traces every check's fired/skipped decision, not
+  shown on the diagram itself. MP bounces post a review vote, not a status
+  write (#25); check 6 is the one check whose fired result can mean
+  several different outcomes (`DONE`, `WAITING_ON_CONTRIBUTOR`, or
+  `PENDING_ARCHIVE_IMPORT` when a matching upload is too recent), shown as
+  separate outgoing edges. Any check can also return `None` (a lookup
+  failed, not "nothing to flag") rather than firing or cleanly passing —
+  noted on the diagram but not drawn as a separate branch, since the check
+  just continues to the next one either way; only the final
+  facts-persistence decision cares. When a human reviewer is engaged and
+  blocking findings survive #94, one bundled LLM call (#106) drops any
+  finding the reviewer's own comments already substantively cover before
+  the aggregate posts.
 - **Write gate** — [`write_gate.svg`](write_gate.svg) /
   [`write_gate.png`](write_gate.png) ([`write_gate.dot`](write_gate.dot)):
   what every `LPClient` mutation passes through. Dedup runs **only** for

@@ -68,8 +68,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
 - **Check** — one deterministic Python function in `checks.py`
   (`check_administrative_state`, `check_nothing_to_sponsor`,
   `check_target_branch`, `check_mp_conflicts`, `check_empty_diff`,
-  `check_changelog_bug_reference`, `check_stale_version`), run in a fixed
-  order before the LLM phase. See `flow.dot`/`flow.svg`.
+  `check_changelog_bug_reference`, `check_stale_version`,
+  `check_sru_newer_series`, `check_direct_source_edit`,
+  `check_missing_changelog_stanza`, `check_patch_not_debdiff`,
+  `check_ppa_version_suffix`, `check_xsbc_original_maintainer`), run in a
+  fixed order before the LLM phase. See `flow.dot`/`flow.svg`.
 - **Fires** — a check "fires" when it finds something to flag (returns
   truthy). Since #31/#44, only `closing`-tier outcomes short-circuit
   `triage_url` (the item is already resolved); `incomplete`-tier outcomes
@@ -342,7 +345,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   over it. Only ever suppresses `tier="question"` findings; `tier=
   "incomplete"` (blocking) findings are never suppressed (#94: they're
   facts about archive/technical state, e.g. a version collision, that a
-  human's engagement doesn't resolve), and closing-tier outcomes are
+  human's engagement doesn't resolve) -- **except** individually, when the
+  reviewer's own comment(s) already substantively raise the same problem
+  (#106): one bundled LLM call per item covers every current blocking
+  finding, fails safe to posting everything if there's no reviewer
+  comment text or the call itself fails. Closing-tier outcomes are
   decided before this is ever consulted. **Ranked by most recent
   comment, not "any comment" (#96):** if the submitter's own reply is
   the last word since the anchor — e.g. answering a reviewer's ask — the

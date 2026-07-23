@@ -22,10 +22,14 @@ digraph SponsoringBot {
 
     qguard [label="bug directly subscribed to\n~ubuntu-sponsors / ~ubuntu-security-\nsponsors? (#76; MPs always pass)", shape=diamond, fillcolor="#FFF9C4"];
     qskip  [label="not a queue item\n(mistaken --url): skip,\nnothing persisted\n(dry-run proceeds --\nit performs no writes)", shape=box, fillcolor="#ECEFF1"];
+    priv   [label="item .private? (#103)", shape=diamond, fillcolor="#FFF9C4"];
+    privskip [label="leave for a human --\ncontent never sent to the LLM,\nnothing persisted (re-examined\nevery pass until public)", shape=box, fillcolor="#ECEFF1"];
 
     triage -> load;
     load -> loaderr [label="error"];
-    load -> qguard [label="ok"];
+    load -> priv [label="ok"];
+    priv -> privskip [label="yes"];
+    priv -> qguard [label="no"];
     qguard -> qskip [label="no / None\n(write modes)"];
     qguard -> facts [label="yes /\ndry-run"];
     facts -> gate;
@@ -38,8 +42,8 @@ digraph SponsoringBot {
     c1b -> c1bnote [style=dotted, arrowhead=none];
 
     // ---- finding-collecting checks (keep evaluating -- #31/#44) ----
-    c2 [label="Check 2: target_branch\n(merge MPs only -- #20)\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
-    c3 [label="Check 3: mp_conflicts\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c2 [label="Check 2: target_branch (#20)\nmerge MP -> should target debian/*\n(#104: overridden to \"not a merge\"\nif changelog base is an ubuntuN\nupload, not Debian); non-merge ->\nSRU-shaped (changelog series != devel)\nmust target ubuntu/<series>-devel\n(#105) → incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c3 [label="Check 3: mp_conflicts\n→ incomplete Finding\n(#105: skipped for the pass if\nCheck 2 already fired -- conflicts\nare a symptom of the wrong branch)", shape=box, fillcolor="#FFFFFF"];
     c4 [label="Check 4: empty_diff\n(closing)", shape=box, fillcolor="#FFFFFF"];
     c5 [label="Check 5: changelog_bug_reference (#25/#63)\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c6 [label="Check 6: stale_version (#27/#65)\nMPs + debdiff attachments on bugs\nmixed: closing (done/pending),\nqueued = in upload queue (#55)\nor incomplete Finding", shape=box, fillcolor="#FFFFFF"];
@@ -49,7 +53,7 @@ digraph SponsoringBot {
     gate -> c1 [label="changed / forced"];
     c1 -> c1b [label="no / None"];
     c1b -> c2 [label="no / None"];
-    c2 -> c3;
+    c2 -> c3 [label="always evaluated;\nfinding kept only if\nc2 didn't already fire"];
     c3 -> c4 [label="no / None"];
     c4 -> c5;
     c5 -> c6;
@@ -100,11 +104,14 @@ digraph SponsoringBot {
     // ---- findings aggregation + human-engaged gate (#44/#45) ----
     agg     [label="any findings collected?", shape=diamond, fillcolor="#FFF9C4"];
     engaged [label="human reviewer engaged? (#45/#72)\ncomment by non-submitter, non-bot,\nnon-service-account since the current\ndiff (MP) / newest usable diff\nattachment (bug; none -> any counts)", shape=diamond, fillcolor="#FFF9C4"];
+    covered [label="blocking findings remain (#94)?\nask LLM once (#106): does the\nreviewer's own comment already\nsubstantively cover any of them?\nfail-safe to \"none covered\" on\nno comment text / LLM failure", shape=diamond, fillcolor="#FFF9C4"];
     post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug + any blocking finding (#70):\ntasks → Incomplete, closing line says\n\"set it back to New\" when addressed", shape=box, fillcolor="#FFE0B2"];
 
     agg -> engaged [label="yes"];
     engaged -> post [label="no"];
-    engaged -> rfh  [label="yes: suppress all findings,\nfacts persist (quiet until new push)"];
+    engaged -> covered [label="yes: blocking findings\nsurvive (#94), question-tier\nfindings suppressed"];
+    covered -> post [label="some/none covered:\npost what remains"];
+    covered -> rfh  [label="every finding covered\n(blocking + question),\nfacts persist"];
     engaged -> silent [label="history unreadable (None)"];
 
     // ---- conclusive states ----
