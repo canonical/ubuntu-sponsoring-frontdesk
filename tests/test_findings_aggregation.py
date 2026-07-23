@@ -65,13 +65,26 @@ def test_render_multiline_message_stays_attached_to_its_bullet():
 
 
 def test_two_simultaneous_findings_surface_in_one_pass(tmp_path):
-    # Wrong target branch (merge MP targeting ubuntu/devel) AND merge
-    # conflicts: before #31 the contributor learned about these one bot run
-    # at a time; now both are bullets in the same single comment.
+    # Merge conflicts (check 3) AND a missing changelog stanza (check 9):
+    # before #31 the contributor learned about these one bot run at a time;
+    # now both are bullets in the same single comment. A wrong-target-branch
+    # finding (check 2) is deliberately NOT one of the two here -- since
+    # #104 that suppresses check 3's finding for the pass (conflicts are a
+    # downstream symptom of the wrong target, not a separate problem), so a
+    # plain fix MP is used instead to keep this test about aggregation
+    # itself, not that interaction (covered in test_mp_checks.py).
     sm = _state(tmp_path)
     mp = FakeMP(
         target=".../ubuntu/devel",
-        diff=FakeDiff("/d/1", 50, conflicts="foo.c", diff_text=CLEAN_DIFF_TEXT),
+        source="refs/heads/fix-lp2000001",
+        # debian/-only diff: keeps check_direct_source_edit's nativeness
+        # lookup (only triggered by non-debian edits) out of this test.
+        diff=FakeDiff(
+            "/d/1",
+            50,
+            conflicts="foo.c",
+            diff_text="diff --git a/debian/control b/debian/control\n@@ -1 +1 @@\n-Foo\n+Bar\n",
+        ),
     )
     lp = FakeTriageClient(objects={URL: mp})
 
@@ -79,7 +92,7 @@ def test_two_simultaneous_findings_surface_in_one_pass(tmp_path):
 
     assert len(lp.comments) == 1
     assert "merge conflicts" in lp.comments[0]
-    assert "should target" in lp.comments[0]  # the target-branch bullet
+    assert "changelog" in lp.comments[0]  # the missing-stanza bullet
     assert lp.votes == ["Needs Fixing"]
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
 

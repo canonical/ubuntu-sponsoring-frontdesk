@@ -1037,6 +1037,22 @@ Seventeen more live-found improvements, all same-day (journal #74-#90):
   evidence (base not visible) leaves the naming heuristic as-is. Live-
   verified against the trigger MP. See design_journal.md #104.
 
+## `--interactive` run continued, 2026-07-23 (#105)
+
+- **SRU-shaped MPs must target their own series branch, not ubuntu/devel**
+  (#105, krb5 MP #508796): a real noble fix (branch
+  `ubuntu/noble-devel-lp2161440`) was only bounced for "merge conflicts";
+  the actual problem is it targets `ubuntu/devel` instead of
+  `ubuntu/noble-devel` -- comparing noble's changelog content against
+  devel's unrelated history is exactly why it conflicts. `check_target_branch`
+  now also checks the non-merge case: when the new changelog entry's
+  suite is a confirmed stable series distinct from devel, the target
+  must be `ubuntu/<suite>-devel`. `check_mp_conflicts`'s finding is now
+  suppressed for the pass whenever Check 2 already found a wrong target
+  branch (this case or the older merge-mistarget case) -- conflicts are
+  noise once the real cause is named. Live-verified. See
+  design_journal.md #105.
+
 ## Backlog: external review findings, 2026-07-16 (not yet started)
 
 Two independent technical reviews (`TECHNICAL_REVIEW.md`, Claude-authored, and

@@ -1308,18 +1308,111 @@ def _debian_target_suite(lp_obj):
     return None
 
 
+def _new_changelog_suite(lp_obj):
+    """The suite word (series codename, or a Debian/placeholder value like
+    'unstable'/'UNRELEASED') from this MP's new changelog entry header,
+    read from the same stanza `_new_changelog_stanza_lines` isolates.
+    Tolerant of `git`'s conflict markers showing up among the added lines
+    (a merge-conflicted MP's preview diff can embed `<<<<<<<`/`=======`
+    literally) -- those simply don't match the header regex and are
+    skipped. None when the diff itself couldn't be fetched (retriable);
+    '' when the stanza has no parseable header at all."""
+    entry_lines = _new_changelog_stanza_lines(lp_obj)
+    if entry_lines is None:
+        return None
+    for line in entry_lines:
+        match = _CHANGELOG_HEADER_RE.match(line)
+        if match:
+            return match.group("suite").lower()
+    return ""
+
+
+_NON_SERIES_SUITES = {"unstable", "experimental", "unreleased"}
+
+
+def _check_sru_target_series(url, lp_obj, lp_client):
+    """Check 2b: an SRU-shaped MP (new changelog entry targets a stable
+    series) must target that series' `ubuntu/<series>-devel` branch, not
+    `ubuntu/devel` (the current devel series' branch) or another series'
+    branch entirely.
+
+    Trigger: krb5 MP #508796 -- source branch named
+    'ubuntu/noble-devel-lp2161440' (a real noble fix, LP: #2161440),
+    changelog entry for 'noble', but left targeting 'ubuntu/devel'
+    (stonking). check_mp_conflicts reported merge conflicts, but that's a
+    symptom of comparing noble content against unrelated devel history,
+    not the root cause -- the branch mismatch is (seb128, 2026-07-23).
+
+    This is a supplementary signal layered onto check_target_branch's
+    merge-detection (which already has its own None for a genuine "can't
+    determine"), so it fails safe to False -- not None -- whenever the
+    new entry's suite isn't a genuine, confirmed Ubuntu series distinct
+    from devel: an unreadable diff, Debian suites
+    ('unstable'/'experimental'), 'UNRELEASED' placeholders, a failed
+    devel-codename/supported-series lookup, and any suite not found in
+    `supported_series_ordered` are all left alone rather than guessed at
+    or forced into an indefinite retry.
+    """
+    suite = _new_changelog_suite(lp_obj)
+    if not suite or suite in _NON_SERIES_SUITES:
+        return False
+
+    devel_name = archive_lookup.devel_codename(lp_client.lp)
+    if devel_name is None:
+        logger.debug("_check_sru_target_series: devel codename lookup failed.")
+        return False
+    if suite == devel_name:
+        return False
+
+    supported = archive_lookup.supported_series_ordered(lp_client.lp)
+    if supported is None:
+        logger.debug("_check_sru_target_series: supported-series lookup failed.")
+        return False
+    if suite not in {name for name, _ in supported}:
+        logger.debug(
+            "_check_sru_target_series: %r isn't a recognized supported "
+            "series; not guessing.",
+            suite,
+        )
+        return False
+
+    target_branch_name = getattr(lp_obj, "target_git_path", "") or ""
+    expected = f"refs/heads/ubuntu/{suite}-devel"
+    if target_branch_name == expected:
+        return False
+
+    logger.info(
+        "[%s] targets %r but its changelog entry is for %r; expected %r. "
+        "Adding an incomplete finding.",
+        url,
+        target_branch_name,
+        suite,
+        expected,
+    )
+    return Finding(
+        "incomplete",
+        f"This Merge Proposal's changelog entry targets `{suite}`, but the "
+        f"MP itself targets `{target_branch_name}` instead of `{expected}`. "
+        "Please update the target branch to match the series you're fixing "
+        "-- this is very likely also the cause of any reported merge "
+        "conflicts, since the branch is being compared against the wrong "
+        "history.",
+    )
+
+
 def check_target_branch(url, lp_obj, lp_client):
     """
     Check 2: Target Branch
     Rejects merge MPs (rebase onto a newer Debian revision) that target
-    `ubuntu/devel` directly instead of `debian/sid`/`debian/experimental`.
-    Plain fix MPs and SRUs legitimately target `ubuntu/devel` /
-    `ubuntu/<series>` and are left alone -- see _is_merge_proposal.
+    `ubuntu/devel` directly instead of `debian/sid`/`debian/experimental`,
+    and SRU-shaped MPs (changelog entry for a stable series) that target
+    the wrong series branch -- see _check_sru_target_series.
 
     Returns True/False/None like every check, but None specifically means
-    _is_merge_proposal's `lp_obj.bugs` fallback call failed and we
-    genuinely can't tell if this is a merge MP -- see _is_merge_proposal's
-    docstring for why that must not be cached as "not a merge".
+    _is_merge_proposal's `lp_obj.bugs` fallback call failed -- genuinely
+    "couldn't determine", not "confirmed not a problem". The SRU-series
+    sub-check (_check_sru_target_series) is purely supplementary and fails
+    safe to False on any lookup failure of its own -- see its docstring.
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type != "branch_merge_proposal":
@@ -1334,10 +1427,10 @@ def check_target_branch(url, lp_obj, lp_client):
         return None
     if not is_merge:
         logger.debug(
-            "check_target_branch: not a merge MP; ubuntu/devel (or "
-            "ubuntu/<series> for an SRU) is a legitimate target. Skipping."
+            "check_target_branch: not a merge MP; checking for an SRU "
+            "targeting the wrong series branch."
         )
-        return False
+        return _check_sru_target_series(url, lp_obj, lp_client)
 
     target_branch_name = getattr(lp_obj, "target_git_path", "") or ""
     logger.debug(

@@ -246,11 +246,17 @@ def test_engaged_reviewer_does_not_suppress_a_blocking_finding(tmp_path):
     mp = _mp(
         [FakeMPComment(REVIEWER, "fix the conflict and I'll sponsor", AFTER_DIFF)],
         target=".../ubuntu/devel",
+        # Non-merge-shaped source: this test is about conflicts surviving
+        # human engagement, not the #104 interaction where a wrong target
+        # branch suppresses the conflicts finding for the pass.
+        source="refs/heads/fix-lp2000001",
+        # debian/-only diff: keeps check_direct_source_edit's nativeness
+        # lookup (only triggered by non-debian edits) out of this test.
         diff=FakeDiff(
             "/d/1",
             50,
             conflicts="foo.c",
-            diff_text=CLEAN_DIFF_TEXT,
+            diff_text="diff --git a/debian/control b/debian/control\n@@ -1 +1 @@\n-Foo\n+Bar\n",
             date_created=DIFF_DATE,
         ),
     )

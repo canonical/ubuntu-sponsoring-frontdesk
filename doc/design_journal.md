@@ -1651,3 +1651,42 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   `test_merge_mp_is_exempt` fixture updated to a genuine Debian-based
   merge diff (its old fixture had an Ubuntu-suffixed base, which is now
   correctly no longer treated as a merge). 535 total, lint clean.
+
+## 105. SRU-Shaped MPs Must Target Their Own Series Branch, Not ubuntu/devel
+
+* **Trigger:** live false negative -- krb5 MP #508796 (source branch
+  `ubuntu/noble-devel-lp2161440`, a real noble fix for LP: #2161440) was
+  bounced only for "merge conflicts", when the actual, more useful
+  finding is that it targets `ubuntu/devel` (stonking) instead of
+  `ubuntu/noble-devel`. Its new changelog entry is
+  `krb5 (1.20.1-6ubuntu2.7) noble; ...` -- comparing that content against
+  devel's unrelated history is exactly why it conflicts; the conflicts
+  are the symptom, the branch mismatch is the cause (seb128, 2026-07-23).
+* **Fix:** `check_target_branch` (Check 2) gains a second, independent
+  path for the non-merge case: `_check_sru_target_series` reads the new
+  changelog entry's suite (new `_new_changelog_suite`, tolerant of the
+  literal `<<<<<<<`/`=======` conflict-marker text a merge-conflicted
+  preview diff can embed -- verified against krb5's actual diff), and
+  when that suite is a real, `supported_series_ordered`-confirmed Ubuntu
+  series distinct from devel, requires the target to be exactly
+  `refs/heads/ubuntu/<suite>-devel` (reusing the existing
+  `_TARGET_SERIES_RE`/`_target_ubuntu_series` convention). Debian suites,
+  `UNRELEASED`, unconfirmable suites, and any archive-lookup failure all
+  fail safe to False (silent skip) -- this is a supplementary signal
+  layered onto Check 2, not its own source of "couldn't determine".
+* **main.py: `check_mp_conflicts`'s finding is now skipped for the pass
+  whenever Check 2 already found a wrong target branch** (either this
+  new SRU case or the pre-existing merge-mistarget case) -- conflicts
+  from comparing against the wrong branch are noise once the real
+  problem is already named; retargeting typically clears them anyway.
+* Live-verified against krb5 #508796: `check_target_branch` now fires
+  the "targets `noble`... expected `ubuntu/noble-devel`" finding, and
+  `check_mp_conflicts`'s finding is confirmed suppressed for the pass.
+* Tests: tests/test_mp_checks.py +3. Two pre-existing end-to-end tests
+  (test_findings_aggregation.py's two-simultaneous-findings test,
+  test_human_engaged.py's conflicts-survive-engagement test) used a
+  merge-shaped default source, so they now also trip Check 2 --
+  repointed to a non-merge source and swapped their second co-firing
+  check to check_missing_changelog_stanza / kept conflicts alone
+  respectively, preserving each test's original intent. 535 total, lint
+  clean.

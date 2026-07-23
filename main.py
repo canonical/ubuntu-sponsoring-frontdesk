@@ -275,19 +275,24 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     result = checks.check_target_branch(url, lp_obj, lp_client)
     checkpoint("check_target_branch")
     logger.debug("check_target_branch -> %s", result)
+    wrong_target_branch = bool(result)
     if result is None:
         inconclusive = True
     elif result:
         findings.append(result)
 
-    # Check 3: MP Conflicts (incomplete tier)
-    result = checks.check_mp_conflicts(url, lp_obj, lp_client)
-    checkpoint("check_mp_conflicts")
-    logger.debug("check_mp_conflicts -> %s", result)
-    if result is None:
-        inconclusive = True
-    elif result:
-        findings.append(result)
+    # Check 3: MP Conflicts (incomplete tier) -- skipped when Check 2 already
+    # found a wrong target branch: conflicts are the expected symptom of
+    # comparing against the wrong history there, not a separate problem to
+    # report (krb5 MP #508796, 2026-07-23).
+    if not wrong_target_branch:
+        result = checks.check_mp_conflicts(url, lp_obj, lp_client)
+        checkpoint("check_mp_conflicts")
+        logger.debug("check_mp_conflicts -> %s", result)
+        if result is None:
+            inconclusive = True
+        elif result:
+            findings.append(result)
 
     # Check 4: MP Empty Diff (closing tier -- short-circuits)
     fired = checks.check_empty_diff(url, lp_obj, lp_client)
