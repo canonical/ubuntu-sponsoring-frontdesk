@@ -6,3 +6,4 @@ __pycache__/
 # Local runtime state -- not source
 state.db
 audit.jsonl
+.claude/settings.local.json
