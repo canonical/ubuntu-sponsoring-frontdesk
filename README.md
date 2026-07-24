@@ -1,4 +1,4 @@
-# ubuntu-sponsoring-bot
+# Frontdesk
 
 A triage bot for the [Ubuntu sponsoring
 queue](https://ubuntu-sponsoring.ubuntu.com/): it reviews the bugs and
@@ -83,7 +83,7 @@ Machine-local setup, none of it in the repository:
 ## Reporting issues
 
 Repository, issue tracker, and contributions:
-<https://github.com/canonical/ubuntu-sponsoring-bot>
+<https://github.com/canonical/ubuntu-sponsoring-frontdesk>
 
 If the bot posted something wrong on your bug or merge proposal, please
 file an issue with the Launchpad URL -- every action the bot takes is

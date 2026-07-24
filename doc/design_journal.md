@@ -1,4 +1,4 @@
-# Ubuntu Sponsoring Bot: Design Journal
+# Frontdesk: Design Journal
 
 This document tracks major architectural and design decisions made during the development of the bot, along with the rationale behind them. For term definitions (both general Ubuntu/Launchpad sponsoring vocabulary and this bot's own concepts like "facts" or "inconclusive"), see [`GLOSSARY.md`](GLOSSARY.md).
 
