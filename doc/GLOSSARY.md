@@ -367,9 +367,17 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   SYNCED is an archive-fact close), suppressing immediately instead of
   after spending tokens on findings that could never post.
 - **`SERVICE_ACCOUNTS`** — frozenset in `checks.py` of Launchpad usernames
-  whose comments never count as human engagement (`~ubuntu-sponsoring-bot`,
-  `~git-ubuntu-bot`, `~git-ubuntu-import`, `~janitor`). Empirically
-  future-proofing: no service account had ever commented on a tracked MP
+  whose comments never count as human engagement: `~git-ubuntu-bot`,
+  `~git-ubuntu-import`, `~janitor`, and `~{BOT_USERNAME}` (the bot's own
+  account, env-overridable via `SPONSORING_BOT_LP_USERNAME` rather than a
+  bare literal). `checks.py`'s own engagement logic
+  (`_check_human_engaged`, `_engaged_reviewer_comment_texts`) doesn't
+  actually need the bot's entry here -- it excludes the bot dynamically via
+  `lp_client.lp.me.self_link` -- but `facts.py`'s comment fingerprint and
+  `sweep.py`'s bounce-response check filter by author *username* without a
+  live `lp_client` in scope, so they read `BOT_USERNAME`/`SERVICE_ACCOUNTS`
+  as data. Empirically future-proofing: no other service account had ever
+  commented on a tracked MP
   (git-ubuntu closes via status change; the janitor posts on bugs).
 - **Nothing to sponsor** — `check_nothing_to_sponsor` (#46), closing tier,
   bugs only: unsubscribes ~ubuntu-sponsors when the bug's fix is under
@@ -405,7 +413,7 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   already-uploaded MP — the latter replaces the "can be closed" MP comment
   when configured, per #43's switch). Never a mirror of queue statuses.
   The webhook URL lives outside the VCS in
-  `~/.config/ubuntu-sponsoring-bot/config.ini` (`[notifications]
+  `~/.config/ubuntu-sponsoring-frontdesk/config.ini` (`[notifications]
   webhook_url`); unconfigured means disabled. Dry-run logs "would notify".
 
 - **Rich history** — the contributor's actual git commits, preserved into
@@ -440,7 +448,7 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   member's vote on an MP claims the team's review slot and permanently
   drops the MP from the sponsoring report. Enabled when the helper
   credentials file exists (`$SPONSORING_BOT_HELPER_LP_CREDENTIALS`,
-  default `~/.cache/ubuntu-sponsoring-bot-helper/credentials`); without
+  default `~/.cache/ubuntu-sponsoring-frontdesk-helper/credentials`); without
   it the bot acts directly (transition behavior). Mode gating and audit
   stay in `LPClient`; helper exit != 0 counts as a failed write (facts
   withheld, retried). The bug activity log attributes the unsubscribe to

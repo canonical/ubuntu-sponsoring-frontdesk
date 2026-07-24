@@ -37,7 +37,7 @@ from launchpadlib.launchpad import Launchpad
 logger = logging.getLogger(__name__)
 
 _LP_TIMEOUT_SECONDS = 30
-_APP_NAME = "ubuntu-sponsoring-bot-helper"
+_APP_NAME = "ubuntu-sponsoring-frontdesk-helper"
 
 
 def _login():

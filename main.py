@@ -765,7 +765,8 @@ def main():
         logger.info(
             "No operator webhook configured (%s); anomaly notifications "
             "will only be logged.",
-            "[notifications] webhook_url in ~/.config/ubuntu-sponsoring-bot/config.ini",
+            "[notifications] webhook_url in "
+            "~/.config/ubuntu-sponsoring-frontdesk/config.ini",
         )
 
     if shutil.which("opencode") is None:

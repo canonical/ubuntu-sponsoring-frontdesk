@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import re
 from typing import NamedTuple
 
@@ -95,18 +96,28 @@ def render_findings_comment(findings, for_bug=False):
     return "\n\n".join(parts)
 
 
+# The bot's own Launchpad username. Env-overridable (same convention as the
+# credentials/cache paths in launchpad_client.py) rather than a bare literal,
+# so an account rename is a config change, not a code change. checks.py's own
+# engagement logic (_check_human_engaged, _engaged_reviewer_comment_texts)
+# doesn't actually need this -- it excludes the bot dynamically by comparing
+# each comment's author against lp_client.lp.me.self_link, whichever account
+# the running process is actually authenticated as. But facts.py and
+# sweep.py filter comments by author *username* without a live lp_client in
+# scope, so they need the name available as data, not just a runtime
+# identity check.
+BOT_USERNAME = os.environ.get("SPONSORING_BOT_LP_USERNAME", "ubuntu-sponsoring-bot")
+
 # Service accounts whose comments must not count as "a human reviewer is
 # engaged" (design_journal.md #45 follow-up). Checked live (2026-07-06, all
 # 52 tracked MPs): NO service account has ever commented on a sponsoring MP
 # -- git-ubuntu closes MPs via a status change, not a comment -- so today
-# this list is future-proofing, not a fix. ~ubuntu-sponsoring-bot is the
-# entry that matters: once the bot moves off seb128's personal account, its
-# pre-switch comments won't match lp.me anymore. ~janitor comments on BUGS
-# ("This bug was fixed in the package ..."), so it becomes load-bearing when
-# the bug side of #35 ships. Maintained by editing this constant.
+# this list is future-proofing, not a fix. ~janitor comments on BUGS ("This
+# bug was fixed in the package ..."), so it becomes load-bearing when the
+# bug side of #35 ships. Maintained by editing this constant.
 SERVICE_ACCOUNTS = frozenset(
     {
-        "~ubuntu-sponsoring-bot",
+        f"~{BOT_USERNAME}",
         "~git-ubuntu-bot",
         "~git-ubuntu-import",
         "~janitor",

@@ -49,8 +49,13 @@ idempotent and safe to repeat.
 Machine-local setup, none of it in the repository:
 
 - **Launchpad credentials**: OAuth token cached under
-  `~/.cache/ubuntu-sponsoring-bot/` (env-overridable, see
+  `~/.cache/ubuntu-sponsoring-frontdesk/` (env-overridable, see
   `launchpad_client.py`); first run opens a browser to authorise.
+- **Bot's Launchpad username**: defaults to `ubuntu-sponsoring-bot`
+  (`checks.BOT_USERNAME`), overridable via `SPONSORING_BOT_LP_USERNAME` if
+  the account is ever renamed -- used to recognise the bot's own past
+  comments where a live session isn't available (facts fingerprinting, the
+  bounce-response sweep).
 - **Privileged helper**: the `~ubuntu-sponsors` unsubscribe runs through
   `privileged_helper.py` with a separate team-member token
   (`python3 privileged_helper.py login`); the bot account itself must
@@ -77,7 +82,7 @@ Machine-local setup, none of it in the repository:
   design_journal.md #99). If the agent is missing the bot fails safe --
   every LLM-phase item defers to a human and a warning names this file.
 - **Operator notifications** (optional): a Mattermost incoming-webhook
-  URL in `~/.config/ubuntu-sponsoring-bot/config.ini` (see `notify.py`);
+  URL in `~/.config/ubuntu-sponsoring-frontdesk/config.ini` (see `notify.py`);
   absent means notifications are simply disabled.
 
 ## Reporting issues

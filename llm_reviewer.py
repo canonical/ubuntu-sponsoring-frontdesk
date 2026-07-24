@@ -270,7 +270,7 @@ class LLMReviewer:
             if not self._run_budget_notified:
                 self._run_budget_notified = True
                 message = (
-                    "ubuntu-sponsoring-bot: LLM run budget exhausted "
+                    "ubuntu-sponsoring-frontdesk: LLM run budget exhausted "
                     f"({_RUN_LLM_CALL_BUDGET} calls); the remaining items "
                     "this pass are deferred. A pathological queue item or a "
                     "bot bug is likely -- check the logs."

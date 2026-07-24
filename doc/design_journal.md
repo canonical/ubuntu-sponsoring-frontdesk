@@ -1735,3 +1735,50 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   READY_FOR_HUMAN; not-covered finding still posts; LLM failure (None)
   fails safe to posting; no reviewer text -> nothing to check). 539
   total, lint clean.
+
+## 107. Project Renamed to Frontdesk; Bot Username Made Env-Overridable
+
+* **Trigger:** the repo's working name (`ubuntu-sponsoring-bot`) was
+  always a placeholder. Settled on "Frontdesk" (a Discourse
+  announcement post was already being drafted under that name; other
+  candidates -- Patch Pilot, Vanguard -- were ruled out as already
+  naming existing human programs). Repo moving to
+  `github.com/canonical/ubuntu-sponsoring-frontdesk`.
+* **Scope, deliberately split in two:**
+  1. **Docs/branding only** (README title, GitHub URL, design journal
+     title): safe, no effect on a running deployment.
+  2. **Local app identity** (`launchpad_client.py`'s `app_name`,
+     `privileged_helper.py`'s `_APP_NAME`, `notify.py`'s config path):
+     renamed to `ubuntu-sponsoring-frontdesk`(-helper) too, once seb128
+     confirmed he wanted the `~/.cache`/`~/.config` paths to match
+     rather than stay pinned to the old name. Real consequence: the
+     existing OAuth token cache lives under the old path, so this
+     triggers a fresh browser-OAuth login on next run; any configured
+     notification webhook needs its config file moved by hand.
+* **The comment-footer feedback link** also moved off the
+  `ubuntu-sponsoring` Launchpad project (stacked there for lack of a
+  dedicated space, #57) to `github.com/canonical/ubuntu-sponsoring-frontdesk/issues`,
+  now that a real repo exists to host it.
+* **Follow-up question (seb128): is the Launchpad account itself
+  hardcoded anywhere, and should it be config?** It isn't hardcoded as
+  "who to authenticate as" -- OAuth login is to whichever account
+  authorizes the token, so there's no login-target config missing.
+  But `checks.SERVICE_ACCOUNTS` did hardcode the bot's own username as
+  a literal (`"~ubuntu-sponsoring-bot"`), used to recognize the bot's
+  own past comments as "not human engagement." First attempt: drop it
+  entirely, since `_check_human_engaged`/`_engaged_reviewer_comment_texts`
+  already exclude the bot dynamically via `lp_client.lp.me.self_link`
+  (the same pattern `LPClient`'s own comment-dedup already uses) --
+  broke 2 tests. `facts.py`'s `_comments_digest` and `sweep.py`'s
+  bounce-response check both filter comments by author *username*
+  without a live `lp_client` in scope at that call site, so they
+  genuinely need the name as data, not just a runtime identity check.
+* **Fix:** `checks.BOT_USERNAME = os.environ.get("SPONSORING_BOT_LP_USERNAME",
+  "ubuntu-sponsoring-bot")` -- same env-override convention as the
+  credentials/cache paths -- and `SERVICE_ACCOUNTS` now builds its own
+  entry as `f"~{BOT_USERNAME}"` instead of a bare literal. An account
+  rename is now a config change (or a one-line default edit) rather
+  than a hunt through the codebase; `_check_human_engaged`'s dynamic
+  `lp.me` check stays the primary, more precise mechanism where a live
+  session is available.
+* Tests: 539 total (no new tests -- fixed the 2 that broke), lint clean.

@@ -71,7 +71,7 @@ def _helper_credentials():
         os.path.join(
             os.path.expanduser("~"),
             ".cache",
-            "ubuntu-sponsoring-bot-helper",
+            "ubuntu-sponsoring-frontdesk-helper",
             "credentials",
         ),
     )
@@ -91,7 +91,11 @@ _EFFECTIVE_WRITE_OUTCOMES = ("performed", "skipped-duplicate")
 
 class LPClient:
     def __init__(
-        self, app_name="ubuntu-sponsoring-bot", mode="dry-run", audit=None, lp=None
+        self,
+        app_name="ubuntu-sponsoring-frontdesk",
+        mode="dry-run",
+        audit=None,
+        lp=None,
     ):
         self.mode = mode
         self.audit = audit if audit is not None else AuditLog()

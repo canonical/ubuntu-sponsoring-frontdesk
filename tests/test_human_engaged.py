@@ -73,10 +73,10 @@ def test_submitter_and_bot_comments_do_not_count():
 
 
 def test_service_account_comments_do_not_count():
-    # A known automated account (checks.SERVICE_ACCOUNTS) must never silence
-    # the bot -- notably ~ubuntu-sponsoring-bot itself, whose pre-account-
-    # switch comments won't match lp.me once the bot moves off seb128's
-    # personal account.
+    # A known automated account (checks.SERVICE_ACCOUNTS, which also
+    # includes the bot's own username) must never silence the bot. The
+    # bot's own comments are separately excluded dynamically via lp.me too
+    # (see test_submitter_and_bot_comments_do_not_count).
     comments = [
         FakeMPComment(
             f"https://api.launchpad.net/devel/{acct}", "automated noise", AFTER_DIFF

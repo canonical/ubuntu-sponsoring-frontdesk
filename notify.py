@@ -8,7 +8,7 @@ ordinary queue states (READY_FOR_HUMAN etc.) into chat; sponsors already
 have the queue page for that.
 
 The webhook URL is a secret and lives outside the VCS, in
-~/.config/ubuntu-sponsoring-bot/config.ini::
+~/.config/ubuntu-sponsoring-frontdesk/config.ini::
 
     [notifications]
     webhook_url = https://chat.example.com/hooks/...
@@ -51,7 +51,10 @@ def _config_path():
     return os.environ.get(
         "SPONSORING_BOT_CONFIG",
         os.path.join(
-            os.path.expanduser("~"), ".config", "ubuntu-sponsoring-bot", "config.ini"
+            os.path.expanduser("~"),
+            ".config",
+            "ubuntu-sponsoring-frontdesk",
+            "config.ini",
         ),
     )
 
