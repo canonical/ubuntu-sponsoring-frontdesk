@@ -5,8 +5,6 @@ metadata shows nothing, the LLM checks whether the bug text says it's fixed."""
 
 import types
 
-import archive_lookup
-import checks
 from fakes import (
     FakeAttachment,
     FakeBug,
@@ -17,6 +15,8 @@ from fakes import (
     FakeTask,
 )
 
+import archive_lookup
+import checks
 
 # jammy < noble < resolute (stable) < stonking (devel); focal EOL.
 _SERIES_TABLE = [
@@ -32,9 +32,7 @@ class _LP:
     def __init__(self):
         self.lp = types.SimpleNamespace(
             distributions={
-                "ubuntu": FakeDistribution(
-                    devel_series_name="stonking", series=_SERIES_TABLE
-                )
+                "ubuntu": FakeDistribution(devel_series_name="stonking", series=_SERIES_TABLE)
             }
         )
 
@@ -137,9 +135,7 @@ def test_linked_mps_per_series_count_as_handled():
             FakeMP(target="refs/heads/ubuntu/resolute-devel"),
         ],
     )
-    assert (
-        checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is False
-    )
+    assert checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is False
 
 
 def test_series_named_patch_attachment_counts_as_handled():
@@ -150,9 +146,7 @@ def test_series_named_patch_attachment_counts_as_handled():
             FakeAttachment("fix-stonking.debdiff", type="Patch"),
         ],
     )
-    assert (
-        checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is False
-    )
+    assert checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is False
 
 
 _STONKING_DEBDIFF = """\
@@ -355,9 +349,7 @@ def test_series_table_lookup_failure_is_inconclusive(monkeypatch):
         raise FileNotFoundError("ubuntu-distro-info not installed")
 
     monkeypatch.setattr(archive_lookup, "_distro_info", _boom)
-    assert (
-        checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is None
-    )
+    assert checks.check_sru_newer_series("url", _sru_mp([bug]), _LP(), FakeLLM()) is None
 
 
 def test_unreadable_linked_bugs_is_inconclusive():
@@ -371,9 +363,7 @@ def test_unreadable_linked_bugs_is_inconclusive():
         def bugs(self):
             raise RuntimeError("network blip")
 
-    assert (
-        checks.check_sru_newer_series("url", _RaisingBugs(), _LP(), FakeLLM()) is None
-    )
+    assert checks.check_sru_newer_series("url", _RaisingBugs(), _LP(), FakeLLM()) is None
 
 
 def test_sru_to_eol_series_is_skipped():

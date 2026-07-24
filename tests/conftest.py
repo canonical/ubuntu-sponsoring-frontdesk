@@ -41,6 +41,4 @@ def _pinned_distro_info(monkeypatch):
         ("--supported",): "jammy\nnoble\nresolute\nstonking\n",
         ("--supported", "--release"): "22.04 LTS\n24.04 LTS\n26.04 LTS\n26.10\n",
     }
-    monkeypatch.setattr(
-        archive_lookup, "_distro_info", lambda *args: outputs[args]
-    )
+    monkeypatch.setattr(archive_lookup, "_distro_info", lambda *args: outputs[args])

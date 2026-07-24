@@ -100,11 +100,7 @@ class FakeMP:
         self.preview_diff = (
             None
             if no_diff
-            else (
-                diff
-                if diff is not None
-                else FakeDiff("/diff/1", 42, conflicts=conflicts)
-            )
+            else (diff if diff is not None else FakeDiff("/diff/1", 42, conflicts=conflicts))
         )
         # Used by checks._diff_missing_is_still_generating's grace-period
         # check when preview_diff is None.
@@ -114,7 +110,9 @@ class FakeMP:
         self.registrant_link = HUMAN
         self.queue_status = queue_status
         self.self_link = f"https://api.launchpad.net/devel/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
-        self.web_link = f"https://code.launchpad.net/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
+        self.web_link = (
+            f"https://code.launchpad.net/~human/ubuntu/+source/{package}/+git/{package}/+merge/1"
+        )
         self.all_comments = []
         self.created_comments = []
         self.created_votes = []
@@ -151,15 +149,17 @@ _DEFAULT_PATCH = "--- a/src/x.c\n+++ b/src/x.c\n@@ -1 +1 @@\n-a\n+b\n"
 
 class FakeAttachment:
     def __init__(
-        self, title, type="Unspecified", content=None, fail_fetch=False,
+        self,
+        title,
+        type="Unspecified",
+        content=None,
+        fail_fetch=False,
         date_created=None,
     ):
         self.title = title
         self.type = type  # Launchpad's patch flag: "Patch" when ticked
         self.self_link = f"https://api.launchpad.net/devel/bug/1/+attachment/{title}"
-        self.data = FakeHostedFile(
-            _DEFAULT_PATCH if content is None else content, fail=fail_fetch
-        )
+        self.data = FakeHostedFile(_DEFAULT_PATCH if content is None else content, fail=fail_fetch)
         # Real attachments have no date of their own; their upload
         # message's date_created is the timestamp (#66).
         self.message = types.SimpleNamespace(date_created=date_created)
@@ -198,9 +198,7 @@ class FakeBug:
         # Direct subscriptions; queue items carry a sponsoring team (#76).
         # Default matches the common case so most tests need no change.
         self.subscriptions = (
-            subscriptions
-            if subscriptions is not None
-            else [FakeSubscription("~ubuntu-sponsors")]
+            subscriptions if subscriptions is not None else [FakeSubscription("~ubuntu-sponsors")]
         )
         # New-bug grace period (#91). Default well past it so existing
         # tests are unaffected; pass a recent timestamp to exercise it.
@@ -292,9 +290,7 @@ class FakeRoot:
     def __init__(self, me_link=BOT, devel_series_name="noble"):
         self.me = FakePerson(me_link)
         self.people = {
-            "ubuntu-sponsors": FakePerson(
-                "https://api.launchpad.net/devel/~ubuntu-sponsors"
-            )
+            "ubuntu-sponsors": FakePerson("https://api.launchpad.net/devel/~ubuntu-sponsors")
         }
         self.distributions = {"ubuntu": FakeDistribution(devel_series_name)}
 
@@ -337,11 +333,7 @@ class FakeTriageClient:
         self.write_outcomes.append(self.write_outcome)
 
     def set_bug_tasks_incomplete(self, obj):
-        bug = (
-            obj.bug
-            if getattr(obj, "resource_type_link", "").endswith("bug_task")
-            else obj
-        )
+        bug = obj.bug if getattr(obj, "resource_type_link", "").endswith("bug_task") else obj
         resolved = (
             "Fix Released",
             "Fix Committed",
@@ -359,11 +351,7 @@ class FakeTriageClient:
         return changed
 
     def set_bug_tasks_new(self, obj):
-        bug = (
-            obj.bug
-            if getattr(obj, "resource_type_link", "").endswith("bug_task")
-            else obj
-        )
+        bug = obj.bug if getattr(obj, "resource_type_link", "").endswith("bug_task") else obj
         changed = {}
         for task in bug.bug_tasks:
             if "(Ubuntu" in task.bug_target_name and task.status == "Incomplete":
@@ -374,11 +362,7 @@ class FakeTriageClient:
         return changed
 
     def set_bug_tasks_fix_released(self, obj):
-        bug = (
-            obj.bug
-            if getattr(obj, "resource_type_link", "").endswith("bug_task")
-            else obj
-        )
+        bug = obj.bug if getattr(obj, "resource_type_link", "").endswith("bug_task") else obj
         terminal = ("Fix Released", "Fix Committed", "Won't Fix", "Invalid")
         changed = {}
         for task in bug.bug_tasks:
@@ -403,9 +387,7 @@ class FakeAudit:
 
 
 class FakeLLM:
-    def __init__(
-        self, bug_result=("READY_FOR_HUMAN", ""), mp_result=("READY_FOR_HUMAN", "n/a")
-    ):
+    def __init__(self, bug_result=("READY_FOR_HUMAN", ""), mp_result=("READY_FOR_HUMAN", "n/a")):
         self.bug_result = bug_result
         self.mp_result = mp_result
 

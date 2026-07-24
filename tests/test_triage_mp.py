@@ -5,11 +5,12 @@ any parsing doubt means silence, not noise."""
 
 import datetime
 
+from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+
 import llm_reviewer
 import main
 import release_schedule
 from state import StateManager
-from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -183,9 +184,7 @@ def test_advisory_returns_observation_list():
 
 
 def test_advisory_returns_mismatch_as_verify_kind():
-    r = ScriptedReviewer(
-        _reply(verdict="fail", mismatches=["Stanza claims X but diff shows Y."])
-    )
+    r = ScriptedReviewer(_reply(verdict="fail", mismatches=["Stanza claims X but diff shows Y."]))
     status, payload = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
     assert status == "ADVISORY"
     assert payload == [("verify", "Stanza claims X but diff shows Y.")]
@@ -218,8 +217,7 @@ def test_oversized_debian_diff_is_truncated_with_note(monkeypatch):
 
 def _diff_with_many_upstream_files(paths):
     sections = "".join(
-        f"diff --git a/{p} b/{p}\nindex 1..2 100644\n--- a/{p}\n+++ b/{p}\n"
-        "@@ -1 +1 @@\n-a\n+b\n"
+        f"diff --git a/{p} b/{p}\nindex 1..2 100644\n--- a/{p}\n+++ b/{p}\n@@ -1 +1 @@\n-a\n+b\n"
         for p in paths
     )
     return MERGE_DIFF + sections
@@ -288,9 +286,7 @@ def test_sru_targeted_mp_skips_the_ff_question_even_after_freeze(monkeypatch):
         datetime.date.today() - datetime.timedelta(days=1),
     )
     r = ScriptedReviewer(_reply(feature="yes"))
-    status, _ = r.triage_mp(
-        FakeMP(target="refs/heads/ubuntu/noble-devel"), diff_text=MERGE_DIFF
-    )
+    status, _ = r.triage_mp(FakeMP(target="refs/heads/ubuntu/noble-devel"), diff_text=MERGE_DIFF)
     assert status == "READY_FOR_HUMAN"
     assert "Feature Freeze" not in r.prompts[0]
 
@@ -308,9 +304,7 @@ def test_devel_series_named_by_codename_still_gets_the_ff_question(monkeypatch):
     r = ScriptedReviewer(_reply(feature="yes"))
     r.lp = types.SimpleNamespace(
         distributions={
-            "ubuntu": types.SimpleNamespace(
-                current_series=types.SimpleNamespace(name="stonking")
-            )
+            "ubuntu": types.SimpleNamespace(current_series=types.SimpleNamespace(name="stonking"))
         }
     )
     status, payload = r.triage_mp(
@@ -365,9 +359,7 @@ def test_advisory_verify_kind_posts_please_verify_comment_no_vote(tmp_path):
     sm = _state(tmp_path)
     mp = FakeMP(diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT))
     lp = FakeTriageClient(objects={URL: mp})
-    llm = FakeLLM(
-        mp_result=("ADVISORY", [("verify", "Stanza claims X but diff shows Y.")])
-    )
+    llm = FakeLLM(mp_result=("ADVISORY", [("verify", "Stanza claims X but diff shows Y.")]))
 
     main.triage_url(URL, sm, lp, llm)
 
@@ -386,9 +378,7 @@ def test_advisory_plus_blocking_finding_split_into_sections(tmp_path):
     # sections, and the vote/status driven by the blocking one.
     mp = FakeMP(diff=FakeDiff("/d/1", 50, conflicts="foo.c", diff_text=CLEAN_DIFF_TEXT))
     lp = FakeTriageClient(objects={URL: mp})
-    llm = FakeLLM(
-        mp_result=("ADVISORY", [("advisory", "Consider clarifying the stanza.")])
-    )
+    llm = FakeLLM(mp_result=("ADVISORY", [("advisory", "Consider clarifying the stanza.")]))
 
     main.triage_url(URL, sm, lp, llm)
 
@@ -445,9 +435,7 @@ def test_sru_mp_without_a_linked_bug_skips_the_template_check():
 
 def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
     r = QueuedReviewer([_sru_template_reply("fail", "Missing [Test Plan].")])
-    mp = FakeMP(
-        target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")]
-    )
+    mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")])
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
     assert "Missing [Test Plan]" in comment
@@ -459,9 +447,7 @@ def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
 
 def test_sru_mp_single_bug_passing_template_falls_through_to_the_diff_review():
     r = QueuedReviewer([_sru_template_reply("pass"), _reply()])
-    mp = FakeMP(
-        target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")]
-    )
+    mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")])
     status, _ = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "READY_FOR_HUMAN"
     assert len(r.prompts) == 2
@@ -487,9 +473,7 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
 
 
 def test_sru_mp_multiple_bugs_all_passing_falls_through():
-    r = QueuedReviewer(
-        [_sru_template_reply("pass"), _sru_template_reply("pass"), _reply()]
-    )
+    r = QueuedReviewer([_sru_template_reply("pass"), _sru_template_reply("pass"), _reply()])
     mp = FakeMP(
         target="refs/heads/ubuntu/noble-devel",
         bugs=[FakeBug(id=10, description="ok"), FakeBug(id=20, description="ok")],

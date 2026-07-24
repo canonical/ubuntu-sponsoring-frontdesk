@@ -93,8 +93,7 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
     # ever becomes public again.
     if getattr(bug, "private", False):
         logger.info(
-            "Sweep [%s]: bug is private -- leaving for a human, content "
-            "never sent to the LLM.",
+            "Sweep [%s]: bug is private -- leaving for a human, content never sent to the LLM.",
             url,
         )
         return
@@ -151,8 +150,7 @@ def _sweep_one(url, bounce_reason, state_manager, lp_client, llm_reviewer):
                 )
                 return
             logger.debug(
-                "Sweep [%s]: response doesn't address the feedback; timer "
-                "logic applies.",
+                "Sweep [%s]: response doesn't address the feedback; timer logic applies.",
                 url,
             )
         else:

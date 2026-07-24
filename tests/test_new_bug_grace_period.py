@@ -7,8 +7,9 @@ useful to preview); write modes skip and retry next run."""
 
 import datetime
 
+from fakes import OLD_ENOUGH, FakeBug, FakeLLM, FakeRoot, FakeTask, FakeTriageClient
+
 import main
-from fakes import FakeBug, FakeLLM, FakeRoot, FakeTask, FakeTriageClient, OLD_ENOUGH
 
 BUG_URL = "https://bugs.launchpad.net/ubuntu/+source/foo/+bug/1"
 
@@ -23,9 +24,7 @@ def _fresh_bug(minutes_ago=1):
     created = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
         minutes=minutes_ago
     )
-    return FakeBug(
-        tasks=[FakeTask("foo (Ubuntu)", "New")], date_created=created
-    )
+    return FakeBug(tasks=[FakeTask("foo (Ubuntu)", "New")], date_created=created)
 
 
 def test_write_mode_skips_a_fresh_bug(tmp_path):
@@ -98,9 +97,7 @@ def test_mps_are_not_subject_to_the_grace_period(tmp_path):
     from fakes import FakeMP
 
     sm = _state(tmp_path)
-    mp = FakeMP(
-        target="refs/heads/ubuntu/devel"
-    )  # FakeMP has no date_created concept at all
+    mp = FakeMP(target="refs/heads/ubuntu/devel")  # FakeMP has no date_created concept at all
     url = "https://code.launchpad.net/~human/+merge/1"
     lp = FakeTriageClient(objects={url: mp}, lp=FakeRoot())
 

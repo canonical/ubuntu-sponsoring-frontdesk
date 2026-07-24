@@ -267,9 +267,7 @@ def test_published_source_status_none_finds_superseded(monkeypatch):
     # to tell "this MP's change already landed" apart from "never uploaded".
     lp = _FakeLP(
         devel_name="noble",
-        publications={
-            ("foo", "noble"): [_FakePublication("1.0-1", status="Superseded")]
-        },
+        publications={("foo", "noble"): [_FakePublication("1.0-1", status="Superseded")]},
     )
     pub = archive_lookup.published_source(lp, "foo", "noble", "1.0-1", status=None)
     assert pub is not None
@@ -372,9 +370,7 @@ class _Upload:
 def test_queue_changes_text_decodes_the_changes_field(monkeypatch):
     import urllib.request
 
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *a, **k: _Response(_CHANGES_FILE)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Response(_CHANGES_FILE))
     text = archive_lookup.queue_changes_text(_Upload())
     # One-space continuation prefix stripped, ' .' decoded to a blank line,
     # field ends at the next non-continuation header.
@@ -395,9 +391,7 @@ def test_queue_changes_text_none_on_fetch_failure(monkeypatch):
 def test_queue_changes_text_none_without_changes_field(monkeypatch):
     import urllib.request
 
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *a, **k: _Response(b"Format: 1.8\n")
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Response(b"Format: 1.8\n"))
     assert archive_lookup.queue_changes_text(_Upload()) is None
 
 

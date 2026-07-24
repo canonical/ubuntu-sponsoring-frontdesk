@@ -1,0 +1,20 @@
+[tool.ruff]
+line-length = 99
+lint.select = ["E", "W", "F", "C", "N", "I001"]
+# C901 (mccabe complexity) is inherent to this codebase's decision-tree
+# check functions -- flagged as noise here rather than a real code
+# smell; see doc/design_journal.md for the backlog note on selective
+# refactoring candidates instead of a blanket threshold.
+lint.ignore = ["C901"]
+extend-exclude = ["__pycache__", "*.egg_info"]
+
+[tool.ruff.lint.per-file-ignores]
+# Fakes/doubles mirror launchpadlib's real camelCase method names
+# (createComment, getPublishedSources, ...) -- renaming would decouple
+# the test doubles from the API they simulate.
+"tests/*" = ["N802"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.format]

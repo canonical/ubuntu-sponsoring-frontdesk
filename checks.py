@@ -64,14 +64,9 @@ def render_findings_comment(findings, for_bug=False):
         # visually attached to its bullet in Launchpad's plain-text renderer.
         return "\n".join("* " + f.message.replace("\n", "\n  ") for f in items)
 
-    parts = [
-        "Thanks for your contribution! The automated review spotted the "
-        "following points:"
-    ]
+    parts = ["Thanks for your contribution! The automated review spotted the following points:"]
     if incomplete:
-        parts.append(
-            "Needs fixing before this can be sponsored:\n\n" + bullets(incomplete)
-        )
+        parts.append("Needs fixing before this can be sponsored:\n\n" + bullets(incomplete))
     if verify:
         parts.append(
             "Please verify (not confirmed -- if any of these are real they'd "
@@ -210,8 +205,7 @@ def _check_human_engaged(lp_obj, lp_client):
             diff = lp_obj.preview_diff
             anchor = getattr(diff, "date_created", None) if diff is not None else None
             comments = [
-                (c.author_link, getattr(c, "date_created", None))
-                for c in lp_obj.all_comments
+                (c.author_link, getattr(c, "date_created", None)) for c in lp_obj.all_comments
             ]
             anchor_desc = "diff"
         elif resource_type in ("bug", "bug_task"):
@@ -226,9 +220,7 @@ def _check_human_engaged(lp_obj, lp_client):
             anchor = None
             if target:
                 attachment, _text = target
-                anchor = getattr(
-                    getattr(attachment, "message", None), "date_created", None
-                )
+                anchor = getattr(getattr(attachment, "message", None), "date_created", None)
             comments = [
                 (m.owner_link, getattr(m, "date_created", None))
                 for m in bug.messages
@@ -250,8 +242,7 @@ def _check_human_engaged(lp_obj, lp_client):
                 continue
             if anchor is not None and date is not None and date <= anchor:
                 logger.debug(
-                    "  [engaged] ignoring comment by %s: predates the "
-                    "current %s (%s <= %s).",
+                    "  [engaged] ignoring comment by %s: predates the current %s (%s <= %s).",
                     author,
                     anchor_desc,
                     date,
@@ -337,9 +328,7 @@ def _engaged_reviewer_comment_texts(lp_obj, lp_client):
             anchor = None
             if target:
                 attachment, _text = target
-                anchor = getattr(
-                    getattr(attachment, "message", None), "date_created", None
-                )
+                anchor = getattr(getattr(attachment, "message", None), "date_created", None)
             comments = [
                 (m.owner_link, getattr(m, "date_created", None), m.content or "")
                 for m in bug.messages
@@ -360,8 +349,7 @@ def _engaged_reviewer_comment_texts(lp_obj, lp_client):
         return texts
     except Exception as e:
         logger.warning(
-            "_engaged_reviewer_comment_texts: couldn't re-read the comment "
-            "history (%s).",
+            "_engaged_reviewer_comment_texts: couldn't re-read the comment history (%s).",
             e,
         )
         return []
@@ -391,9 +379,7 @@ def check_sponsoring_team_subscribed(url, lp_obj):
         return True
     bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
     try:
-        subscribers = {
-            s.person_link.rsplit("/", 1)[-1] for s in bug.subscriptions
-        }
+        subscribers = {s.person_link.rsplit("/", 1)[-1] for s in bug.subscriptions}
     except Exception as e:
         logger.warning(
             "check_sponsoring_team_subscribed: could not read subscriptions "
@@ -448,9 +434,7 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
     if resource_type == "branch_merge_proposal":
         # MPs use queue_status; they drop off the sponsor queue automatically
         # when merged/rejected.
-        logger.debug(
-            "check_administrative_state: MP queue_status=%r", lp_obj.queue_status
-        )
+        logger.debug("check_administrative_state: MP queue_status=%r", lp_obj.queue_status)
         if lp_obj.queue_status in ("Merged", "Rejected"):
             logger.info("[%s] is %s. No action needed.", url, lp_obj.queue_status)
             return True
@@ -479,9 +463,7 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         any_landed,
     )
     if all_closed and any_landed:
-        summary = ", ".join(
-            sorted(f"{task.bug_target_name}: {task.status}" for task in tasks)
-        )
+        summary = ", ".join(sorted(f"{task.bug_target_name}: {task.status}" for task in tasks))
         if any(task.status == "Fix Committed" for task in tasks):
             # Fix Committed (an upload waiting in -proposed/the SRU queue,
             # possibly for weeks) does NOT drop off the sponsoring report on
@@ -490,8 +472,7 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
             # at least early on, to avoid pushback -- sponsors who find it
             # verbose can unsubscribe the team themselves when uploading.
             logger.info(
-                "[%s] uploaded and awaiting release (%s). Unsubscribing "
-                "~ubuntu-sponsors.",
+                "[%s] uploaded and awaiting release (%s). Unsubscribing ~ubuntu-sponsors.",
                 url,
                 summary,
             )
@@ -574,6 +555,7 @@ def _bug_open_ubuntu_series(bug):
             series_open.add(series.lower())
     return devel_open, series_open
 
+
 # A plausible link to a proposed package build/source, for needs-packaging
 # bugs (design_journal.md #50). A brand-new package has no existing branch
 # to attach a patch/debdiff to, so pointing at a PPA (the build) and/or a
@@ -599,10 +581,7 @@ def _is_needs_packaging(bug):
     Ubuntu yet' requests (STATUS.md's known residual edge). There is, by
     definition, no existing packaging branch to diff against, so having no
     patch/debdiff attached is normal here, unlike an ordinary bug."""
-    return any(
-        (task.bug_target_name or "").strip().lower() == "ubuntu"
-        for task in bug.bug_tasks
-    )
+    return any((task.bug_target_name or "").strip().lower() == "ubuntu" for task in bug.bug_tasks)
 
 
 # The sponsoring-report/bug-title convention for new-package requests.
@@ -632,9 +611,7 @@ def _needs_packaging_uploaded(url, bug, lp_client):
     """
     match = _NEEDS_PACKAGING_TITLE_RE.match(getattr(bug, "title", "") or "")
     if not match:
-        logger.debug(
-            "_needs_packaging_uploaded: no package name in the title; skipping."
-        )
+        logger.debug("_needs_packaging_uploaded: no package name in the title; skipping.")
         return False
     package = match.group("pkg").lower()
 
@@ -660,8 +637,7 @@ def _needs_packaging_uploaded(url, bug, lp_client):
         )
 
     logger.info(
-        "[%s] needs-packaging request already uploaded (%s). Unsubscribing "
-        "~ubuntu-sponsors.",
+        "[%s] needs-packaging request already uploaded (%s). Unsubscribing ~ubuntu-sponsors.",
         url,
         note,
     )
@@ -709,9 +685,7 @@ def is_sync_shaped(lp_obj):
     if resource_type not in ("bug", "bug_task"):
         return False
     bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
-    return llm_reviewer._is_sync(
-        getattr(bug, "title", ""), getattr(bug, "description", "")
-    )
+    return llm_reviewer._is_sync(getattr(bug, "title", ""), getattr(bug, "description", ""))
 
 
 def check_nothing_to_sponsor(url, lp_obj, lp_client):
@@ -765,9 +739,7 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
 
     try:
         active_mps = [
-            mp
-            for mp in bug.linked_merge_proposals
-            if mp.queue_status not in _INACTIVE_MP_STATUSES
+            mp for mp in bug.linked_merge_proposals if mp.queue_status not in _INACTIVE_MP_STATUSES
         ]
         devel_open, series_open = _bug_open_ubuntu_series(bug)
         live_mps = [mp for mp in active_mps if mp.queue_status != "Merged"]
@@ -872,16 +844,12 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
             return False
 
         # Sync requests legitimately have no patch to attach.
-        if llm_reviewer._is_sync(
-            getattr(bug, "title", ""), getattr(bug, "description", "")
-        ):
+        if llm_reviewer._is_sync(getattr(bug, "title", ""), getattr(bug, "description", "")):
             logger.debug("check_nothing_to_sponsor: sync request; no patch expected.")
             return False
 
         for attachment in bug.attachments:
-            if attachment.type == "Patch" or _PATCH_FILENAME_RE.search(
-                attachment.title or ""
-            ):
+            if attachment.type == "Patch" or _PATCH_FILENAME_RE.search(attachment.title or ""):
                 logger.debug(
                     "check_nothing_to_sponsor: found patch attachment %r.",
                     attachment.title,
@@ -1327,11 +1295,7 @@ def _debian_target_suite(lp_obj):
     if lines:
         saw_added_entry = False
         for line in lines:
-            if (
-                line.startswith("+++")
-                or line.startswith("---")
-                or line.startswith("@@")
-            ):
+            if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
                 continue
             if line.startswith("+"):
                 saw_added_entry = True
@@ -1361,9 +1325,7 @@ def _debian_target_suite(lp_obj):
 
     versions = archive_lookup.debian_versions(package)
     if not versions:
-        logger.debug(
-            "_debian_target_suite: archive_lookup found nothing for %r.", package
-        )
+        logger.debug("_debian_target_suite: archive_lookup found nothing for %r.", package)
         return None
 
     matches = {
@@ -1445,8 +1407,7 @@ def _check_sru_target_series(url, lp_obj, lp_client):
         return False
     if suite not in {name for name, _ in supported}:
         logger.debug(
-            "_check_sru_target_series: %r isn't a recognized supported "
-            "series; not guessing.",
+            "_check_sru_target_series: %r isn't a recognized supported series; not guessing.",
             suite,
         )
         return False
@@ -1508,9 +1469,7 @@ def check_target_branch(url, lp_obj, lp_client):
         return _check_sru_target_series(url, lp_obj, lp_client)
 
     target_branch_name = getattr(lp_obj, "target_git_path", "") or ""
-    logger.debug(
-        "check_target_branch: merge MP, target_git_path=%r", target_branch_name
-    )
+    logger.debug("check_target_branch: merge MP, target_git_path=%r", target_branch_name)
 
     if "debian/" not in target_branch_name:
         suite = _debian_target_suite(lp_obj)
@@ -1518,11 +1477,13 @@ def check_target_branch(url, lp_obj, lp_client):
         target_phrase = (
             f"`debian/{suite}`"
             if suite
-            else "`debian/sid` (or `debian/experimental`, matching the Debian suite you uploaded to)"
+            else (
+                "`debian/sid` (or `debian/experimental`, matching the "
+                "Debian suite you uploaded to)"
+            )
         )
         logger.info(
-            "[%s] is a merge MP incorrectly targeting %r. Adding an "
-            "incomplete finding.",
+            "[%s] is a merge MP incorrectly targeting %r. Adding an incomplete finding.",
             url,
             target_branch_name,
         )
@@ -1570,7 +1531,8 @@ def check_empty_diff(url, lp_obj, lp_client):
     logger.debug("check_empty_diff: diff_lines_count=%s", diff_lines_count)
     if diff_lines_count == 0:
         comment = (
-            "Thanks for your contribution! The proposed change seems to have landed in the target Vcs, "
+            "Thanks for your contribution! The proposed change seems to "
+            "have landed in the target Vcs, "
             "so the merge request can be closed."
         )
         logger.info(
@@ -1612,11 +1574,7 @@ def _new_changelog_stanza_lines(lp_obj):
         return None
     if lines is False:
         return []
-    added = [
-        line[1:]
-        for line in lines
-        if line.startswith("+") and not line.startswith("+++")
-    ]
+    added = [line[1:] for line in lines if line.startswith("+") and not line.startswith("+++")]
     entry_lines = []
     headers_seen = 0
     for line in added:
@@ -1706,9 +1664,7 @@ def _strip_changelog_trailer(text):
     queued upload's .changes Changes field carries the stanza WITHOUT the
     trailer, so comparing it against a debian/changelog stanza must ignore
     the trailer on both sides (design_journal.md #56)."""
-    return "\n".join(
-        line for line in text.splitlines() if not line.startswith(" -- ")
-    )
+    return "\n".join(line for line in text.splitlines() if not line.startswith(" -- "))
 
 
 def _bug_targets_package(bug, package):
@@ -1757,8 +1713,7 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
     package = _source_package_from_mp(lp_obj)
     if not package:
         logger.debug(
-            "check_changelog_bug_reference: could not determine source "
-            "package; skipping."
+            "check_changelog_bug_reference: could not determine source package; skipping."
         )
         return False
 
@@ -1773,9 +1728,7 @@ def check_changelog_bug_reference(url, lp_obj, lp_client):
         )
         return False
 
-    return _bug_reference_verdict(
-        url, "the changelog", bug_numbers, package, lp_client
-    )
+    return _bug_reference_verdict(url, "the changelog", bug_numbers, package, lp_client)
 
 
 def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug=None):
@@ -1807,8 +1760,7 @@ def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug
             mismatched.append(number)
 
     logger.debug(
-        "check_changelog_bug_reference: package=%r cited=%s mismatched=%s "
-        "lookup_failed=%s",
+        "check_changelog_bug_reference: package=%r cited=%s mismatched=%s lookup_failed=%s",
         package,
         sorted(bug_numbers),
         mismatched,
@@ -1817,16 +1769,14 @@ def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug
     if not mismatched:
         if lookup_failed:
             logger.debug(
-                "check_changelog_bug_reference: couldn't verify every cited "
-                "bug; can't determine."
+                "check_changelog_bug_reference: couldn't verify every cited bug; can't determine."
             )
             return None
         return False
 
     bug_list = ", ".join(f"LP: #{n}" for n in mismatched)
     logger.info(
-        "[%s] changelog cites %s, not reported against %r. Adding an "
-        "incomplete finding.",
+        "[%s] changelog cites %s, not reported against %r. Adding an incomplete finding.",
         url,
         bug_list,
         package,
@@ -1866,23 +1816,18 @@ def _changelog_bug_reference_bug(url, bug, lp_client):
     stanza = llm_reviewer._new_changelog_stanza(text)
     if not stanza:
         logger.debug(
-            "_changelog_bug_reference_bug: no new changelog entry in the "
-            "attachment; skipping."
+            "_changelog_bug_reference_bug: no new changelog entry in the attachment; skipping."
         )
         return False
     header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
     if not header:
-        logger.debug(
-            "_changelog_bug_reference_bug: unparseable entry header; skipping."
-        )
+        logger.debug("_changelog_bug_reference_bug: unparseable entry header; skipping.")
         return False
     package = header.group("pkg")
 
     bug_numbers = _lp_bug_numbers_from_text(stanza)
     if not bug_numbers:
-        logger.debug(
-            "_changelog_bug_reference_bug: entry cites no bug; skipping."
-        )
+        logger.debug("_changelog_bug_reference_bug: entry cites no bug; skipping.")
         return False
 
     return _bug_reference_verdict(
@@ -2061,9 +2006,7 @@ def check_stale_version(url, lp_obj, lp_client):
 
     target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
     if not target_series:
-        logger.debug(
-            "check_stale_version: couldn't determine the target series; can't determine."
-        )
+        logger.debug("check_stale_version: couldn't determine the target series; can't determine.")
         return None
 
     def classify(version, pub):
@@ -2072,13 +2015,23 @@ def check_stale_version(url, lp_obj, lp_client):
         )
 
     return _stale_version_verdict(
-        url, lp_client, package, proposed_version, proposed_entry,
-        target_series, classify,
+        url,
+        lp_client,
+        package,
+        proposed_version,
+        proposed_entry,
+        target_series,
+        classify,
     )
 
 
 def _stale_version_verdict(
-    url, lp_client, package, proposed_version, proposed_entry, target_series,
+    url,
+    lp_client,
+    package,
+    proposed_version,
+    proposed_entry,
+    target_series,
     classify,
 ):
     """The input-source-independent core of the stale-version check (#65):
@@ -2088,9 +2041,7 @@ def _stale_version_verdict(
     publication for MPs (grace defer, rich-history diagnosis), its _bug
     sibling for debdiffs on bugs. Return-value contract is
     check_stale_version's."""
-    versions = archive_lookup.ubuntu_versions(
-        lp_client.lp, package, series_names=[target_series]
-    )
+    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=[target_series])
     if versions is None:
         logger.debug("check_stale_version: archive lookup failed; can't determine.")
         return None
@@ -2126,9 +2077,7 @@ def _stale_version_verdict(
             lp_client.lp, package, target_series, proposed_version
         )
         if queued is None:
-            logger.debug(
-                "check_stale_version: upload-queue lookup failed; can't determine."
-            )
+            logger.debug("check_stale_version: upload-queue lookup failed; can't determine.")
             return None
         if queued:
             # Same version doesn't prove same upload: SRU version increments
@@ -2199,8 +2148,7 @@ def _stale_version_verdict(
             return None
 
         logger.info(
-            "[%s] proposes %r, older than the archive's %r. Adding an "
-            "incomplete finding.",
+            "[%s] proposes %r, older than the archive's %r. Adding an incomplete finding.",
             url,
             proposed_version,
             archive_version,
@@ -2216,9 +2164,7 @@ def _stale_version_verdict(
     # cmp == 0: same version already published. Tell "this MP's own change,
     # already uploaded" apart from "an unrelated upload reused the version
     # number" by comparing changelog content.
-    pub = archive_lookup.published_source(
-        lp_client.lp, package, target_series, archive_version
-    )
+    pub = archive_lookup.published_source(lp_client.lp, package, target_series, archive_version)
     if pub is None:
         # ubuntu_versions() just confirmed a publication with this exact
         # version exists, so this is almost certainly a lookup hiccup, not a
@@ -2237,9 +2183,7 @@ def _stale_version_verdict(
     return outcome
 
 
-def _classify_against_publication(
-    url, lp_obj, lp_client, package, version, proposed_entry, pub
-):
+def _classify_against_publication(url, lp_obj, lp_client, package, version, proposed_entry, pub):
     """
     Given an existing publication `pub` of exactly `version`, compare its
     changelog content against `proposed_entry` and post the appropriate
@@ -2258,19 +2202,15 @@ def _classify_against_publication(
     """
     archive_text = archive_lookup.changelog_text(pub)
     if archive_text is None:
-        logger.debug(
-            "check_stale_version: couldn't fetch the archive changelog; "
-            "can't determine."
-        )
+        logger.debug("check_stale_version: couldn't fetch the archive changelog; can't determine.")
         return None
 
     archive_entry = _first_changelog_stanza_text(archive_text)
-    same_content = _normalize_changelog_entry(
-        proposed_entry
-    ) == _normalize_changelog_entry(archive_entry)
+    same_content = _normalize_changelog_entry(proposed_entry) == _normalize_changelog_entry(
+        archive_entry
+    )
     logger.debug(
-        "check_stale_version: version %r already published (status=%s); "
-        "content matches=%s",
+        "check_stale_version: version %r already published (status=%s); content matches=%s",
         version,
         getattr(pub, "status", "?"),
         same_content,
@@ -2505,8 +2445,7 @@ def _classify_against_publication(
         return "done"
 
     logger.info(
-        "[%s] version %r already published with different content. Adding "
-        "an incomplete finding.",
+        "[%s] version %r already published with different content. Adding an incomplete finding.",
         url,
         version,
     )
@@ -2563,8 +2502,7 @@ def _stale_version_bug(url, bug, lp_client):
         return None
     if suite not in (name for name, _version in series_pairs):
         logger.debug(
-            "_stale_version_bug: suite %r isn't a currently-known series; "
-            "skipping.",
+            "_stale_version_bug: suite %r isn't a currently-known series; skipping.",
             suite,
         )
         return False
@@ -2579,9 +2517,7 @@ def _stale_version_bug(url, bug, lp_client):
     )
 
 
-def _classify_against_publication_bug(
-    url, bug, lp_client, package, version, proposed_entry, pub
-):
+def _classify_against_publication_bug(url, bug, lp_client, package, version, proposed_entry, pub):
     """
     The bug-side sibling of _classify_against_publication: an existing
     publication of exactly `version` compared by changelog content.
@@ -2601,19 +2537,15 @@ def _classify_against_publication_bug(
     """
     archive_text = archive_lookup.changelog_text(pub)
     if archive_text is None:
-        logger.debug(
-            "check_stale_version: couldn't fetch the archive changelog; "
-            "can't determine."
-        )
+        logger.debug("check_stale_version: couldn't fetch the archive changelog; can't determine.")
         return None
 
     archive_entry = _first_changelog_stanza_text(archive_text)
-    same_content = _normalize_changelog_entry(
-        proposed_entry
-    ) == _normalize_changelog_entry(archive_entry)
+    same_content = _normalize_changelog_entry(proposed_entry) == _normalize_changelog_entry(
+        archive_entry
+    )
     logger.debug(
-        "check_stale_version: version %r already published (status=%s); "
-        "content matches=%s",
+        "check_stale_version: version %r already published (status=%s); content matches=%s",
         version,
         getattr(pub, "status", "?"),
         same_content,
@@ -2675,9 +2607,7 @@ def _bug_attachment_target_series(bug):
     for attachment in attachments.patch_attachments(bug):
         text = attachments.attachment_text(attachment)
         if text is None:
-            raise RuntimeError(
-                f"could not fetch attachment {attachment.title!r}"
-            )
+            raise RuntimeError(f"could not fetch attachment {attachment.title!r}")
         if text is False:
             continue
         stanza = llm_reviewer._new_changelog_stanza(text)
@@ -2714,9 +2644,7 @@ def _series_evidence(bug, package, series_name, is_devel, devel_name, attachment
         mp_series = match.group("series")
         if mp_series == series_name or (is_devel and mp_series in ("devel", devel_name)):
             return True
-    if series_name in attachment_targets or (
-        is_devel and devel_name in attachment_targets
-    ):
+    if series_name in attachment_targets or (is_devel and devel_name in attachment_targets):
         return True
     for attachment in bug.attachments:
         title = (attachment.title or "").lower()
@@ -2765,10 +2693,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     if resource_type == "branch_merge_proposal":
         package = _source_package_from_mp(lp_obj)
         if not package:
-            logger.debug(
-                "check_sru_newer_series: could not determine source package; "
-                "skipping."
-            )
+            logger.debug("check_sru_newer_series: could not determine source package; skipping.")
             return False
         target = getattr(lp_obj, "target_git_path", "") or ""
         match = _TARGET_SERIES_RE.search(target)
@@ -2822,8 +2747,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
                 package = package or match.group("pkg")
         except Exception as e:
             logger.warning(
-                "check_sru_newer_series: couldn't read the bug's tasks (%s); "
-                "can't determine.",
+                "check_sru_newer_series: couldn't read the bug's tasks (%s); can't determine.",
                 e,
             )
             return None
@@ -2859,8 +2783,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     if target_series not in series_names:
         # SRU to an EOL/unknown series -- out of scope for this check.
         logger.debug(
-            "check_sru_newer_series: target series %r not in the supported "
-            "set; skipping.",
+            "check_sru_newer_series: target series %r not in the supported set; skipping.",
             target_series,
         )
         return False
@@ -2870,9 +2793,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     try:
         # Computed once per bug (not once per newer series) -- attachment
         # content is the same regardless of which series we're checking.
-        attachment_targets_by_bug = {
-            id(bug): _bug_attachment_target_series(bug) for bug in bugs
-        }
+        attachment_targets_by_bug = {id(bug): _bug_attachment_target_series(bug) for bug in bugs}
         for series_name in newer:
             is_devel = series_name == devel_name
             if not any(
@@ -2911,22 +2832,18 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     # published in the SRU's target series: a package being introduced to
     # Ubuntu (rare in an SRU) would be absent from the target too. A
     # failed lookup just falls through to the existing LLM path.
-    versions = archive_lookup.ubuntu_versions(
-        lp_client.lp, package, [target_series] + unhandled
-    )
+    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, [target_series] + unhandled)
 
     def _present(series_name):
         return any(
-            suite == series_name or suite.startswith(f"{series_name}-")
-            for suite in versions
+            suite == series_name or suite.startswith(f"{series_name}-") for suite in versions
         )
 
     if versions is not None and _present(target_series):
         removed = [s for s in unhandled if not _present(s)]
         if removed:
             logger.debug(
-                "check_sru_newer_series: %s have no publication of %r "
-                "(removed after %s); exempt.",
+                "check_sru_newer_series: %s have no publication of %r (removed after %s); exempt.",
                 removed,
                 package,
                 target_series,
@@ -2951,14 +2868,10 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     # any LLM's training data, so 'fixed in plucky 25.04+' is only readable
     # as covering resolute if the prompt says resolute is Ubuntu 26.04
     # (found on design #58's live probe).
-    labeled = [
-        f"{name} (Ubuntu {series_versions[name]})" for name in unhandled
-    ]
+    labeled = [f"{name} (Ubuntu {series_versions[name]})" for name in unhandled]
     stated_fixed = llm.review_fixed_in_newer_series(bug_text, labeled)
     if stated_fixed is None:
-        logger.debug(
-            "check_sru_newer_series: LLM invocation failed; can't determine."
-        )
+        logger.debug("check_sru_newer_series: LLM invocation failed; can't determine.")
         return None
 
     series_list = ", ".join(unhandled)
@@ -2978,8 +2891,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         return False
 
     logger.info(
-        "[%s] SRU to %s with no sign the fix landed in %s first. Adding a "
-        "verify finding.",
+        "[%s] SRU to %s with no sign the fix landed in %s first. Adding a verify finding.",
         url,
         target_series,
         series_list,
@@ -3088,9 +3000,7 @@ def check_direct_source_edit(url, lp_obj, lp_client):
     if merge is None:
         return None
     if merge:
-        logger.debug(
-            "check_direct_source_edit: merge MP; upstream changes expected. Skipping."
-        )
+        logger.debug("check_direct_source_edit: merge MP; upstream changes expected. Skipping.")
         return False
 
     stanza = llm_reviewer._new_changelog_stanza(text)
@@ -3100,9 +3010,9 @@ def check_direct_source_edit(url, lp_obj, lp_client):
         proposed_version = header.group("version") if header else None
     if proposed_version is not None:
         old_version = _old_changelog_version(lp_obj)
-        if old_version is not None and _upstream_component(
-            old_version
-        ) != _upstream_component(proposed_version):
+        if old_version is not None and _upstream_component(old_version) != _upstream_component(
+            proposed_version
+        ):
             logger.debug(
                 "check_direct_source_edit: upstream version changed (%r -> %r); "
                 "the diff naturally carries upstream changes. Skipping.",
@@ -3145,8 +3055,7 @@ def _direct_edit_finding(url, intro, other_files):
     shown = ", ".join(f"`{p}`" for p in other_files[:5])
     more = f" (and {len(other_files) - 5} more)" if len(other_files) > 5 else ""
     logger.info(
-        "[%s] upstream files edited directly (%s%s). Adding an incomplete "
-        "finding.",
+        "[%s] upstream files edited directly (%s%s). Adding an incomplete finding.",
         url,
         shown,
         more,
@@ -3222,12 +3131,11 @@ def _direct_source_edit_bug(url, bug, lp_client):
     old_version = None
     if info["changelog_lines"]:
         old_version = _old_changelog_version_from_lines(info["changelog_lines"])
-    if old_version is not None and _upstream_component(
-        old_version
-    ) != _upstream_component(proposed_version):
+    if old_version is not None and _upstream_component(old_version) != _upstream_component(
+        proposed_version
+    ):
         logger.debug(
-            "_direct_source_edit_bug: upstream version changed (%r -> %r); "
-            "skipping.",
+            "_direct_source_edit_bug: upstream version changed (%r -> %r); skipping.",
             old_version,
             proposed_version,
         )
@@ -3258,9 +3166,7 @@ def _direct_source_edit_bug(url, bug, lp_client):
         )
         return False
 
-    return _direct_edit_finding(
-        url, "The attached debdiff edits", info["other_paths"]
-    )
+    return _direct_edit_finding(url, "The attached debdiff edits", info["other_paths"])
 
 
 _LP_BUG_REF_RE = re.compile(r"LP:\s*#(\d+)", re.IGNORECASE)
@@ -3283,8 +3189,7 @@ def _mp_bug_numbers(lp_obj):
     if numbers:
         return numbers
     text = "\n".join(
-        getattr(lp_obj, field, "") or ""
-        for field in ("commit_message", "description")
+        getattr(lp_obj, field, "") or "" for field in ("commit_message", "description")
     )
     return list(dict.fromkeys(_LP_BUG_REF_RE.findall(text)))
 
@@ -3345,8 +3250,7 @@ def check_missing_changelog_stanza(url, lp_obj, lp_client):
     else:
         lp_clause = ""
     logger.info(
-        "[%s] no debian/changelog entry in the diff. Adding an incomplete "
-        "finding.",
+        "[%s] no debian/changelog entry in the diff. Adding an incomplete finding.",
         url,
     )
     return Finding(
@@ -3389,9 +3293,7 @@ def check_patch_not_debdiff(url, lp_obj, lp_client):
     if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
         logger.debug("check_patch_not_debdiff: merge bug; skipping.")
         return False
-    if llm_reviewer._is_sync(
-        getattr(bug, "title", ""), getattr(bug, "description", "")
-    ):
+    if llm_reviewer._is_sync(getattr(bug, "title", ""), getattr(bug, "description", "")):
         logger.debug("check_patch_not_debdiff: sync request; skipping.")
         return False
     if _is_needs_packaging(bug):
@@ -3399,20 +3301,17 @@ def check_patch_not_debdiff(url, lp_obj, lp_client):
         return False
     try:
         has_active_mp = any(
-            mp.queue_status not in _INACTIVE_MP_STATUSES
-            for mp in bug.linked_merge_proposals
+            mp.queue_status not in _INACTIVE_MP_STATUSES for mp in bug.linked_merge_proposals
         )
     except Exception as e:
         logger.debug(
-            "check_patch_not_debdiff: couldn't read linked MPs (%s); "
-            "can't determine.",
+            "check_patch_not_debdiff: couldn't read linked MPs (%s); can't determine.",
             e,
         )
         return None
     if has_active_mp:
         logger.debug(
-            "check_patch_not_debdiff: active linked MP; the review lives "
-            "there. Skipping."
+            "check_patch_not_debdiff: active linked MP; the review lives there. Skipping."
         )
         return False
 
@@ -3426,22 +3325,19 @@ def check_patch_not_debdiff(url, lp_obj, lp_client):
     info = attachments.classify_diff(text)
     if info["debian_paths"]:
         logger.debug(
-            "check_patch_not_debdiff: %r touches debian/; debdiff-shaped, "
-            "judged elsewhere.",
+            "check_patch_not_debdiff: %r touches debian/; debdiff-shaped, judged elsewhere.",
             getattr(attachment, "title", "?"),
         )
         return False
     if not info["other_paths"]:
         logger.debug(
-            "check_patch_not_debdiff: no file paths recognized in %r; "
-            "skipping.",
+            "check_patch_not_debdiff: no file paths recognized in %r; skipping.",
             getattr(attachment, "title", "?"),
         )
         return False
 
     logger.info(
-        "[%s] attachment %r is a plain code patch, not a debdiff. Adding "
-        "an incomplete finding.",
+        "[%s] attachment %r is a plain code patch, not a debdiff. Adding an incomplete finding.",
         url,
         getattr(attachment, "title", "?"),
     )
@@ -3464,8 +3360,7 @@ _PPA_VERSION_RE = re.compile(r"~ppa", re.IGNORECASE)
 def _ppa_version_finding(url, proposed_version):
     """Shared Finding for both call sites of check_ppa_version_suffix."""
     logger.info(
-        "[%s] proposed version %r carries a ~ppaN suffix. Adding an "
-        "incomplete finding.",
+        "[%s] proposed version %r carries a ~ppaN suffix. Adding an incomplete finding.",
         url,
         proposed_version,
     )
@@ -3600,9 +3495,7 @@ def check_xsbc_original_maintainer(url, lp_obj, lp_client):
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type in ("bug", "bug_task"):
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
-        if llm_reviewer._is_sync(
-            getattr(bug, "title", ""), getattr(bug, "description", "")
-        ):
+        if llm_reviewer._is_sync(getattr(bug, "title", ""), getattr(bug, "description", "")):
             return False
         target = attachments.review_target(bug)
         if target is None:
@@ -3651,9 +3544,7 @@ def check_xsbc_original_maintainer(url, lp_obj, lp_client):
         # what's currently published for the target series.
         if not target_series:
             return None
-        versions = archive_lookup.ubuntu_versions(
-            lp_client.lp, package, [target_series]
-        )
+        versions = archive_lookup.ubuntu_versions(lp_client.lp, package, [target_series])
         if versions is None:
             return None
         old_version = _max_published_version(versions)

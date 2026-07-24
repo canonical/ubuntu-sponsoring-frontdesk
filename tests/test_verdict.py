@@ -14,9 +14,7 @@ def test_pass_block_routes_to_human_without_rejection():
 
 
 def test_fail_with_reason_is_the_only_rejection_path():
-    ok, reason = v(
-        "Missing bits.\n```yaml\nverdict: fail\nreason: No [Test Plan] section.\n```"
-    )
+    ok, reason = v("Missing bits.\n```yaml\nverdict: fail\nreason: No [Test Plan] section.\n```")
     assert ok is False
     assert "Test Plan" in reason
 

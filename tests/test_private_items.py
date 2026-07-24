@@ -6,17 +6,16 @@ Nothing is persisted, so the item triages normally once public."""
 
 import datetime
 
+from fakes import FakeBug, FakeLLM, FakeMP, FakeTask, FakeTriageClient
+
 import main
 import sweep
 from state import StateManager
-from fakes import FakeBug, FakeLLM, FakeMP, FakeTask, FakeTriageClient
 
 BUG_URL = "https://bugs.launchpad.net/ubuntu/+source/foo/+bug/99"
 MP_URL = "https://code.launchpad.net/~x/ubuntu/+source/foo/+git/foo/+merge/99"
 
-OLD_BOUNCE = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-    days=40
-)
+OLD_BOUNCE = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=40)
 
 
 class _NeverCalledLLM(FakeLLM):
@@ -61,9 +60,7 @@ def test_public_bug_is_unaffected(tmp_path):
 
 
 def test_private_bug_is_not_swept(tmp_path):
-    bug = FakeBug(
-        tasks=[FakeTask("foo (Ubuntu)", "Incomplete", date_incomplete=OLD_BOUNCE)]
-    )
+    bug = FakeBug(tasks=[FakeTask("foo (Ubuntu)", "Incomplete", date_incomplete=OLD_BOUNCE)])
     bug.private = True
     bug.messages = []
     sm = StateManager(db_path=str(tmp_path / "state.db"))

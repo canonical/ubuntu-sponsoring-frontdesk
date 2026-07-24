@@ -98,9 +98,7 @@ def test_no_delta_newer_already_published_closes(monkeypatch):
 
 def test_no_delta_not_synced_found_in_debian_ready_for_human(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
     monkeypatch.setattr(
         archive_lookup,
         "debian_versions",
@@ -114,9 +112,7 @@ def test_no_delta_not_synced_found_in_debian_ready_for_human(monkeypatch):
 
 def test_not_in_debian_llm_justified_ready_for_human(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
     monkeypatch.setattr(archive_lookup, "debian_versions", lambda pkg, suites=None: {})
     r = _reviewer(monkeypatch, "```yaml\nverdict: pass\nreason:\n```")
     status, comment = r._triage_sync(TITLE, "special case: NEW queue backlog")
@@ -125,9 +121,7 @@ def test_not_in_debian_llm_justified_ready_for_human(monkeypatch):
 
 def test_not_in_debian_llm_unjustified_incomplete(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
     monkeypatch.setattr(archive_lookup, "debian_versions", lambda pkg, suites=None: {})
     r = _reviewer(
         monkeypatch,
@@ -140,9 +134,7 @@ def test_not_in_debian_llm_unjustified_incomplete(monkeypatch):
 
 def test_experimental_suite_hint_is_used(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
     captured = {}
 
     def fake_debian_versions(pkg, suites=None):
@@ -174,9 +166,7 @@ def test_devel_codename_unknown_falls_back_to_delta_review(monkeypatch):
 
 def test_ubuntu_lookup_failure_falls_back_to_delta_review(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None)
     r = _reviewer(monkeypatch, "```yaml\nverdict: pass\nreason:\n```")
     status, comment = r._triage_sync(TITLE, "no delta here")
     assert status == "READY_FOR_HUMAN"
@@ -185,18 +175,12 @@ def test_ubuntu_lookup_failure_falls_back_to_delta_review(monkeypatch):
 
 def test_debian_lookup_failure_routes_to_human_without_llm(monkeypatch):
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "noble")
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
-    monkeypatch.setattr(
-        archive_lookup, "debian_versions", lambda pkg, suites=None: None
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
+    monkeypatch.setattr(archive_lookup, "debian_versions", lambda pkg, suites=None: None)
     r = LLMReviewer(lp=_LP)
 
     def fail_if_called(*a, **k):
-        raise AssertionError(
-            "LLM should not be called when the archive lookup itself failed"
-        )
+        raise AssertionError("LLM should not be called when the archive lookup itself failed")
 
     monkeypatch.setattr(r, "_query_llm", fail_if_called)
     status, comment = r._triage_sync(TITLE, "please sync")

@@ -1,6 +1,6 @@
+import datetime
 import json
 import sqlite3
-import datetime
 
 
 class StateManager:
@@ -21,10 +21,7 @@ class StateManager:
                 )
             """)
             # Migrate older DBs that predate the facts column.
-            existing = [
-                row[1]
-                for row in cursor.execute("PRAGMA table_info(requests)").fetchall()
-            ]
+            existing = [row[1] for row in cursor.execute("PRAGMA table_info(requests)").fetchall()]
             if "facts" not in existing:
                 cursor.execute("ALTER TABLE requests ADD COLUMN facts TEXT")
             # Rule B (design_journal.md #66): the aggregated feedback posted
@@ -73,8 +70,7 @@ class StateManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             rows = cursor.execute(
-                "SELECT url, bounce_reason FROM requests "
-                "WHERE status = 'WAITING_ON_CONTRIBUTOR'"
+                "SELECT url, bounce_reason FROM requests WHERE status = 'WAITING_ON_CONTRIBUTOR'"
             ).fetchall()
         return [(url, reason) for url, reason in rows if "+merge/" not in url]
 
@@ -88,9 +84,7 @@ class StateManager:
         """Return the stored facts snapshot for url as a dict, or None."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            row = cursor.execute(
-                "SELECT facts FROM requests WHERE url = ?", (url,)
-            ).fetchone()
+            row = cursor.execute("SELECT facts FROM requests WHERE url = ?", (url,)).fetchone()
         if not row or row[0] is None:
             return None
         try:

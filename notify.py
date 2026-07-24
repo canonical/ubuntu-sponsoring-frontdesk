@@ -70,9 +70,7 @@ def webhook_url():
     try:
         found = parser.read(path)
     except configparser.Error as e:
-        logger.warning(
-            "notify: could not parse %s (%s); notifications disabled.", path, e
-        )
+        logger.warning("notify: could not parse %s (%s); notifications disabled.", path, e)
         return None
     if not found:
         return None
@@ -113,9 +111,7 @@ def notify(text):
     try:
         _post(url, text)
     except Exception as e:
-        logger.warning(
-            "notify: webhook POST failed (%s); this alert is lost: %s", e, text
-        )
+        logger.warning("notify: webhook POST failed (%s); this alert is lost: %s", e, text)
         return False
     logger.info("Notified operators: %s", text)
     return True

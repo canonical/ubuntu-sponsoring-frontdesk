@@ -58,9 +58,7 @@ def patch_attachments(bug):
     Propagates exceptions -- callers decide their own None handling."""
     result = []
     for attachment in bug.attachments:
-        if attachment.type == "Patch" or PATCH_FILENAME_RE.search(
-            attachment.title or ""
-        ):
+        if attachment.type == "Patch" or PATCH_FILENAME_RE.search(attachment.title or ""):
             result.append(attachment)
     return result
 
@@ -87,8 +85,7 @@ def attachment_text(attachment):
                 raw = f.read(MAX_ATTACHMENT_BYTES + 1)
         except Exception as e:
             logger.debug(
-                "attachment_text: %r is gzip-shaped but wouldn't "
-                "decompress (%s); unusable.",
+                "attachment_text: %r is gzip-shaped but wouldn't decompress (%s); unusable.",
                 getattr(attachment, "title", "?"),
                 e,
             )
@@ -147,9 +144,7 @@ def classify_diff(text):
             changelog_lines = lines[section_start:end]
 
     for i, line in enumerate(lines):
-        if line.startswith("--- ") and i + 1 < len(lines) and lines[
-            i + 1
-        ].startswith("+++ "):
+        if line.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
             close_section(i)
             path = _norm_path(lines[i + 1][4:]) or _norm_path(line[4:])
             section_start = i
@@ -199,8 +194,6 @@ def _review_target_fetch(bug):
         if text is None:
             return None
         if text is not False:
-            logger.debug(
-                "review_target: using %r.", getattr(attachment, "title", "?")
-            )
+            logger.debug("review_target: using %r.", getattr(attachment, "title", "?"))
             return attachment, text
     return False

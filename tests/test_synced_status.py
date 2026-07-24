@@ -2,18 +2,17 @@
 Ubuntu task(s) to Fix Released, comments, unsubscribes sponsors, and folds
 the write into facts so it doesn't re-trigger next run."""
 
+from fakes import FakeAudit, FakeBug, FakeLLM, FakeRoot, FakeTask, FakeTriageClient
+
 import main
 from launchpad_client import LPClient
 from state import StateManager
-from fakes import FakeBug, FakeTask, FakeRoot, FakeAudit, FakeTriageClient, FakeLLM
 
 URL = "https://launchpad.net/bugs/99"
 
 
 def _client(mode, devel_series_name="noble"):
-    return LPClient(
-        mode=mode, lp=FakeRoot(devel_series_name=devel_series_name), audit=FakeAudit()
-    )
+    return LPClient(mode=mode, lp=FakeRoot(devel_series_name=devel_series_name), audit=FakeAudit())
 
 
 # --- LPClient.set_bug_tasks_fix_released -------------------------------------

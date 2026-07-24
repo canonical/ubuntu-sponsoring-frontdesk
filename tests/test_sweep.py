@@ -5,18 +5,19 @@ New; silence for 30+ days gets the final comment + unsubscribe."""
 
 import datetime
 
-import sweep
-from state import StateManager
 from fakes import (
+    BOT,
+    HUMAN,
     FakeAttachment,
     FakeBug,
     FakeBugMessage,
     FakeLLM,
     FakeTask,
     FakeTriageClient,
-    BOT,
-    HUMAN,
 )
+
+import sweep
+from state import StateManager
 
 URL = "https://bugs.launchpad.net/ubuntu/+source/foo/+bug/123"
 
@@ -36,9 +37,7 @@ DEBDIFF = """\
 
 def _state(tmp_path, bounce_reason="Please add a changelog entry."):
     sm = StateManager(db_path=str(tmp_path / "state.db"))
-    sm.update_status(
-        URL, "WAITING_ON_CONTRIBUTOR", "Bounced", bounce_reason=bounce_reason
-    )
+    sm.update_status(URL, "WAITING_ON_CONTRIBUTOR", "Bounced", bounce_reason=bounce_reason)
     return sm
 
 
@@ -78,9 +77,7 @@ def test_no_longer_incomplete_is_left_alone(tmp_path):
 
 def test_new_diff_attachment_flips_tasks_back_to_new(tmp_path):
     bug = _bounced_bug(
-        attachments=[
-            FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=AFTER_BOUNCE)
-        ]
+        attachments=[FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=AFTER_BOUNCE)]
     )
     sm, lp = _run(tmp_path, bug)
     assert bug.bug_tasks[0].status == "New"
@@ -108,9 +105,7 @@ def test_attachment_from_before_the_bounce_does_not_count(tmp_path):
 def test_non_diff_attachment_does_not_flip(tmp_path):
     bug = _bounced_bug(
         attachments=[
-            FakeAttachment(
-                "crash.log.patch", content="not a diff", date_created=AFTER_BOUNCE
-            )
+            FakeAttachment("crash.log.patch", content="not a diff", date_created=AFTER_BOUNCE)
         ]
     )
     sm, lp = _run(tmp_path, bug)
@@ -121,9 +116,7 @@ def test_non_diff_attachment_does_not_flip(tmp_path):
 def test_response_judged_addressed_flips_tasks(tmp_path):
     llm = FakeLLM()
     llm.bounce_addressed = True
-    bug = _bounced_bug(
-        messages=[FakeBugMessage(HUMAN, "Done, see the PPA", AFTER_BOUNCE)]
-    )
+    bug = _bounced_bug(messages=[FakeBugMessage(HUMAN, "Done, see the PPA", AFTER_BOUNCE)])
     sm, lp = _run(tmp_path, bug, llm=llm)
     assert bug.bug_tasks[0].status == "New"
     assert sm.get_status(URL)[0] == "READY_FOR_HUMAN"
@@ -132,9 +125,7 @@ def test_response_judged_addressed_flips_tasks(tmp_path):
 
 
 def test_response_not_addressed_and_recent_waits(tmp_path):
-    bug = _bounced_bug(
-        messages=[FakeBugMessage(HUMAN, "I'll look next week", AFTER_BOUNCE)]
-    )
+    bug = _bounced_bug(messages=[FakeBugMessage(HUMAN, "I'll look next week", AFTER_BOUNCE)])
     sm, lp = _run(tmp_path, bug)
     assert bug.bug_tasks[0].status == "Incomplete"
     assert lp.comments == []
@@ -145,9 +136,7 @@ def test_response_not_addressed_and_old_is_swept(tmp_path):
     bug = _bounced_bug(
         incomplete_since=OLD_BOUNCE,
         messages=[
-            FakeBugMessage(
-                HUMAN, "I'll look next week", OLD_BOUNCE + datetime.timedelta(days=1)
-            )
+            FakeBugMessage(HUMAN, "I'll look next week", OLD_BOUNCE + datetime.timedelta(days=1))
         ],
     )
     sm, lp = _run(tmp_path, bug)
@@ -237,9 +226,7 @@ def _run_with_outcome(tmp_path, bug, outcome, llm=None):
 
 def test_dry_run_diff_flip_does_not_advance_state(tmp_path):
     bug = _bounced_bug(
-        attachments=[
-            FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=AFTER_BOUNCE)
-        ]
+        attachments=[FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=AFTER_BOUNCE)]
     )
     sm, lp = _run_with_outcome(tmp_path, bug, "dry-run")
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
@@ -249,9 +236,7 @@ def test_dry_run_diff_flip_does_not_advance_state(tmp_path):
 def test_declined_response_flip_does_not_advance_state(tmp_path):
     llm = FakeLLM()
     llm.bounce_addressed = True
-    bug = _bounced_bug(
-        messages=[FakeBugMessage(HUMAN, "Done, see the PPA", AFTER_BOUNCE)]
-    )
+    bug = _bounced_bug(messages=[FakeBugMessage(HUMAN, "Done, see the PPA", AFTER_BOUNCE)])
     sm, lp = _run_with_outcome(tmp_path, bug, "declined", llm=llm)
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
 

@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-apt python3-pip
-          pip install --break-system-packages ruff pytest pyyaml launchpadlib
+          pip install --break-system-packages ruff==0.15.21 pytest pyyaml launchpadlib
 
       - name: Lint
         run: make lint

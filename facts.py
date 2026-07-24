@@ -73,14 +73,9 @@ def _linked_bug_signals(lp_obj):
     try:
         entries = []
         for bug in lp_obj.bugs:
-            statuses = ",".join(
-                sorted(f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks)
-            )
+            statuses = ",".join(sorted(f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks))
             attachment_links = ",".join(
-                sorted(
-                    getattr(a, "self_link", "") or ""
-                    for a in getattr(bug, "attachments", [])
-                )
+                sorted(getattr(a, "self_link", "") or "" for a in getattr(bug, "attachments", []))
             )
             entries.append(
                 "{}|{}|{}|{}".format(
@@ -95,9 +90,7 @@ def _linked_bug_signals(lp_obj):
                 )
             )
     except Exception as e:
-        logger.warning(
-            "Could not read the MP's linked bugs for the fingerprint: %s", e
-        )
+        logger.warning("Could not read the MP's linked bugs for the fingerprint: %s", e)
         return None
     return sorted(entries)
 
@@ -161,9 +154,7 @@ def build_facts(lp_obj, lp=None):
         # lives on the diff (`conflicts` string), not on the MP itself.
         diff = getattr(lp_obj, "preview_diff", None)
         if diff is not None:
-            facts["has_conflicts"] = bool(
-                (getattr(diff, "conflicts", "") or "").strip()
-            )
+            facts["has_conflicts"] = bool((getattr(diff, "conflicts", "") or "").strip())
             facts["diff_id"] = getattr(diff, "self_link", None)
             facts["diff_lines_count"] = getattr(diff, "diff_lines_count", None)
         else:
@@ -186,9 +177,7 @@ def build_facts(lp_obj, lp=None):
         facts["tags"] = sorted(getattr(bug, "tags", []) or [])
         # Task statuses are set by humans (Fix Released/Committed), not the bot,
         # so they are a legitimate change signal for the administrative check.
-        facts["task_statuses"] = sorted(
-            f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks
-        )
+        facts["task_statuses"] = sorted(f"{t.bug_target_name}:{t.status}" for t in bug.bug_tasks)
         # What there is to sponsor (check_nothing_to_sponsor) changes when a
         # patch gets attached or an MP gets linked/reviewed -- without these
         # in the fingerprint, a bug closed as "nothing to sponsor" would stay
@@ -203,8 +192,7 @@ def build_facts(lp_obj, lp=None):
                 mp.queue_status,
                 ",".join(
                     sorted(
-                        f"{v.reviewer_link.rsplit('/', 1)[-1]}:"
-                        f"{v.comment_link is not None}"
+                        f"{v.reviewer_link.rsplit('/', 1)[-1]}:{v.comment_link is not None}"
                         for v in mp.votes
                     )
                 ),

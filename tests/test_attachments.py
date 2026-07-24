@@ -6,11 +6,12 @@ import datetime
 import gzip
 import types
 
+from fakes import FakeAttachment, FakeBug, FakeTask, FakeTriageClient
+
 import archive_lookup
 import attachments
 import checks
 import llm_reviewer
-from fakes import FakeAttachment, FakeBug, FakeTask, FakeTriageClient
 
 URL = "url"
 
@@ -88,9 +89,7 @@ def test_classify_git_style_diff_too():
 
 
 def test_attachment_text_gunzips():
-    att = FakeAttachment(
-        "fix.debdiff.gz", type="Patch", content=gzip.compress(DEBDIFF.encode())
-    )
+    att = FakeAttachment("fix.debdiff.gz", type="Patch", content=gzip.compress(DEBDIFF.encode()))
     assert attachments.attachment_text(att) == DEBDIFF
 
 
@@ -147,9 +146,7 @@ def _classify_bug_side(monkeypatch, native, series_known=True):
         "supported_series_ordered",
         lambda lp: [("stonking", "26.10")] if series_known else [],
     )
-    monkeypatch.setattr(
-        archive_lookup, "is_native_source", lambda lp, package, series: native
-    )
+    monkeypatch.setattr(archive_lookup, "is_native_source", lambda lp, package, series: native)
 
 
 def _plain_lp():
@@ -259,10 +256,7 @@ def test_bugref_citation_targeting_the_package_is_clean():
         id=999,
         attachments=[FakeAttachment("fix.debdiff", content=DEBDIFF)],
     )
-    assert (
-        checks.check_changelog_bug_reference(URL, bug, _LP({2000001: cited}))
-        is False
-    )
+    assert checks.check_changelog_bug_reference(URL, bug, _LP({2000001: cited})) is False
 
 
 def test_bugref_plain_patch_has_no_entry_and_skips():
@@ -471,9 +465,7 @@ def test_debdiff_already_uploaded_closes_and_unsubscribes_immediately(monkeypatc
 
 def test_debdiff_same_version_different_content_bounces(monkeypatch):
     other = "testpkg (1.2-3ubuntu2) stonking; urgency=medium\n\n  * Unrelated.\n"
-    _patch_stale(
-        monkeypatch, versions={"stonking": "1.2-3ubuntu2"}, changelog=other
-    )
+    _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu2"}, changelog=other)
     lp = FakeTriageClient(objects={})
     finding = checks.check_stale_version(URL, _debdiff_bug(), lp)
     assert finding.tier == "incomplete"
@@ -488,18 +480,14 @@ def test_debdiff_newer_than_archive_is_fine(monkeypatch):
 
 
 def test_debdiff_unknown_suite_is_skipped(monkeypatch):
-    unreleased = DEBDIFF.replace(
-        "(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) UNRELEASED;"
-    )
+    unreleased = DEBDIFF.replace("(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) UNRELEASED;")
     _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
     lp = FakeTriageClient(objects={})
     assert checks.check_stale_version(URL, _debdiff_bug(unreleased), lp) is False
 
 
 def test_debdiff_pocket_suffix_is_stripped(monkeypatch):
-    proposed = DEBDIFF.replace(
-        "(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) stonking-proposed;"
-    )
+    proposed = DEBDIFF.replace("(1.2-3ubuntu2) stonking;", "(1.2-3ubuntu2) stonking-proposed;")
     _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"})
     lp = FakeTriageClient(objects={})
     finding = checks.check_stale_version(URL, _debdiff_bug(proposed), lp)
@@ -508,9 +496,7 @@ def test_debdiff_pocket_suffix_is_stripped(monkeypatch):
 
 def test_debdiff_series_lookup_failure_is_inconclusive(monkeypatch):
     _patch_stale(monkeypatch, versions={"stonking": "1.2-3ubuntu5"}, series=False)
-    monkeypatch.setattr(
-        archive_lookup, "supported_series_ordered", lambda lp: None
-    )
+    monkeypatch.setattr(archive_lookup, "supported_series_ordered", lambda lp: None)
     lp = FakeTriageClient(objects={})
     assert checks.check_stale_version(URL, _debdiff_bug(), lp) is None
 

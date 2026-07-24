@@ -3,10 +3,11 @@ and posted as ONE aggregated comment; closing-tier outcomes still
 short-circuit and drop any findings collected so far (no nitpicking a change
 that already landed)."""
 
+from fakes import CLEAN_DIFF_TEXT, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+
 import checks
 import main
 from state import StateManager
-from fakes import CLEAN_DIFF_TEXT, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -45,9 +46,7 @@ def test_render_for_bug_closes_with_the_back_to_new_hint():
 
 
 def test_render_question_only_has_no_blocking_section_or_closing_line():
-    out = checks.render_findings_comment(
-        [checks.Finding("question", "A soft suggestion.")]
-    )
+    out = checks.render_findings_comment([checks.Finding("question", "A soft suggestion.")])
     assert "Nice to have" in out
     assert "* A soft suggestion." in out
     assert "Needs fixing" not in out
@@ -55,9 +54,7 @@ def test_render_question_only_has_no_blocking_section_or_closing_line():
 
 
 def test_render_multiline_message_stays_attached_to_its_bullet():
-    out = checks.render_findings_comment(
-        [checks.Finding("incomplete", "Line one.\nLine two.")]
-    )
+    out = checks.render_findings_comment([checks.Finding("incomplete", "Line one.\nLine two.")])
     assert "* Line one.\n  Line two." in out
 
 

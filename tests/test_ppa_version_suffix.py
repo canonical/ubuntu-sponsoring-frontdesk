@@ -2,8 +2,9 @@
 #90). Found live on ipmiutil MP #508280 (3.2.2-1ubuntu1~ppa2) -- a PPA-build
 version string has no business in an archive upload."""
 
-import checks
 from fakes import FakeAttachment, FakeBug, FakeDiff, FakeMP, FakeTriageClient
+
+import checks
 
 URL = "url"
 
@@ -54,10 +55,7 @@ def test_mp_ppa_suffix_fires():
 
 def test_mp_clean_version_is_false():
     mp = _mp_with_diff(_CLEAN_MP_DIFF)
-    assert (
-        checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={})) is False
 
 
 def test_mp_uppercase_ppa_still_fires():
@@ -69,27 +67,19 @@ def test_mp_uppercase_ppa_still_fires():
 
 def test_mp_unfetchable_diff_is_inconclusive():
     mp = FakeMP(diff=None)
-    assert (
-        checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={})) is None
-    )
+    assert checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={})) is None
 
 
 def test_mp_no_new_stanza_is_false():
     mp = _mp_with_diff("diff --git a/debian/control b/debian/control\n")
-    assert (
-        checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_ppa_version_suffix(URL, mp, FakeTriageClient(objects={})) is False
 
 
 def test_bug_not_a_bug_or_mp_is_false():
     class _Other:
         resource_type_link = "https://api.launchpad.net/devel/#distribution"
 
-    assert (
-        checks.check_ppa_version_suffix(URL, _Other(), FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_ppa_version_suffix(URL, _Other(), FakeTriageClient(objects={})) is False
 
 
 _PPA_DEBDIFF = """\
@@ -112,21 +102,14 @@ def test_bug_debdiff_ppa_suffix_fires():
         title="fix",
         attachments=[FakeAttachment("fix.debdiff", content=_PPA_DEBDIFF)],
     )
-    finding = checks.check_ppa_version_suffix(
-        URL, bug, FakeTriageClient(objects={URL: bug})
-    )
+    finding = checks.check_ppa_version_suffix(URL, bug, FakeTriageClient(objects={URL: bug}))
     assert finding.tier == "incomplete"
     assert "3.2.2-1ubuntu1~ppa2" in finding.message
 
 
 def test_bug_no_attachments_is_false():
     bug = FakeBug(title="fix")
-    assert (
-        checks.check_ppa_version_suffix(
-            URL, bug, FakeTriageClient(objects={URL: bug})
-        )
-        is False
-    )
+    assert checks.check_ppa_version_suffix(URL, bug, FakeTriageClient(objects={URL: bug})) is False
 
 
 def test_bug_unfetchable_attachment_is_inconclusive():
@@ -134,9 +117,4 @@ def test_bug_unfetchable_attachment_is_inconclusive():
         title="fix",
         attachments=[FakeAttachment("fix.debdiff", fail_fetch=True)],
     )
-    assert (
-        checks.check_ppa_version_suffix(
-            URL, bug, FakeTriageClient(objects={URL: bug})
-        )
-        is None
-    )
+    assert checks.check_ppa_version_suffix(URL, bug, FakeTriageClient(objects={URL: bug})) is None

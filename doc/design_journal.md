@@ -1782,3 +1782,71 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   `lp.me` check stays the primary, more precise mechanism where a live
   session is available.
 * Tests: 539 total (no new tests -- fixed the 2 that broke), lint clean.
+
+## 108. Ruff Rule Set Pinned, Matching House Style; CI Version Drift Fixed
+
+* **Trigger:** a GitHub Actions CI run failed lint with 109 errors none
+  of which reproduced locally. Root cause: the workflow ran
+  `pip install ruff` unpinned, and the repo had no `pyproject.toml`/
+  `ruff.toml` at all -- so the effective rule set was whatever ruff
+  version pip happened to resolve that day, silently different from
+  the locally-installed snap version's defaults (`E4/E7/E9/F` only,
+  with no config file to say otherwise). CI lint behaviour could drift
+  on any ruff release, independent of any code change.
+* **Compared against `~/hacking/ubuntu-autosync-operator`** (a real
+  Canonical charm) to find house style rather than inventing one:
+  explicit `[tool.ruff]` in `pyproject.toml`
+  (`select = ["E", "W", "F", "C", "N", "D", "I001"]`, `line-length =
+  99`, `mccabe max-complexity = 10`), version-pinned tooling
+  (`uv tool run ruff`, backed by `uv.lock`), and a `make lint` that
+  runs both `ruff check` and `ruff format --check --diff`.
+* **Adopted the same rule set with two deliberate deviations**, both
+  because this codebase's actual shape differs from a charm library:
+  1. **Dropped `D` (pydocstyle) entirely.** ~875 of the resulting 1034
+     findings were `D103`/`D102`/`D101`/`D100` -- functions/classes/
+     modules with no docstring. This codebase has never used
+     docstrings (documents via naming + this journal instead); adding
+     550+ docstrings purely to satisfy lint, with no other benefit,
+     wasn't worth it. seb128's call, offered as one of three options
+     (drop D / adopt D and write the docstrings / adopt D but ignore
+     just the missing-docstring rules).
+  2. **`C901` (mccabe complexity) ignored, not tuned.** 15 functions
+     exceeded max-complexity 10, ranging from just-over (11-15, mostly
+     the deterministic checks -- inherently branchy by design) to
+     `main.py`'s `_triage_url` dispatcher at 67. Refactoring the
+     high end for a lint number, with no functional bug behind it, was
+     judged not worth the regression risk to live triage logic right
+     now. **Backlog:** revisit selectively, not as a blanket
+     threshold-driven pass -- `_triage_url` (67) is the standout
+     candidate, then `check_sru_newer_series` (29),
+     `check_nothing_to_sponsor` (26), `check_xsbc_original_maintainer`
+     (21).
+* **Real findings fixed** (the remaining ~160 after dropping D):
+  26 unsorted imports, 2 `dict()`-call-as-literal, 7 over-length
+  lines (rewrapped/reworded by hand where they were LLM prompt text,
+  to avoid changing what the model is actually told), 12 `N802`
+  (deliberately kept via a `tests/*` per-file-ignore -- the fakes
+  mirror launchpadlib's own camelCase method names like
+  `createComment`/`getPublishedSources`; renaming them would decouple
+  the test doubles from the real API), plus a full `ruff format` pass
+  (40 files rewrapped to the new 99-column width, no logic changes).
+* **CI fix:** pinned `ruff==0.15.21` in the workflow's pip install --
+  the actual root-cause fix, independent of the rule-set work above.
+  `make lint` now also runs `ruff format --check --diff`, matching the
+  charm's split.
+* **Backlog: consider migrating to `uv`** (lockfile-pinned tooling,
+  `uv run`/`uv tool run` instead of bare `pip install`/`python3 -m`),
+  matching the charm fully rather than just pinning ruff's version in
+  the pip install line. Real benefit: every dependency version-pinned
+  (`pytest`/`pyyaml`/`launchpadlib` currently aren't, only ruff is),
+  not just ruff, closing off this whole class of drift for good, plus
+  local/CI parity via one lockfile. Not urgent -- the immediate pain
+  (version drift) is already fixed by the pin. One wrinkle to verify
+  before doing it: `archive_lookup.py` imports `apt_pkg` (python3-apt),
+  a compiled extension tied to the system Python that isn't
+  pip-installable, which is why CI currently uses the runner's system
+  `python3` rather than an isolated interpreter -- `uv` would need to
+  target that same system interpreter (it supports this), not assume
+  it can build an isolated venv.
+* Tests: 539 passed, unchanged. `ruff check .` and
+  `ruff format --check .` both clean.

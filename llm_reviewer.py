@@ -280,8 +280,7 @@ class LLMReviewer:
             return "FAIL: LLM run call budget exhausted."
         if self._item_calls >= _ITEM_LLM_CALL_BUDGET:
             logger.warning(
-                "[llm] per-item call budget (%d) exhausted for %s; "
-                "deferring this item.",
+                "[llm] per-item call budget (%d) exhausted for %s; deferring this item.",
                 _ITEM_LLM_CALL_BUDGET,
                 self._current_url or "<no url>",
             )
@@ -308,9 +307,7 @@ class LLMReviewer:
             )
 
             if proc.returncode != 0:
-                logger.warning(
-                    "opencode returned %d. Stderr: %s", proc.returncode, proc.stderr
-                )
+                logger.warning("opencode returned %d. Stderr: %s", proc.returncode, proc.stderr)
                 return "FAIL: LLM invocation failed internally."
 
             if f'agent "{_OPENCODE_AGENT}" not found' in (proc.stderr or ""):
@@ -376,8 +373,7 @@ class LLMReviewer:
 
         except subprocess.TimeoutExpired:
             logger.warning(
-                "opencode did not finish within %d seconds; giving up on "
-                "this call.",
+                "opencode did not finish within %d seconds; giving up on this call.",
                 _LLM_TIMEOUT_SECONDS,
             )
             return "FAIL: LLM invocation timed out."
@@ -477,15 +473,11 @@ class LLMReviewer:
         try:
             data = yaml.safe_load(match.group(1))
         except yaml.YAMLError as exc:
-            logger.warning(
-                "malformed YAML verdict (%s); failing safe to human review.", exc
-            )
+            logger.warning("malformed YAML verdict (%s); failing safe to human review.", exc)
             return True, ""
 
         if not isinstance(data, dict):
-            logger.warning(
-                "YAML verdict was not a mapping; failing safe to human review."
-            )
+            logger.warning("YAML verdict was not a mapping; failing safe to human review.")
             return True, ""
 
         verdict = str(data.get("verdict", "")).strip().lower()
@@ -494,9 +486,7 @@ class LLMReviewer:
         if verdict == "fail":
             if reason:
                 return False, reason
-            logger.warning(
-                "'fail' verdict without a reason; failing safe to human review."
-            )
+            logger.warning("'fail' verdict without a reason; failing safe to human review.")
             return True, ""
 
         # pass / missing / unknown -> human review, no rejection.
@@ -585,7 +575,7 @@ END BUG TEXT
 End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
-verdict: not-stated   # use `fixed` if the text states or implies the issue is already fixed (or not present) in all of: {series_list}
+verdict: not-stated   # use `fixed` if the text implies already fixed/absent in: {series_list}
 ```
 """
 
@@ -595,8 +585,7 @@ verdict: not-stated   # use `fixed` if the text states or implies the issue is a
         match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
         if not match:
             logger.warning(
-                "review_fixed_in_newer_series: no YAML verdict block; "
-                "treating as not-stated."
+                "review_fixed_in_newer_series: no YAML verdict block; treating as not-stated."
             )
             return False
         try:
@@ -628,9 +617,7 @@ verdict: not-stated   # use `fixed` if the text states or implies the issue is a
         # #100: keep the newest comments (the response to the feedback is
         # usually last), cap each one, and cap the feedback itself.
         bounce_reason = _cap_text(bounce_reason, limit=10_000)
-        joined = "\n\n---\n\n".join(
-            _cap_text(c, limit=4_000) for c in comments[-20:]
-        )
+        joined = "\n\n---\n\n".join(_cap_text(c, limit=4_000) for c in comments[-20:])
         prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This bug was earlier marked Incomplete with the review feedback quoted below,
 and the contributor (or someone else) has since commented. Decide whether the
@@ -664,16 +651,14 @@ addressed: no   # `yes` if the response addresses the review feedback
         match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
         if not match:
             logger.warning(
-                "review_bounce_response: no YAML verdict block; treating as "
-                "not addressed."
+                "review_bounce_response: no YAML verdict block; treating as not addressed."
             )
             return False
         try:
             data = yaml.safe_load(match.group(1))
         except yaml.YAMLError as exc:
             logger.warning(
-                "review_bounce_response: malformed YAML verdict (%s); "
-                "treating as not addressed.",
+                "review_bounce_response: malformed YAML verdict (%s); treating as not addressed.",
                 exc,
             )
             return False
@@ -705,12 +690,9 @@ addressed: no   # `yes` if the response addresses the review feedback
         real problem is worse than a redundant post.
         """
         numbered = "\n".join(
-            f"{i}. {_cap_text(f.message, limit=2_000)}"
-            for i, f in enumerate(findings, start=1)
+            f"{i}. {_cap_text(f.message, limit=2_000)}" for i, f in enumerate(findings, start=1)
         )
-        joined = "\n\n---\n\n".join(
-            _cap_text(c, limit=4_000) for c in reviewer_comments[-20:]
-        )
+        joined = "\n\n---\n\n".join(_cap_text(c, limit=4_000) for c in reviewer_comments[-20:])
         prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
 A human reviewer has already commented on this item. Below are the automated
 review's current findings and the reviewer's own comment(s). For each finding,
@@ -743,8 +725,7 @@ covered: []   # list of finding numbers (integers) the reviewer already covered
         match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
         if not match:
             logger.warning(
-                "review_findings_already_covered: no YAML verdict block; "
-                "treating as none covered."
+                "review_findings_already_covered: no YAML verdict block; treating as none covered."
             )
             return set()
         try:
@@ -892,20 +873,15 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             )
             return self._review_sync_delta_explanation(description)
 
-        ubuntu_versions = archive_lookup.ubuntu_versions(
-            self.lp, pkg, series_names=[devel]
-        )
+        ubuntu_versions = archive_lookup.ubuntu_versions(self.lp, pkg, series_names=[devel])
         logger.debug("_triage_sync: ubuntu_versions(%r) -> %s", pkg, ubuntu_versions)
         if ubuntu_versions is None:
             logger.warning(
-                "Ubuntu archive lookup failed; falling back to "
-                "delta-explanation review only."
+                "Ubuntu archive lookup failed; falling back to delta-explanation review only."
             )
             return self._review_sync_delta_explanation(description)
 
-        has_delta = any(
-            archive_lookup.has_ubuntu_delta(v) for v in ubuntu_versions.values()
-        )
+        has_delta = any(archive_lookup.has_ubuntu_delta(v) for v in ubuntu_versions.values())
         logger.debug("_triage_sync: has_ubuntu_delta -> %s", has_delta)
         if has_delta:
             logger.info(
@@ -918,13 +894,12 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         already_synced = any(
             archive_lookup.is_at_least(v, req_version) for v in ubuntu_versions.values()
         )
-        logger.debug(
-            "_triage_sync: already synced (>= %r)? %s", req_version, already_synced
-        )
+        logger.debug("_triage_sync: already synced (>= %r)? %s", req_version, already_synced)
         if already_synced:
             comment = (
-                f"Thanks for your contribution! It looks like {pkg} {req_version} (or newer) is already "
-                "published in Ubuntu. Closing this sync request as Fix Released."
+                f"Thanks for your contribution! It looks like {pkg} "
+                f"{req_version} (or newer) is already published in Ubuntu. "
+                "Closing this sync request as Fix Released."
             )
             logger.info("%s: already synced. Closing as SYNCED.", pkg)
             return "SYNCED", comment
@@ -963,8 +938,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             )
 
         logger.info(
-            "%s %s not found in Debian %s; asking LLM whether the "
-            "description justifies this...",
+            "%s %s not found in Debian %s; asking LLM whether the description justifies this...",
             pkg,
             req_version,
             target_suite,
@@ -999,9 +973,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         logger.debug("triage_bug: is_sru=%s is_sync=%s", is_sru, is_sync)
 
         if is_sru:
-            logger.info(
-                "Detected SRU request. Routing to LLM for SRU template analysis..."
-            )
+            logger.info("Detected SRU request. Routing to LLM for SRU template analysis...")
             passed, feedback = self.review_sru_template(description)
 
             if not passed:
@@ -1101,23 +1073,16 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
             return [], None
 
         feature_raw = str(data.get("feature", "")).strip().lower()
-        feature = {"yes": True, "true": True, "no": False, "false": False}.get(
-            feature_raw
-        )
+        feature = {"yes": True, "true": True, "no": False, "false": False}.get(feature_raw)
 
         bullets = []
         if str(data.get("verdict", "")).strip().lower() == "fail":
-            observations = self._clean_bullet_list(
-                data.get("observations"), "observations"
-            )
+            observations = self._clean_bullet_list(data.get("observations"), "observations")
             mismatches = self._clean_bullet_list(data.get("mismatches"), "mismatches")
-            bullets = [("advisory", o) for o in observations] + [
-                ("verify", m) for m in mismatches
-            ]
+            bullets = [("advisory", o) for o in observations] + [("verify", m) for m in mismatches]
             if not bullets:
                 logger.warning(
-                    "MP review: 'fail' verdict without observations/mismatches; "
-                    "staying silent."
+                    "MP review: 'fail' verdict without observations/mismatches; staying silent."
                 )
         return bullets, feature
 
@@ -1176,8 +1141,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         failures = [
             (bug, feedback)
             for bug, (passed, feedback) in (
-                (bug, self.review_sru_template(getattr(bug, "description", "")))
-                for bug in bugs
+                (bug, self.review_sru_template(getattr(bug, "description", ""))) for bug in bugs
             )
             if not passed
         ]
@@ -1195,9 +1159,7 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
                 f"follow the official SRU bug template ({template_link}). "
                 f"{feedback}"
             )
-        detail = "\n\n".join(
-            f"Bug #{bug.id}: {feedback}" for bug, feedback in failures
-        )
+        detail = "\n\n".join(f"Bug #{bug.id}: {feedback}" for bug, feedback in failures)
         return (
             "This looks like an SRU with multiple linked bugs, but the "
             "following don't follow the official SRU bug template "
@@ -1363,8 +1325,8 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` only if you have observations or mismatches worth passing on
-{ff_yaml_field}observations:   # question 1 only: vague/content-free stanza bullets, genuinely optional to fix
-  - "<observation, always double-quoted -- it may contain a colon (e.g. a bug reference like 'LP: #123'), which breaks YAML parsing if left unquoted>"
+{ff_yaml_field}observations:   # question 1: vague/content-free stanza bullets, optional to fix
+  - "<observation, double-quoted -- may contain a colon (e.g. 'LP: #123'), breaks YAML unquoted>"
 mismatches:     # question 2 only: stanza/diff mismatches -- would matter if real, but unconfirmed
   - "<mismatch, always double-quoted for the same reason>"
 ```

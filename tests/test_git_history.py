@@ -54,10 +54,7 @@ def test_descendant_is_false(repo):
 
 def test_unknown_candidate_is_false(repo):
     path, _, c2 = repo
-    assert (
-        git_history.commit_contains(path, c2, MISSING_SHA, ref="refs/heads/main")
-        is False
-    )
+    assert git_history.commit_contains(path, c2, MISSING_SHA, ref="refs/heads/main") is False
 
 
 def test_unfetchable_repo_is_none(tmp_path):
@@ -73,10 +70,7 @@ def test_tip_not_in_repo_is_none(repo):
     # The .changes recorded a commit the ref no longer reaches (and the
     # server won't serve the bare sha): ancestry is undeterminable.
     path, _, _ = repo
-    assert (
-        git_history.commit_contains(path, MISSING_SHA, "b" * 40, ref="refs/heads/main")
-        is None
-    )
+    assert git_history.commit_contains(path, MISSING_SHA, "b" * 40, ref="refs/heads/main") is None
 
 
 def test_missing_inputs_are_none(repo):

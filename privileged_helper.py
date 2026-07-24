@@ -81,12 +81,8 @@ def login():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
-    sub.add_parser(
-        "login", help="Authorize the helper token (one-time setup, no writes)"
-    )
-    unsub = sub.add_parser(
-        "unsubscribe-sponsors", help="Unsubscribe a sponsoring team from a bug"
-    )
+    sub.add_parser("login", help="Authorize the helper token (one-time setup, no writes)")
+    unsub = sub.add_parser("unsubscribe-sponsors", help="Unsubscribe a sponsoring team from a bug")
     unsub.add_argument("bug_id", help="Launchpad bug number")
     unsub.add_argument(
         "--team",

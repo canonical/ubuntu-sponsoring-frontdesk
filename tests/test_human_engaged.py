@@ -8,9 +8,6 @@ state (e.g. a version collision), not a review opinion."""
 
 import datetime
 
-import checks
-import main
-from state import StateManager
 from fakes import (
     BOT,
     CLEAN_DIFF_TEXT,
@@ -26,6 +23,10 @@ from fakes import (
     FakeTask,
     FakeTriageClient,
 )
+
+import checks
+import main
+from state import StateManager
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 REVIEWER = "https://api.launchpad.net/devel/~a-reviewer"
@@ -78,9 +79,7 @@ def test_service_account_comments_do_not_count():
     # bot's own comments are separately excluded dynamically via lp.me too
     # (see test_submitter_and_bot_comments_do_not_count).
     comments = [
-        FakeMPComment(
-            f"https://api.launchpad.net/devel/{acct}", "automated noise", AFTER_DIFF
-        )
+        FakeMPComment(f"https://api.launchpad.net/devel/{acct}", "automated noise", AFTER_DIFF)
         for acct in checks.SERVICE_ACCOUNTS
     ]
     mp = _mp(comments, diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE))
@@ -113,9 +112,7 @@ def test_submitter_reply_after_reviewer_resumes_review():
     mp = _mp(
         [
             FakeMPComment(REVIEWER, "please fix X", AFTER_DIFF),
-            FakeMPComment(
-                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
-            ),
+            FakeMPComment(HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)),
         ],
         diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
     )
@@ -128,12 +125,8 @@ def test_reviewer_reply_after_submitter_stays_engaged():
     mp = _mp(
         [
             FakeMPComment(REVIEWER, "please fix X", AFTER_DIFF),
-            FakeMPComment(
-                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
-            ),
-            FakeMPComment(
-                REVIEWER, "still not right", AFTER_DIFF + datetime.timedelta(hours=2)
-            ),
+            FakeMPComment(HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)),
+            FakeMPComment(REVIEWER, "still not right", AFTER_DIFF + datetime.timedelta(hours=2)),
         ],
         diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
     )
@@ -145,9 +138,7 @@ def test_undated_comment_falls_back_to_any_qualifying_comment_counts():
     # conservatively treat that as still engaged, same as the pre-#96 rule.
     mp = _mp(
         [
-            FakeMPComment(
-                HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)
-            ),
+            FakeMPComment(HUMAN, "done, PTAL", AFTER_DIFF + datetime.timedelta(hours=1)),
             FakeMPComment(REVIEWER, "please fix X", None),
         ],
         diff=FakeDiff("/d/1", 50, date_created=DIFF_DATE),
@@ -203,9 +194,7 @@ def test_bug_comment_predating_the_current_attachment_does_not_count():
     # A new debdiff resets the conversation, like a new push on an MP.
     bug = _bug(
         [FakeBugMessage(REVIEWER, "old feedback", BEFORE_DIFF)],
-        bug_attachments=[
-            FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=ATTACH_DATE)
-        ],
+        bug_attachments=[FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=ATTACH_DATE)],
     )
     assert checks.check_human_engaged(bug, _client({URL: bug})) is False
 
@@ -213,9 +202,7 @@ def test_bug_comment_predating_the_current_attachment_does_not_count():
 def test_bug_comment_after_the_current_attachment_counts():
     bug = _bug(
         [FakeBugMessage(REVIEWER, "reviewed the debdiff, one issue", AFTER_DIFF)],
-        bug_attachments=[
-            FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=ATTACH_DATE)
-        ],
+        bug_attachments=[FakeAttachment("v2.debdiff", content=DEBDIFF, date_created=ATTACH_DATE)],
     )
     assert checks.check_human_engaged(bug, _client({URL: bug})) is True
 
@@ -227,9 +214,7 @@ def test_bug_reporter_reply_after_reviewer_resumes_review():
     bug = _bug(
         [
             FakeBugMessage(REVIEWER, "needs a SRU template", AFTER_DIFF),
-            FakeBugMessage(
-                HUMAN, "added the template", AFTER_DIFF + datetime.timedelta(hours=1)
-            ),
+            FakeBugMessage(HUMAN, "added the template", AFTER_DIFF + datetime.timedelta(hours=1)),
         ]
     )
     assert checks.check_human_engaged(bug, _client({URL: bug})) is False
@@ -377,13 +362,9 @@ def test_engaged_reviewer_does_not_suppress_a_blocking_bug_bounce(tmp_path):
     bug = FakeBug(
         tasks=[FakeTask("foo (Ubuntu)", "New")],
         description="fix attached",
-        attachments=[
-            FakeAttachment("fix.patch", type="Patch", date_created=ATTACH_DATE)
-        ],
+        attachments=[FakeAttachment("fix.patch", type="Patch", date_created=ATTACH_DATE)],
     )
-    bug.messages = [
-        FakeBugMessage(REVIEWER, "patch looks right, needs a debdiff", AFTER_DIFF)
-    ]
+    bug.messages = [FakeBugMessage(REVIEWER, "patch looks right, needs a debdiff", AFTER_DIFF)]
     bug_url = "https://launchpad.net/bugs/42"
     lp = _client({bug_url: bug})
 
@@ -490,9 +471,7 @@ def test_blocking_finding_still_bounces_despite_engaged_reviewer(monkeypatch, tm
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
 
 
-def test_mixed_findings_keep_blocking_and_drop_question_when_engaged(
-    monkeypatch, tmp_path
-):
+def test_mixed_findings_keep_blocking_and_drop_question_when_engaged(monkeypatch, tmp_path):
     # Both a blocking and a non-blocking finding fire; engagement should
     # only silence the non-blocking one.
     monkeypatch.setattr(

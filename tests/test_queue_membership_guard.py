@@ -5,11 +5,6 @@ sponsoring request, and the bot must not write to it. Dry-run may proceed --
 it performs no writes -- so it stays usable as a "what would the bot do
 here" probe."""
 
-from audit import AuditLog
-from launchpad_client import LPClient
-from state import StateManager
-import checks
-import main
 from fakes import (
     FakeBug,
     FakeLLM,
@@ -19,6 +14,12 @@ from fakes import (
     FakeTask,
     FakeTriageClient,
 )
+
+import checks
+import main
+from audit import AuditLog
+from launchpad_client import LPClient
+from state import StateManager
 
 BUG_URL = "https://bugs.launchpad.net/ubuntu/+source/unity/+bug/2160299"
 
@@ -46,9 +47,7 @@ def test_security_sponsors_subscription_passes():
 
 
 def test_no_sponsoring_team_fails():
-    bug = FakeBug(
-        subscriptions=[FakeSubscription("~some-human"), FakeSubscription("~a-team")]
-    )
+    bug = FakeBug(subscriptions=[FakeSubscription("~some-human"), FakeSubscription("~a-team")])
     assert checks.check_sponsoring_team_subscribed("u", bug) is False
 
 

@@ -3,10 +3,11 @@
 import datetime
 import types
 
+from fakes import FakeBug, FakeBugRef, FakeDiff, FakeMP, FakeTask
+
 import archive_lookup
 import checks
 import facts
-from fakes import FakeMP, FakeDiff, FakeBugRef, FakeBug, FakeTask
 
 
 class _LP:
@@ -140,9 +141,7 @@ def test_fix_mp_targeting_devel_is_not_bounced():
 
 
 def test_sru_mp_targeting_series_is_not_bounced():
-    mp = FakeMP(
-        target="refs/heads/ubuntu/jammy", source="refs/heads/fix-lp2155031-jammy"
-    )
+    mp = FakeMP(target="refs/heads/ubuntu/jammy", source="refs/heads/fix-lp2155031-jammy")
     assert checks.check_target_branch("url", mp, _LP()) is False
 
 
@@ -313,9 +312,7 @@ def test_debian_target_suite_falls_back_to_archive_lookup(monkeypatch):
     monkeypatch.setattr(
         archive_lookup,
         "debian_versions",
-        lambda pkg: (
-            {"unstable": "1.2-3", "experimental": "1.1-1"} if pkg == "testpkg" else None
-        ),
+        lambda pkg: {"unstable": "1.2-3", "experimental": "1.1-1"} if pkg == "testpkg" else None,
     )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_NO_HEADER_CONTEXT)
     assert checks._debian_target_suite(mp) == "sid"
@@ -566,9 +563,7 @@ def _patch_archive(
         "upload_in_queue",
         lambda lp, pkg, series, version: queued,
     )
-    monkeypatch.setattr(
-        archive_lookup, "queue_changes_text", lambda upload: queue_changes
-    )
+    monkeypatch.setattr(archive_lookup, "queue_changes_text", lambda upload: queue_changes)
 
 
 def test_stale_version_newer_than_archive_is_fine(monkeypatch):

@@ -1,10 +1,6 @@
 """Bouncing a bug as INCOMPLETE sets all open Ubuntu tasks to Incomplete,
 keeps ~ubuntu-sponsors subscribed, and does not re-triage its own status write."""
 
-import facts
-import main
-from launchpad_client import LPClient
-from state import StateManager
 from fakes import (
     FakeAttachment,
     FakeAudit,
@@ -14,6 +10,11 @@ from fakes import (
     FakeTask,
     FakeTriageClient,
 )
+
+import facts
+import main
+from launchpad_client import LPClient
+from state import StateManager
 
 URL = "https://launchpad.net/bugs/42"
 

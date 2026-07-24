@@ -4,9 +4,10 @@ https://ubuntu.com/project/docs/contributors/updating/make-changes-to-a-
 package/#updating-the-maintainer). Advisory only -- a sponsor can add it
 at upload time."""
 
+from fakes import FakeAttachment, FakeBug, FakeDiff, FakeMP, FakeRoot, FakeTriageClient
+
 import archive_lookup
 import checks
-from fakes import FakeAttachment, FakeBug, FakeDiff, FakeMP, FakeRoot, FakeTriageClient
 
 URL = "url"
 
@@ -81,27 +82,19 @@ index 111..222 100644
 
 def test_mp_first_delta_missing_field_fires():
     mp = _mp_with_diff(_FIRST_DELTA_NO_XSBC)
-    finding = checks.check_xsbc_original_maintainer(
-        URL, mp, FakeTriageClient(objects={})
-    )
+    finding = checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={}))
     assert finding.tier == "question" and finding.kind == "advisory"
     assert "XSBC-Original-Maintainer" in finding.message
 
 
 def test_mp_first_delta_with_field_is_clean():
     mp = _mp_with_diff(_FIRST_DELTA_WITH_XSBC)
-    assert (
-        checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={})) is False
 
 
 def test_mp_not_first_delta_is_false():
     mp = _mp_with_diff(_NOT_FIRST_DELTA)
-    assert (
-        checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={})) is False
 
 
 def test_mp_merge_is_exempt():
@@ -112,10 +105,7 @@ def test_mp_merge_is_exempt():
         package="foo",
         bugs=[],
     )
-    assert (
-        checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={}))
-        is False
-    )
+    assert checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient(objects={})) is False
 
 
 def _lp():
@@ -132,17 +122,13 @@ def test_mp_falls_back_to_archive_when_context_too_short(monkeypatch):
 
 
 def test_mp_archive_lookup_failure_is_inconclusive(monkeypatch):
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None)
     mp = _mp_with_diff(_MERGE_NO_CONTEXT.replace("foo (1.2-3)", "foo (1.2-3ubuntu1)"))
     assert checks.check_xsbc_original_maintainer(URL, mp, _lp()) is None
 
 
 def test_mp_nothing_published_is_false(monkeypatch):
-    monkeypatch.setattr(
-        archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {}
-    )
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
     mp = _mp_with_diff(_MERGE_NO_CONTEXT.replace("foo (1.2-3)", "foo (1.2-3ubuntu1)"))
     assert checks.check_xsbc_original_maintainer(URL, mp, _lp()) is False
 
@@ -179,9 +165,7 @@ def test_bug_debdiff_first_delta_missing_field_fires():
     bug = FakeBug(
         title="fix", attachments=[FakeAttachment("fix.debdiff", content=_BUG_FIRST_DELTA_NO_XSBC)]
     )
-    finding = checks.check_xsbc_original_maintainer(
-        URL, bug, FakeTriageClient(objects={URL: bug})
-    )
+    finding = checks.check_xsbc_original_maintainer(URL, bug, FakeTriageClient(objects={URL: bug}))
     assert finding.tier == "question" and finding.kind == "advisory"
 
 
@@ -191,9 +175,7 @@ def test_bug_sync_request_is_exempt():
         attachments=[FakeAttachment("fix.debdiff", content=_BUG_FIRST_DELTA_NO_XSBC)],
     )
     assert (
-        checks.check_xsbc_original_maintainer(
-            URL, bug, FakeTriageClient(objects={URL: bug})
-        )
+        checks.check_xsbc_original_maintainer(URL, bug, FakeTriageClient(objects={URL: bug}))
         is False
     )
 
@@ -201,8 +183,6 @@ def test_bug_sync_request_is_exempt():
 def test_bug_no_attachments_is_false():
     bug = FakeBug(title="fix")
     assert (
-        checks.check_xsbc_original_maintainer(
-            URL, bug, FakeTriageClient(objects={URL: bug})
-        )
+        checks.check_xsbc_original_maintainer(URL, bug, FakeTriageClient(objects={URL: bug}))
         is False
     )

@@ -2,9 +2,6 @@
 
 import logging
 
-import facts
-import main
-from state import StateManager
 from fakes import (
     BOT,
     CLEAN_DIFF_TEXT,
@@ -21,6 +18,10 @@ from fakes import (
     FakeTask,
     FakeTriageClient,
 )
+
+import facts
+import main
+from state import StateManager
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -68,9 +69,7 @@ def test_marco_lifecycle(tmp_path):
     assert len(lp.comments) == 1
 
 
-def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(
-    tmp_path, caplog
-):
+def test_inconclusive_check_does_not_persist_facts_so_next_run_retries(tmp_path, caplog):
     # A merge MP correctly targeting debian/sid, with no diff_text on its
     # preview diff -- check_changelog_bug_reference and check_stale_version
     # both can't read the diff, so neither fires but the run is
@@ -254,9 +253,7 @@ def test_archive_lookup_failure_is_inconclusive_not_cached(tmp_path):
 
 def test_archive_version_prefers_proposed_pocket():
     root = _root_with_archive(
-        FakeArchive(
-            pubs=[FakePublication("1.0-1"), FakePublication("1.1-1", "Proposed")]
-        )
+        FakeArchive(pubs=[FakePublication("1.0-1"), FakePublication("1.1-1", "Proposed")])
     )
     assert facts._archive_version(root, FakeMP()) == "1.1-1"
 

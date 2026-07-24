@@ -6,8 +6,9 @@ bug is linked to the MP or referenced in its commit message/description."""
 
 import types
 
-import checks
 from fakes import FakeDiff, FakeMP
+
+import checks
 
 URL = "url"
 DOC = "commit-changes/#write-the-changelog-entry"
@@ -100,17 +101,11 @@ def test_lp_reference_in_description_is_used_too():
 
 
 def test_new_changelog_entry_is_clean():
-    assert (
-        checks.check_missing_changelog_stanza(URL, _mp(WITH_STANZA_DIFF), None)
-        is False
-    )
+    assert checks.check_missing_changelog_stanza(URL, _mp(WITH_STANZA_DIFF), None) is False
 
 
 def test_appending_to_an_existing_entry_is_clean():
-    assert (
-        checks.check_missing_changelog_stanza(URL, _mp(UNRELEASED_APPEND_DIFF), None)
-        is False
-    )
+    assert checks.check_missing_changelog_stanza(URL, _mp(UNRELEASED_APPEND_DIFF), None) is False
 
 
 def test_merge_mp_is_exempt():
@@ -150,7 +145,5 @@ def test_linked_bugs_lookup_failure_is_inconclusive():
 
 
 def test_bug_resource_is_skipped():
-    bug = types.SimpleNamespace(
-        resource_type_link="https://api.launchpad.net/devel/#bug"
-    )
+    bug = types.SimpleNamespace(resource_type_link="https://api.launchpad.net/devel/#bug")
     assert checks.check_missing_changelog_stanza(URL, bug, None) is False

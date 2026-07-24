@@ -7,11 +7,12 @@ sponsoring report."""
 import subprocess
 import types
 
-from audit import AuditLog
-import launchpad_client
-from launchpad_client import LPClient
-import privileged_helper
 from fakes import FakeBug, FakeRoot
+
+import launchpad_client
+import privileged_helper
+from audit import AuditLog
+from launchpad_client import LPClient
 
 
 def _client(tmp_path):
@@ -31,9 +32,7 @@ class _CountingBug(FakeBug):
 # --- delegation from LPClient.unsubscribe_sponsors ---------------------------
 
 
-def test_configured_helper_is_invoked_instead_of_a_direct_call(
-    tmp_path, monkeypatch
-):
+def test_configured_helper_is_invoked_instead_of_a_direct_call(tmp_path, monkeypatch):
     monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: True)
     calls = {}
 
@@ -82,9 +81,7 @@ def test_unconfigured_helper_falls_back_to_the_direct_call(tmp_path, monkeypatch
 # --- #98: a helper timeout gets a distinct diagnosis, not a generic one -------
 
 
-def test_helper_timeout_hints_at_reauth_in_non_interactive_modes(
-    tmp_path, monkeypatch, caplog
-):
+def test_helper_timeout_hints_at_reauth_in_non_interactive_modes(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(launchpad_client, "_helper_configured", lambda: True)
 
     def fake_run(cmd, **kwargs):

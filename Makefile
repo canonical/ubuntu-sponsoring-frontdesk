@@ -5,8 +5,10 @@ all: lint test
 
 lint:
 	ruff check .
+	ruff format --check --diff .
 
 fmt:
+	ruff check --fix .
 	ruff format .
 
 test:

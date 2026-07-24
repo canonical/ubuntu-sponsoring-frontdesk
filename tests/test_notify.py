@@ -6,13 +6,13 @@ two round-one triggers (stuck diff generation, importer failed to auto-close).
 import datetime
 
 import pytest
+import test_mp_checks
+from fakes import FakeLLM, FakeMP, FakeTriageClient
 
 import checks
 import main
 import notify
-import test_mp_checks
 from state import StateManager
-from fakes import FakeLLM, FakeMP, FakeTriageClient
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 

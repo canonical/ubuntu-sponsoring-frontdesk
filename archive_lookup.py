@@ -7,7 +7,8 @@ Ubuntu state comes straight from the Launchpad API -- the canonical source,
 and one we're already authenticated against for everything else the bot
 does -- except the supported-series list, which comes from
 `ubuntu-distro-info` (distro-info-data has real EOL dates; Launchpad's
-series statuses lag EOL and count ESM as Supported, see #83). Debian state comes from the FTP-master team's live madison endpoint
+series statuses lag EOL and count ESM as Supported, see #83). Debian
+state comes from the FTP-master team's live madison endpoint
 (https://api.ftp-master.debian.org/madison), which reads straight from dak's
 own database (projectb) -- updated the moment an upload is accepted, not
 after the next dinstall/publisher run. That matters here: qa.debian.org's
@@ -175,9 +176,7 @@ def ubuntu_versions(lp, package, series_names=None):
                 versions[f"{name}{suffix}"] = pub.source_package_version
         return versions
     except Exception as e:
-        logger.warning(
-            "Launchpad lookup failed (ubuntu versions for %s): %s", package, e
-        )
+        logger.warning("Launchpad lookup failed (ubuntu versions for %s): %s", package, e)
         return None
 
 
@@ -193,8 +192,7 @@ def published_source_url(package, version):
     version comparisons in the comment text elsewhere ('~', '+', ':' for an
     epoch, all common and all safe to leave unescaped in a URL path)."""
     return (
-        f"https://launchpad.net/ubuntu/+source/{package}/"
-        f"{urllib.parse.quote(version, safe='~+:')}"
+        f"https://launchpad.net/ubuntu/+source/{package}/{urllib.parse.quote(version, safe='~+:')}"
     )
 
 
@@ -216,12 +214,12 @@ def published_source(lp, package, series_name, version, status="Published"):
         ubuntu = lp.distributions["ubuntu"]
         archive = ubuntu.main_archive
         series = ubuntu.getSeries(name_or_version=series_name)
-        kwargs = dict(
-            source_name=package,
-            exact_match=True,
-            distro_series=series,
-            version=version,
-        )
+        kwargs = {
+            "source_name": package,
+            "exact_match": True,
+            "distro_series": series,
+            "version": version,
+        }
         if status is not None:
             kwargs["status"] = status
         matches = list(archive.getPublishedSources(**kwargs))
@@ -256,7 +254,7 @@ def upload_in_queue(lp, package, series_name, version=None):
     lookup as "not queued")."""
     try:
         series = lp.distributions["ubuntu"].getSeries(name_or_version=series_name)
-        kwargs = dict(name=package, exact_match=True)
+        kwargs = {"name": package, "exact_match": True}
         if version is not None:
             kwargs["version"] = version
         # Unapproved first: it's where SRUs (and freeze-time devel uploads)

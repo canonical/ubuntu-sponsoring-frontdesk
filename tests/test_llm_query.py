@@ -70,9 +70,7 @@ def test_parse_ndjson_reply_extracts_text_and_usage():
 
 
 def test_parse_ndjson_reply_concatenates_multiple_text_events():
-    stdout = _ndjson(
-        _text_event("Part one. "), _text_event("Part two."), _step_finish_event()
-    )
+    stdout = _ndjson(_text_event("Part one. "), _text_event("Part two."), _step_finish_event())
     text, usage, _ = LLMReviewer._parse_ndjson_reply(stdout)
     assert text == "Part one. Part two."
     assert usage is not None
@@ -108,9 +106,7 @@ def test_parse_ndjson_reply_no_text_event_falls_back_to_raw_stdout():
 def test_parse_ndjson_reply_flags_tool_use_events():
     # Live-observed shape on opencode 1.18.3: a bash invocation appears as
     # a distinct tool_use event in the stream (design_journal.md #99).
-    stdout = _ndjson(
-        _tool_use_event(), _text_event("the date is..."), _step_finish_event()
-    )
+    stdout = _ndjson(_tool_use_event(), _text_event("the date is..."), _step_finish_event())
     text, _, used_tools = LLMReviewer._parse_ndjson_reply(stdout)
     assert used_tools is True
     assert text == "the date is..."
@@ -123,9 +119,7 @@ def test_query_llm_invokes_opencode_with_json_format(monkeypatch):
         captured["cmd"] = cmd
         captured["input"] = input
         captured["timeout"] = timeout
-        stdout = _ndjson(
-            _text_event("```yaml\nverdict: pass\nreason:\n```"), _step_finish_event()
-        )
+        stdout = _ndjson(_text_event("```yaml\nverdict: pass\nreason:\n```"), _step_finish_event())
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -193,8 +187,7 @@ def test_query_llm_missing_agent_fallback_discards_the_reply(monkeypatch, caplog
     def fake_run(cmd, input, text, capture_output, check, timeout):
         stdout = _ndjson(_text_event("verdict: pass"), _step_finish_event())
         stderr = (
-            f'! agent "{llm_reviewer._OPENCODE_AGENT}" not found. '
-            "Falling back to default agent"
+            f'! agent "{llm_reviewer._OPENCODE_AGENT}" not found. Falling back to default agent'
         )
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr=stderr)
 
@@ -208,9 +201,7 @@ def test_query_llm_missing_agent_fallback_discards_the_reply(monkeypatch, caplog
 
 def test_query_llm_tool_use_in_reply_discards_it(monkeypatch, caplog):
     def fake_run(cmd, input, text, capture_output, check, timeout):
-        stdout = _ndjson(
-            _tool_use_event(), _text_event("verdict: pass"), _step_finish_event()
-        )
+        stdout = _ndjson(_tool_use_event(), _text_event("verdict: pass"), _step_finish_event())
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)

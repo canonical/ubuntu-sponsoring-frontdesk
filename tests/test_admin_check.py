@@ -1,7 +1,8 @@
 """Fix #5: admin check looks at the relevant Ubuntu series tasks only."""
 
+from fakes import FakeBug, FakeMP, FakeTask
+
 import checks
-from fakes import FakeBug, FakeTask, FakeMP
 
 
 class _LP:
@@ -18,9 +19,7 @@ class _LP:
 
 def _run(tasks, pkg, lp=None):
     lp = lp if lp is not None else _LP()
-    fired = checks.check_administrative_state(
-        "url", FakeBug(tasks=tasks), lp, source_package=pkg
-    )
+    fired = checks.check_administrative_state("url", FakeBug(tasks=tasks), lp, source_package=pkg)
     if not any(t.status == "Fix Committed" for t in tasks):
         # #75: without a Fix Committed task this check never writes --
         # Fix Released bugs drop off the next sponsoring-report build on

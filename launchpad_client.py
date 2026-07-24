@@ -25,11 +25,7 @@ FOOTNOTE = (
 
 def _target(lp_obj):
     """A stable identifier for the object being written to, for the audit trail."""
-    return (
-        getattr(lp_obj, "self_link", None)
-        or getattr(lp_obj, "web_link", None)
-        or str(lp_obj)
-    )
+    return getattr(lp_obj, "self_link", None) or getattr(lp_obj, "web_link", None) or str(lp_obj)
 
 
 # Bug task statuses that already mean "no submitter action is awaited"; we never
@@ -292,7 +288,9 @@ class LPClient:
         cmd = [sys.executable, _HELPER_SCRIPT, "unsubscribe-sponsors", str(bug_id)]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True,
+                cmd,
+                capture_output=True,
+                text=True,
                 timeout=self._HELPER_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired:
@@ -313,7 +311,9 @@ class LPClient:
                 )
                 try:
                     result = subprocess.run(
-                        cmd, capture_output=True, text=True,
+                        cmd,
+                        capture_output=True,
+                        text=True,
                         timeout=self._HELPER_TIMEOUT_SECONDS,
                     )
                 except subprocess.TimeoutExpired:
@@ -331,8 +331,7 @@ class LPClient:
                 )
         if result.returncode != 0:
             raise RuntimeError(
-                f"privileged helper exited {result.returncode}: "
-                f"{result.stderr.strip()}"
+                f"privileged helper exited {result.returncode}: {result.stderr.strip()}"
             )
         return result
 
@@ -378,17 +377,14 @@ class LPClient:
                 for s in lp_obj.subscriptions
             ):
                 logger.info(
-                    "~ubuntu-sponsors is not subscribed to %s; nothing to "
-                    "unsubscribe.",
+                    "~ubuntu-sponsors is not subscribed to %s; nothing to unsubscribe.",
                     target,
                 )
                 return
         except Exception:
             pass
 
-        decision = self._decide(
-            f"Unsubscribe ~ubuntu-sponsors from this {resource_type}."
-        )
+        decision = self._decide(f"Unsubscribe ~ubuntu-sponsors from this {resource_type}.")
         if decision != "perform":
             self._record_write(
                 url=target,
@@ -477,9 +473,7 @@ class LPClient:
                 continue
             if task.status in _CONCLUSIVE_STATUSES:
                 continue
-            decision = self._decide(
-                f"Set '{name}' status to Incomplete (was {task.status})."
-            )
+            decision = self._decide(f"Set '{name}' status to Incomplete (was {task.status}).")
             if decision != "perform":
                 self._record_write(
                     url=target,
@@ -609,9 +603,7 @@ class LPClient:
         if devel_series:
             matching_suffixes.add(f"(Ubuntu {devel_series})")
         else:
-            logger.warning(
-                "only matching the untargeted Ubuntu task (devel series unknown)."
-            )
+            logger.warning("only matching the untargeted Ubuntu task (devel series unknown).")
 
         for task in bug.bug_tasks:
             name = task.bug_target_name or ""
@@ -619,9 +611,7 @@ class LPClient:
                 continue
             if task.status in _CONCLUSIVE_STATUSES:
                 continue
-            decision = self._decide(
-                f"Set '{name}' status to Fix Released (was {task.status})."
-            )
+            decision = self._decide(f"Set '{name}' status to Fix Released (was {task.status}).")
             if decision != "perform":
                 self._record_write(
                     url=target,
@@ -701,9 +691,7 @@ class LPClient:
             )
             return
         if already:
-            logger.info(
-                "  [dedup] identical bot comment already present on Launchpad; skipping."
-            )
+            logger.info("  [dedup] identical bot comment already present on Launchpad; skipping.")
             self._record_write(
                 url=target,
                 action="comment",

@@ -7,11 +7,11 @@ behavior."""
 import io
 
 import pytest
+import test_mp_checks
 
 import archive_lookup
 import checks
 import notify
-import test_mp_checks
 
 
 @pytest.fixture(autouse=True)
@@ -141,9 +141,7 @@ def test_missing_vcs_keys_comments_even_without_webhook(monkeypatch, posts):
     assert posts == []
 
 
-def test_present_vcs_keys_fall_through_to_undiagnosed_ping(
-    tmp_path, monkeypatch, posts
-):
+def test_present_vcs_keys_fall_through_to_undiagnosed_ping(tmp_path, monkeypatch, posts):
     # Keys present (case B -- commit match/mismatch -- is design-pending):
     # behave exactly like #48, operator ping instead of an MP comment.
     _configure_webhook(tmp_path, monkeypatch)
@@ -156,9 +154,7 @@ def test_present_vcs_keys_fall_through_to_undiagnosed_ping(
     assert "did not auto-close" in posts[0]
 
 
-def test_unfetchable_changes_falls_through_to_undiagnosed_ping(
-    tmp_path, monkeypatch, posts
-):
+def test_unfetchable_changes_falls_through_to_undiagnosed_ping(tmp_path, monkeypatch, posts):
     _configure_webhook(tmp_path, monkeypatch)
     notify.setup(True)
     mp = _already_uploaded_mp(monkeypatch, vcs_keys=None)

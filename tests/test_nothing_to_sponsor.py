@@ -6,10 +6,6 @@ MP already reviewed)."""
 
 import types
 
-import archive_lookup
-import checks
-import main
-from state import StateManager
 from fakes import (
     FakeAttachment,
     FakeBug,
@@ -20,6 +16,11 @@ from fakes import (
     FakeTriageClient,
     FakeVote,
 )
+
+import archive_lookup
+import checks
+import main
+from state import StateManager
 
 URL = "https://bugs.launchpad.net/ubuntu/+source/foo/+bug/123"
 
@@ -127,9 +128,7 @@ def test_team_fork_mp_is_not_a_review_venue():
     # ~ubuntu-openstack-dev-style fork branches (master, stable/*) are a
     # team's internal workflow, never sponsoring-queue entries -- however
     # reviewed. The MP still shields the no_patch close (left for a human).
-    mp = FakeMP(
-        target="refs/heads/master", votes=[FakeVote("~rr", comment_link="/c/1")]
-    )
+    mp = FakeMP(target="refs/heads/master", votes=[FakeVote("~rr", comment_link="/c/1")])
     bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
@@ -141,9 +140,7 @@ def test_merged_mp_is_not_a_review_venue():
     # and (#95) it must not block the no_patch fallback either -- a Merged
     # MP offers no coverage for the still-open ask, so with nothing else
     # attached this bug has genuinely nothing left to sponsor.
-    mp = FakeMP(
-        queue_status="Merged", votes=[FakeVote("~rr", comment_link="/c/1")]
-    )
+    mp = FakeMP(queue_status="Merged", votes=[FakeVote("~rr", comment_link="/c/1")])
     bug = _devel_ask_bug(linked_merge_proposals=[mp])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "no_patch"
@@ -262,9 +259,7 @@ def test_uncovered_series_is_left_for_a_human():
 def test_series_mp_without_review_signal_does_not_cover_it():
     # Both series have MPs, but resolute's has no sponsors reviewer and no
     # review -- it may not be a queue entry at all, so no close.
-    bug = _sru_bug(
-        [_series_mp("noble"), _series_mp("resolute", votes=[FakeVote("~rr")])]
-    )
+    bug = _sru_bug([_series_mp("noble"), _series_mp("resolute", votes=[FakeVote("~rr")])])
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
     assert lp.comments == []
@@ -292,9 +287,7 @@ def test_open_devel_task_needs_coverage_too():
         ],
         linked_merge_proposals=[_series_mp("noble")],
     )
-    lp = FakeTriageClient(
-        objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking")
-    )
+    lp = FakeTriageClient(objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking"))
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False
 
 
@@ -316,9 +309,7 @@ def test_devel_mp_covers_the_devel_codename_series_task_too():
             )
         ],
     )
-    lp = FakeTriageClient(
-        objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking")
-    )
+    lp = FakeTriageClient(objects={URL: bug}, lp=FakeRoot(devel_series_name="stonking"))
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "mp_review"
     # One MP covering two asks is still ONE merge proposal in the comment.
     assert "merge proposal linked" in lp.comments[0]
@@ -418,10 +409,7 @@ def test_bug_without_patch_closed_end_to_end(tmp_path):
         FakeAttachment(
             "fix.debdiff",
             type="Patch",
-            content=(
-                "--- foo-1.0/debian/rules\n+++ foo-1.1/debian/rules\n"
-                "@@ -1 +1 @@\n-a\n+b\n"
-            ),
+            content=("--- foo-1.0/debian/rules\n+++ foo-1.1/debian/rules\n@@ -1 +1 @@\n-a\n+b\n"),
         )
     )
     main.triage_url(URL, sm, lp, FakeLLM())
@@ -514,9 +502,7 @@ def _archive(monkeypatch, published=None, queued=False):
         lambda lp, package, series_names=None: published if published is not None else {},
     )
     upload = (
-        types.SimpleNamespace(
-            package_name="cloud-hypervisor", package_version="52.0-0ubuntu1"
-        )
+        types.SimpleNamespace(package_name="cloud-hypervisor", package_version="52.0-0ubuntu1")
         if queued
         else queued  # False or None pass through
     )
@@ -550,9 +536,7 @@ def test_needs_packaging_uploaded_close_ignores_engaged_humans(monkeypatch):
     _archive(monkeypatch, queued=True)
     bug = _np_titled_bug()
     bug.messages = [
-        FakeBugMessage(
-            "https://api.launchpad.net/devel/~a-sponsor", "Sponsored: dput ubuntu ..."
-        )
+        FakeBugMessage("https://api.launchpad.net/devel/~a-sponsor", "Sponsored: dput ubuntu ...")
     ]
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) == "uploaded"
@@ -560,9 +544,7 @@ def test_needs_packaging_uploaded_close_ignores_engaged_humans(monkeypatch):
 
 def test_needs_packaging_not_uploaded_keeps_the_old_paths(monkeypatch):
     _archive(monkeypatch, queued=False)
-    bug = _np_titled_bug(
-        description="see https://launchpad.net/~someone/+archive/ubuntu/ppa"
-    )
+    bug = _np_titled_bug(description="see https://launchpad.net/~someone/+archive/ubuntu/ppa")
     lp = FakeTriageClient(objects={URL: bug})
     assert checks.check_nothing_to_sponsor(URL, bug, lp) is False  # PPA link
     bare = _np_titled_bug(description="please package this")

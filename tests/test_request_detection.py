@@ -7,7 +7,6 @@ unrelated bugs.
 
 from llm_reviewer import _is_sru, _is_sync
 
-
 # --- SRU detection ----------------------------------------------------------
 
 

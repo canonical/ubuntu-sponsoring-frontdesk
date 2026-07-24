@@ -37,9 +37,7 @@ def _serve_dsc(monkeypatch, body):
         def __exit__(self, *a):
             return False
 
-    monkeypatch.setattr(
-        archive_lookup.urllib.request, "urlopen", lambda url, timeout=15: _Resp()
-    )
+    monkeypatch.setattr(archive_lookup.urllib.request, "urlopen", lambda url, timeout=15: _Resp())
 
 
 SIGNED_NATIVE_DSC = """\

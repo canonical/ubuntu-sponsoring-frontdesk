@@ -1,20 +1,21 @@
 import argparse
 import datetime
+import json
 import logging
 import shutil
 import sys
 import time
 import urllib.request
-import json
-from state import StateManager
-from launchpad_client import LPClient
-from audit import AuditLog
+
 import attachments
 import checks
 import facts
-import sweep
 import notify
+import sweep
+from audit import AuditLog
+from launchpad_client import LPClient
 from llm_reviewer import LLMReviewer
+from state import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
     # scan can be attributed to a specific check/lookup instead of guessed at.
     t_start = time.monotonic()
     try:
-        return _triage_url(
-            url, state_manager, lp_client, llm_reviewer, force, item, t_start
-        )
+        return _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start)
     except Exception:
         # Several launchpadlib attribute reads in facts.build_facts and the
         # checks (queue_status, bug_tasks, target_git_path, ...) have no
@@ -59,9 +58,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
 
     def checkpoint(label):
         now = time.monotonic()
-        logger.debug(
-            "[timing] %s: %.2fs (total %.2fs)", label, now - t_last[0], now - t_start
-        )
+        logger.debug("[timing] %s: %.2fs (total %.2fs)", label, now - t_last[0], now - t_start)
         t_last[0] = now
 
     # The queue entry tells us which package the request is about, which lets the
@@ -84,8 +81,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_sponsoring_team_subscribed")
     if subscribed is None:
         logger.info(
-            "Could not determine queue membership; skipping (nothing "
-            "persisted, retried next run)."
+            "Could not determine queue membership; skipping (nothing persisted, retried next run)."
         )
         return
     if subscribed is False:
@@ -113,9 +109,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # privilege or queue change can't silently start leaking. Nothing is
     # persisted, so the item is re-examined every pass and gets normal
     # triage the moment it becomes public.
-    private_obj = (
-        lp_obj.bug if resource_type == "bug_task" else lp_obj
-    )
+    private_obj = lp_obj.bug if resource_type == "bug_task" else lp_obj
     if getattr(private_obj, "private", False):
         logger.info(
             "Private item -- leaving for a human, content never sent to "
@@ -192,8 +186,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         if new_facts.get(lookup_field, "") is None:
             inconclusive = True
             logger.info(
-                "%s lookup failed while fingerprinting; "
-                "treating this pass as inconclusive.",
+                "%s lookup failed while fingerprinting; treating this pass as inconclusive.",
                 lookup_field,
             )
 
@@ -255,9 +248,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "mp_review": "Unsubscribed: fix under review on the linked merge proposal.",
             "uploaded": "Unsubscribed: the requested package is uploaded/published (#79).",
         }
-        detail = details.get(
-            outcome, "Unsubscribed: no patch or merge proposal to sponsor yet."
-        )
+        detail = details.get(outcome, "Unsubscribed: no patch or merge proposal to sponsor yet.")
         state_manager.update_status(url, "DONE", detail, facts=persistable_facts())
         return
 
@@ -586,9 +577,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 # comment(s) already substantively raise the same problem,
                 # repeating it is pure noise -- ask the LLM once, bundling
                 # every current blocking finding into a single call.
-                reviewer_comments = checks._engaged_reviewer_comment_texts(
-                    lp_obj, lp_client
-                )
+                reviewer_comments = checks._engaged_reviewer_comment_texts(lp_obj, lp_client)
                 if reviewer_comments:
                     covered = llm_reviewer.review_findings_already_covered(
                         blocking_findings, reviewer_comments
@@ -603,9 +592,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                             len(covered),
                         )
                         blocking_findings = [
-                            f
-                            for i, f in enumerate(blocking_findings, start=1)
-                            if i not in covered
+                            f for i, f in enumerate(blocking_findings, start=1) if i not in covered
                         ]
             if not blocking_findings:
                 # A determined, stable state -- persist facts like a clean
@@ -621,8 +608,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 state_manager.update_status(
                     url,
                     "READY_FOR_HUMAN",
-                    f"{len(findings)} finding(s) suppressed: "
-                    "a human reviewer is already engaged.",
+                    f"{len(findings)} finding(s) suppressed: a human reviewer is already engaged.",
                     facts=persistable_facts(),
                 )
                 return
@@ -645,11 +631,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         # A review vote only exists on MPs; bug findings (the LLM's) post as
         # a plain comment, as the INCOMPLETE path always did.
-        vote = (
-            "Needs Fixing"
-            if blocking and resource_type == "branch_merge_proposal"
-            else None
-        )
+        vote = "Needs Fixing" if blocking and resource_type == "branch_merge_proposal" else None
         lp_client.comment(lp_obj, aggregated, vote=vote)
         if blocking and resource_type in ("bug", "bug_task"):
             # Mark the bug Incomplete (the status for "waiting on the
@@ -699,18 +681,14 @@ def process_queue(state_manager, lp_client, llm_reviewer, force=False):
     for item in reversed(data):
         link = item.get("link")
         if link:
-            triage_url(
-                link, state_manager, lp_client, llm_reviewer, force=force, item=item
-            )
+            triage_url(link, state_manager, lp_client, llm_reviewer, force=force, item=item)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Ubuntu Sponsoring Bot (Local MVP)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--url", help="The Launchpad Bug or MP URL to triage")
-    group.add_argument(
-        "--all", action="store_true", help="Process the entire sponsoring queue"
-    )
+    group.add_argument("--all", action="store_true", help="Process the entire sponsoring queue")
     group.add_argument(
         "--sweep",
         action="store_true",
@@ -763,10 +741,8 @@ def main():
     notify.setup(enabled=(mode != "dry-run"))
     if mode != "dry-run" and not notify.is_configured():
         logger.info(
-            "No operator webhook configured (%s); anomaly notifications "
-            "will only be logged.",
-            "[notifications] webhook_url in "
-            "~/.config/ubuntu-sponsoring-frontdesk/config.ini",
+            "No operator webhook configured (%s); anomaly notifications will only be logged.",
+            "[notifications] webhook_url in ~/.config/ubuntu-sponsoring-frontdesk/config.ini",
         )
 
     if shutil.which("opencode") is None:
@@ -781,9 +757,7 @@ def main():
     state_manager = StateManager()
     audit = AuditLog()
 
-    logger.info(
-        "Authenticating to Launchpad... (write mode: %s, audit: %s)", mode, audit.path
-    )
+    logger.info("Authenticating to Launchpad... (write mode: %s, audit: %s)", mode, audit.path)
     try:
         lp_client = LPClient(mode=mode, audit=audit)
     except Exception as e:

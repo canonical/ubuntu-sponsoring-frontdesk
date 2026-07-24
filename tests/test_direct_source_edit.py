@@ -7,9 +7,10 @@ version heuristic misjudged unity, which is native WITH a revision."""
 
 import types
 
+from fakes import FakeDiff, FakeMP
+
 import archive_lookup
 import checks
-from fakes import FakeDiff, FakeMP
 
 URL = "url"
 
@@ -80,9 +81,7 @@ def _classify(monkeypatch, native):
     """Stub the #77 nativeness lookup (and the devel-codename resolution the
     ubuntu/devel target branch needs)."""
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
-    monkeypatch.setattr(
-        archive_lookup, "is_native_source", lambda lp, package, series: native
-    )
+    monkeypatch.setattr(archive_lookup, "is_native_source", lambda lp, package, series: native)
 
 
 def test_direct_source_edit_fires_incomplete(monkeypatch):
@@ -106,9 +105,7 @@ def test_merge_mp_is_exempt():
 
 def test_new_upstream_version_is_exempt():
     # The cheap deterministic exemption decides before any archive lookup.
-    assert (
-        checks.check_direct_source_edit(URL, _mp(UPSTREAM_BUMP_DIFF), _LP()) is False
-    )
+    assert checks.check_direct_source_edit(URL, _mp(UPSTREAM_BUMP_DIFF), _LP()) is False
 
 
 def test_native_package_is_exempt_even_with_a_revision(monkeypatch):
