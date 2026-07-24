@@ -63,7 +63,7 @@ def test_every_comment_carries_the_footnote(tmp_path):
     c.comment(bug, "Some review outcome.")
     assert bug.new_messages[-1].endswith(FOOTNOTE)
     assert "automated" in FOOTNOTE
-    assert "https://bugs.launchpad.net/ubuntu-sponsoring" in FOOTNOTE
+    assert "https://github.com/canonical/ubuntu-sponsoring-frontdesk/issues" in FOOTNOTE
 
 
 # ---- dedup against Launchpad as source of truth ------------------------

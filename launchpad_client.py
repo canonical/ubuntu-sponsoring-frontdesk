@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 # Appended to every comment the bot posts (design #57): disclose that it's
 # automated and give readers somewhere to report a bad review. "-- " is the
 # conventional plain-text signature separator; Launchpad auto-links the
-# bare URL (it does NOT render Markdown links).
+# bare URL (it does NOT render Markdown links). Was the `ubuntu-sponsoring`
+# Launchpad project (stacked there for lack of a dedicated space); now that
+# the bot has its own GitHub repo, that's the right place for reports.
 FOOTNOTE = (
     "-- \n"
     "This is an automated initial review of sponsoring requests. If this "
     "review seems wrong, please report it at "
-    "https://bugs.launchpad.net/ubuntu-sponsoring"
+    "https://github.com/canonical/ubuntu-sponsoring-frontdesk/issues"
 )
 
 
