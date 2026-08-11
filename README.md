@@ -36,6 +36,8 @@ idempotent and safe to repeat.
 
 ## Documentation
 
+- [doc/CHECKS.md](doc/CHECKS.md) -- the complete, categorized list of
+  every check currently implemented.
 - [doc/STATUS.md](doc/STATUS.md) -- current state, run history, backlog.
 - [doc/design_journal.md](doc/design_journal.md) -- every design
   decision, numbered, with rationale and live-verification notes.
