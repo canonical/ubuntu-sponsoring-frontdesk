@@ -14,6 +14,14 @@ jobs:
       # tied to the system Python -- it isn't pip-installable, so this uses
       # the runner's system python3 rather than actions/setup-python's
       # isolated build (which wouldn't have it).
+      #
+      # NOT installed here: python3-ubuntu-lint (#109, checks.py's SRU
+      # version-suffix check). It's a system package too, but its PPA has
+      # no 24.04 build yet, so it can't be apt-installed on this runner --
+      # present on the bot's own VM, absent here. checks.py imports it
+      # defensively and the check fails safe (False, not blocking) when
+      # it's missing; tests/test_sru_version_suffix_convention.py skips
+      # outright via pytest.importorskip rather than failing here.
       - name: Install dependencies
         run: |
           sudo apt-get update

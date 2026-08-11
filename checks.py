@@ -4,6 +4,19 @@ import os
 import re
 from typing import NamedTuple
 
+# ubuntu_lint (python3-ubuntu-lint) is a system package, not pip-installable
+# (same shape as apt_pkg in archive_lookup.py) -- and as of #109 has no
+# 24.04 PPA build yet, so it's present on the bot's own VM but not on
+# GitHub Actions' runner. Import defensively: check_sru_version_suffix_
+# convention fails safe (returns None, "can't determine") rather than
+# taking the whole module down with an ImportError when it's absent.
+try:
+    import ubuntu_lint
+    from debian import changelog as debian_changelog
+except ImportError:
+    ubuntu_lint = None
+    debian_changelog = None
+
 import archive_lookup
 import attachments
 import git_history
@@ -3430,6 +3443,163 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
     if not _PPA_VERSION_RE.search(proposed_version):
         return False
     return _ppa_version_finding(url, proposed_version)
+
+
+def _sru_version_convention_finding(url, reason):
+    logger.info(
+        "[%s] proposed version doesn't follow the SRU version-string "
+        "convention (%s). Adding an incomplete finding.",
+        url,
+        reason,
+    )
+    # ubuntu-lint's own reason already ends in "..., see <its own doc link>";
+    # drop that trailer so the finding carries only our doc link (the
+    # human-readable published page, not the raw source doc -- same
+    # convention check_ppa_version_suffix already uses).
+    reason = reason.split(", see ")[0]
+    return Finding(
+        "incomplete",
+        f"The proposed version doesn't follow Ubuntu's SRU version-string "
+        f"convention: {reason}. See "
+        "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/"
+        "version-strings/ for the expected format.",
+    )
+
+
+def _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry):
+    """Shared core of check_sru_version_suffix_convention (#109): given the
+    new (top) changelog stanza a proposal adds, fetch the currently
+    published changelog for `target_series` and hand both to ubuntu-lint's
+    own check_sru_version_string_convention (the same team that owns the
+    convention, https://github.com/ubuntu/ubuntu-lint) rather than
+    reimplementing its version-suffix logic here.
+
+    Returns a Finding (incomplete -- convention violation), False (not
+    applicable: nothing published yet for this series, ubuntu-lint judged
+    this not an SRU/native package, the string already matches, or
+    ubuntu_lint isn't installed on this host), or None (any lookup/parse
+    failure -- retriable, not a guess).
+
+    ubuntu_lint (python3-ubuntu-lint) is absent on this host False rather
+    than None -- this is a stable fact about the host, not a transient
+    lookup failure, and returning None here would mark every single item
+    on this host inconclusive forever (main.py's whole-item gate), not
+    just SRU MPs. Logged at warning level (not debug) since it's an
+    ongoing capability gap worth an operator's attention, not routine."""
+    if ubuntu_lint is None:
+        logger.warning(
+            "_sru_version_convention_verdict: ubuntu_lint isn't installed "
+            "on this host; skipping the SRU version-suffix check."
+        )
+        return False
+
+    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=[target_series])
+    if versions is None:
+        logger.debug("_sru_version_convention_verdict: archive lookup failed; can't determine.")
+        return None
+    archive_version = _max_published_version(versions)
+    if not archive_version:
+        # Nothing published yet for this series -- e.g. a brand new
+        # package; the convention this check validates only makes sense
+        # relative to a prior upload.
+        return False
+
+    pub = archive_lookup.published_source(lp_client.lp, package, target_series, archive_version)
+    if pub is None:
+        logger.debug(
+            "_sru_version_convention_verdict: couldn't resolve the publication "
+            "for %r %r in %r; can't determine.",
+            package,
+            archive_version,
+            target_series,
+        )
+        return None
+    archive_text = archive_lookup.changelog_text(pub)
+    if archive_text is None:
+        logger.debug(
+            "_sru_version_convention_verdict: couldn't fetch the archive "
+            "changelog; can't determine."
+        )
+        return None
+
+    try:
+        parsed = debian_changelog.Changelog(proposed_entry + "\n" + archive_text)
+        context = ubuntu_lint.Context(debian_changelog=parsed)
+        ubuntu_lint.check_sru_version_string_convention(context)
+    except ubuntu_lint.LintException as e:
+        if e.result == ubuntu_lint.LintResult.SKIP:
+            logger.debug("_sru_version_convention_verdict: ubuntu-lint skipped (%s).", e.reason)
+            return False
+        if e.result == ubuntu_lint.LintResult.FAIL:
+            return _sru_version_convention_finding(url, e.reason)
+        logger.warning(
+            "_sru_version_convention_verdict: ubuntu-lint couldn't determine "
+            "(%s: %s); can't determine.",
+            e.result,
+            e.reason,
+        )
+        return None
+    except Exception as e:
+        # Malformed changelog text doesn't necessarily raise inside
+        # python-debian's parser (it logs and produces a best-effort,
+        # possibly-garbage entry instead) -- fail safe against any other
+        # exception from the parse/lookup too, not just LintException.
+        logger.warning(
+            "_sru_version_convention_verdict: couldn't evaluate the SRU "
+            "version convention (%s); can't determine.",
+            e,
+        )
+        return None
+    return False
+
+
+def check_sru_version_suffix_convention(url, lp_obj, lp_client):
+    """
+    Check 13: SRU version-suffix convention (design_journal.md #109).
+
+    A separate MP-side companion to check_stale_version's "proposed >
+    archive, nothing to do" common case -- that case is exactly where this
+    check matters: does the new version actually follow the `ubuntu0.N`
+    (first SRU on top of a release) / incrementing-suffix convention SRUs
+    are supposed to use, rather than colliding with the `ubuntuN` numbering
+    space regular/devel uploads use? Delegates the actual suffix logic to
+    ubuntu-lint's check_sru_version_string_convention (see
+    _sru_version_convention_verdict), which also self-skips for anything
+    that isn't a stable-series upload -- no separate "is this an SRU" gate
+    needed here.
+
+    Bug-side (debdiff attachments) is not yet covered -- see STATUS.md's
+    backlog note; check_stale_version's bug/MP split
+    (_stale_version_bug) is the template for that follow-up.
+
+    Returns a Finding (incomplete), False (not applicable, including when
+    ubuntu_lint isn't installed on this host -- see
+    _sru_version_convention_verdict), or None (a lookup/parse failure --
+    retriable, main.py persists no facts).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    package = _source_package_from_mp(lp_obj)
+    if not package:
+        return False
+    proposed_version, proposed_entry = _proposed_changelog_entry(lp_obj)
+    if proposed_version is None:
+        logger.debug("check_sru_version_suffix_convention: diff unreadable; can't determine.")
+        return None
+    if not proposed_version:
+        return False
+
+    target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
+    if not target_series:
+        logger.debug(
+            "check_sru_version_suffix_convention: couldn't determine the "
+            "target series; can't determine."
+        )
+        return None
+
+    return _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry)
 
 
 _XSBC_ORIGINAL_MAINTAINER_RE = re.compile(

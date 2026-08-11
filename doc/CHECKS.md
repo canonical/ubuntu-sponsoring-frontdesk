@@ -32,6 +32,7 @@ changelog style on a request that's already resolved.
 | `check_target_branch` | incomplete | MP | Merge MPs must target `debian/sid` or `debian/experimental`, not `ubuntu/devel`. SRU-shaped MPs (changelog entry for a stable series) must target their own `ubuntu/<series>-devel`, not `ubuntu/devel` or the wrong series. |
 | `check_mp_conflicts` | incomplete | MP | The MP has merge conflicts against its target. Suppressed for the pass if `check_target_branch` already fired — conflicts are usually just a symptom of comparing against the wrong branch. |
 | `check_sru_newer_series` | question (`verify`) | bug | SRU policy requires the fix to land in the development release (and every newer supported series) first. Checked via task status / linked MP / patch attachment evidence, with an LLM fallback that reads the bug text for "already fixed there" before flagging. |
+| `check_sru_version_suffix_convention` | incomplete | MP | The proposed version must follow the SRU version-suffix convention (`ubuntu0.N` on top of a stable release, not the `ubuntuN` numbering devel/regular uploads use). Delegates to [`ubuntu-lint`](https://github.com/ubuntu/ubuntu-lint)'s own `check_sru_version_string_convention` rather than reimplementing it; requires `python3-ubuntu-lint` on the host, fails safe (silently skips) when it's absent. Bug-side (debdiff attachments) not yet covered. |
 
 ## Changelog hygiene
 

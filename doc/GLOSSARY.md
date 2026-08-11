@@ -71,8 +71,9 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `check_changelog_bug_reference`, `check_stale_version`,
   `check_sru_newer_series`, `check_direct_source_edit`,
   `check_missing_changelog_stanza`, `check_patch_not_debdiff`,
-  `check_ppa_version_suffix`, `check_xsbc_original_maintainer`), run in a
-  fixed order before the LLM phase. See `flow.dot`/`flow.svg`.
+  `check_ppa_version_suffix`, `check_sru_version_suffix_convention`,
+  `check_xsbc_original_maintainer`), run in a fixed order before the LLM
+  phase. See `flow.dot`/`flow.svg`.
 - **Fires** — a check "fires" when it finds something to flag (returns
   truthy). Since #31/#44, only `closing`-tier outcomes short-circuit
   `triage_url` (the item is already resolved); `incomplete`-tier outcomes
@@ -190,6 +191,18 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   value (teams/flavors tweak it, matching content would be flaky).
   Question-tier/advisory, not blocking: a sponsor can add it at upload
   time. MP + bug-debdiff dual path; exempt merge MPs and sync requests.
+- **SRU version-suffix convention check** — Check 13,
+  `check_sru_version_suffix_convention` (#109): a proposed SRU version
+  must follow the `ubuntu0.N`-on-top-of-a-release convention, not the
+  `ubuntuN` numbering regular/devel uploads use. Delegates to
+  [`ubuntu-lint`](https://github.com/ubuntu/ubuntu-lint)'s own
+  `check_sru_version_string_convention` rather than reimplementing it
+  (closes STATUS.md item 39(b)/PPA check's own backlog note, #90).
+  Requires `python3-ubuntu-lint` on the host (a system package, like
+  `apt_pkg`); fails safe (skips, doesn't block the item) when it's
+  absent — present on the bot's VM, not yet on GitHub Actions' runner
+  (no 24.04 PPA build). Deterministic, incomplete-tier. MP-side only;
+  bug-side (debdiff attachments) is backlog.
 - **Stale-bounce sweep (Rule B)** — `sweep.py` (#66): after every
   `--all` pass, bugs the bot bounced get revisited using
   `bug_task.date_incomplete` as the clock. A new usable-diff attachment

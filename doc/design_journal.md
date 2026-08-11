@@ -1850,3 +1850,114 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   it can build an isolated venv.
 * Tests: 539 passed, unchanged. `ruff check .` and
   `ruff format --check .` both clean.
+
+## 109. Check 13: SRU Version-Suffix Convention, via `ubuntu-lint`
+
+* **Trigger (seb128):** revisiting STATUS.md's item 39(b) backlog note
+  (SRU version-collision check, "`ubuntu1` where the SRU convention
+  wants `ubuntu0.1`") -- clarified in discussion that this isn't a
+  collision-detection check (`check_stale_version` already owns
+  comparing a proposed version against what's actually in the archive);
+  it's convention-correctness: does a proposed SRU version follow the
+  `ubuntu0.N`-on-top-of-a-release / incrementing-suffix pattern SRUs
+  are supposed to use, rather than the `ubuntuN` numbering space
+  regular/devel uploads use (which risks a later devel upload
+  independently colliding with an SRU's version down the line).
+* **Reuse, not reimplement:** seb128 pointed at a colleague's
+  `check_sru_version_string_convention()` in
+  [`ubuntu-lint`](https://github.com/ubuntu/ubuntu-lint) (already
+  flagged as a possible source in `check_ppa_version_suffix`'s own
+  docstring, #90) -- exported in `__all__`, so real public API, not an
+  internal detail being reached into. Investigated before committing to
+  depending on it: not on PyPI, but its `Context` class accepts a
+  `debian.changelog.Changelog` object directly (no `.changes` file or
+  source checkout needed for this specific check), and its `LintResult`
+  taxonomy (`SKIP`/`FAIL`/`ERROR`, raised as `LintException`) maps
+  cleanly onto this bot's own tier vocabulary.
+* **Distribution decision:** seb128 will run the bot on a real Ubuntu
+  VM and installs `python3-ubuntu-lint` as a system package (mirrors
+  `apt_pkg`/`python3-apt` in `archive_lookup.py` -- compiled/system
+  packages already have this precedent) rather than a
+  `pip install git+...`. Confirmed working: same import pattern as
+  `apt_pkg`, `Context`/`check_sru_version_string_convention` introspect
+  identically to the GitHub `main` source.
+* **Data assembly, confirmed already reachable rather than assumed:**
+  `checks._proposed_changelog_entry` already extracts the new (top)
+  stanza from an MP's diff; `archive_lookup.published_source` (a
+  `SourcePackagePublishingHistory`, not just a version string) +
+  `archive_lookup.changelog_text` (the *whole* published changelog
+  file, multi-entry) were already used by `_classify_against_publication`
+  for `check_stale_version`'s "same version" case -- concatenating the
+  proposed stanza with the fetched archive changelog and parsing via
+  `debian.changelog.Changelog()` gives ubuntu-lint's `Context` exactly
+  the two-entry changelog `check_sru_version_string_convention` needs
+  (index 0 = proposed, index 1 = currently-published). No new Launchpad
+  primitive needed, just reuse.
+* **Where it runs, and why it's a separate check (seb128's call) rather
+  than folded into `check_stale_version`:** the interesting case is
+  exactly the one `check_stale_version` treats as "nothing to do"
+  (proposed version genuinely ahead of the archive) -- that's precisely
+  when a wrong SRU suffix matters. A separate function stays testable/
+  toggleable independently and avoids growing `check_stale_version`
+  further (already one of #108's `C901` complexity outliers,
+  deliberately left alone). Costs two extra Launchpad/librarian calls
+  on the common "SRU proposes a version ahead of archive" path where
+  today nothing is fetched -- same primitives `check_stale_version`
+  already pays for elsewhere, not a new call shape.
+* **Tier (seb128, explicit choice offered as incomplete vs question):
+  incomplete.** Matches `check_ppa_version_suffix` -- a wrong SRU
+  version string is a real upload-time problem for the sponsor, not a
+  nice-to-have.
+* **ubuntu-lint's own gating reused instead of duplicated:**
+  `check_sru_version_string_convention` already self-skips via
+  `Context.is_stable_release()` -- derived from the changelog stanza's
+  own distribution field, not the MP's git target branch (a subtlety a
+  first draft of the tests got wrong: a devel-targeted MP whose stanza
+  text still said `noble` didn't self-skip, correctly, because
+  ubuntu-lint trusts what the stanza actually declares). No separate
+  "is this an SRU" gate needed in `checks.py`.
+* **Version-collision item subsumed, not left as a second check:**
+  ubuntu-lint's own `_rmadison_get_max_version_by_series` already
+  disambiguates the "this version is published in multiple series"
+  case (the `.series_version` suffix), so STATUS.md item 39(b) is fully
+  closed by this one check, not just partially.
+* **Two real fail-safety gaps found and fixed before landing, both from
+  actually probing the library rather than trusting its docstring:**
+  1. `debian.changelog.Changelog()` does **not** raise on malformed
+     input -- it logs a warning and produces a best-effort, possibly
+     garbage `ChangeBlock` instead. A bare `except LintException` would
+     have let a parse failure silently masquerade as some other
+     verdict. Wrapped in a broader `except Exception` too, mapping to
+     `None` (retriable), same fail-safe convention as the rest of this
+     module.
+  2. **Import failure, and its blast radius:** `python3-ubuntu-lint`'s
+     PPA has no 24.04 build yet, so it's present on the bot's own VM
+     but absent on GitHub Actions' `ubuntu-latest` runner -- a real,
+     currently-live gap between the two environments, not a
+     hypothetical one. First instinct was a top-level `ImportError` ->
+     `None` return at the very start of the check function; caught
+     before landing that this would make *every single item on a host
+     without the package* -- bugs included, since the early return sat
+     before the resource-type dispatch -- come back inconclusive
+     forever, silently stopping the whole bot from posting anything at
+     all, not just skipping this one check. Fixed: `import ubuntu_lint`
+     wrapped in `try/except ImportError` at module load (mirrors
+     `apt_pkg`'s treatment), and the missing-module check moved deep
+     inside `_sru_version_convention_verdict` (only reached once the
+     item is confirmed to be a genuine SRU-shaped MP), returning
+     `False` (not applicable here) with a `warning`-level log instead
+     of `None` -- a missing host dependency is a stable environmental
+     fact, not a transient lookup failure, so it shouldn't behave like
+     one. `tests/test_sru_version_suffix_convention.py` skips outright
+     via `pytest.importorskip("ubuntu_lint")` (it exercises the real
+     library and would otherwise fail unpredictably on a host without
+     it); the fallback itself is covered separately in
+     `test_sru_version_suffix_convention_missing_lint.py`, which
+     monkeypatches `checks.ubuntu_lint = None` and needs no real
+     package to run anywhere, including in CI.
+* Bug-side (debdiff attachments) deliberately not covered yet --
+  `check_stale_version`'s `_stale_version_bug` split is the template
+  for that follow-up, left as a STATUS.md backlog note rather than
+  built now.
+* Tests: 551 total (12 new). `ruff check .` / `ruff format --check .`
+  both clean.

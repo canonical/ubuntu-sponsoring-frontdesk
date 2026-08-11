@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-15_
+_Last updated: 2026-07-25_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -715,14 +715,16 @@ Fixes 1â€“6 + auth + a real bug found in validation. See `design_journal.md` #9â
     codename-ordering gap. 307 tests.
 
 39. **SRU checks backlog (discussed 2026-07-10, not built).** From the
-    libp11 deep-dive (journal #55/#58): (a) SRU bug-template check --
+    libp11 deep-dive (journal #55/#58): (a) ~~SRU bug-template check --
     [Impact]/[Test Plan]/[Where problems could occur] present and
-    substantive in the linked bug (a real "needs fixing", regex presence
-    + possibly LLM substance -- note `review_sru_template` exists but is
-    bug-side only); (b) version-collision check vs later series
-    (`ubuntu1` where the SRU convention wants `ubuntu0.1`); (c) ~~skip
-    the Feature-Freeze classification for SRU-targeted MPs~~ DONE, see
-    item 40.
+    substantive in the linked bug~~ DONE, `llm_reviewer.review_sru_template`;
+    (b) ~~version-collision check vs later series (`ubuntu1` where the SRU
+    convention wants `ubuntu0.1`)~~ DONE 2026-07-25, see design_journal.md
+    #109 -- `check_sru_version_suffix_convention` delegates to
+    `ubuntu-lint`'s own `check_sru_version_string_convention` rather than
+    reimplementing it (`python3-ubuntu-lint`, host dependency, fails safe
+    when absent); (c) ~~skip the Feature-Freeze classification for
+    SRU-targeted MPs~~ DONE, see item 40.
 
 40. **FF classification skipped for SRU-targeted MPs (#59, DONE
     2026-07-11).** `triage_mp`'s `check_feature` gate is now
@@ -1150,12 +1152,39 @@ issue and a plan for tomorrow, not yet implemented.
   four fields; add a test per field asserting a targeted edit changes the
   fingerprint (not just a general "facts differ" smoke test).
 
-Lower-priority items from the same two reviews (LLM call/token/timeout
-limits, unbounded network/content reads, `checks.py`/`_triage_url` size and
-mixed concerns, no dependency pinning in CI, global mutable check caches
-blocking future concurrency, sequential queue processing, stringly-typed
-finding tiers) are legitimate but not urgent -- left as backlog without a
-concrete plan yet; see the two review documents directly for details.
+Lower-priority items from the same two reviews (unbounded network/content
+reads, `checks.py`/`_triage_url` size and mixed concerns -- see #108's
+`C901` note, global mutable check caches blocking future concurrency,
+sequential queue processing, stringly-typed finding tiers) are legitimate
+but not urgent -- left as backlog without a concrete plan yet; see the two
+review documents directly for details. ~~No dependency pinning in CI~~ and
+~~LLM call/token/timeout limits~~ are DONE (#100, #108).
+
+## Ruff/CI pinning, then Check 13 (2026-07-25, #108-#109)
+
+- **Ruff pinned, house lint rule set adopted, ~160 findings fixed** (#108):
+  CI's unpinned `pip install ruff` was the actual root cause of a CI-only
+  lint failure. Compared against `ubuntu-autosync-operator` (a real
+  Canonical charm) for house style; adopted with two deliberate
+  deviations (both logged with rationale in #108): dropped `D`
+  (pydocstyle -- this codebase documents via naming, not docstrings) and
+  ignored `C901` (complexity -- several checks and `main.py`'s
+  `_triage_url` are inherently branchy; refactor candidates listed for a
+  future selective pass, not a blanket one). `pyproject.toml` added,
+  `ruff==0.15.21` pinned in CI, `make lint` now also runs
+  `ruff format --check`.
+- **Check 13: SRU version-suffix convention, via `ubuntu-lint`** (#109):
+  closes STATUS.md item 39(b) -- delegates to
+  [`ubuntu-lint`](https://github.com/ubuntu/ubuntu-lint)'s own
+  `check_sru_version_string_convention` (a real, exported public API)
+  rather than reimplementing the `ubuntu0.N`-suffix convention.
+  `python3-ubuntu-lint` is a host system-package dependency (like
+  `apt_pkg`); its PPA has no 24.04 build yet, so it's present on the
+  bot's VM but absent on GitHub Actions' runner -- `checks.py` imports
+  it defensively and the check fails safe (skips, doesn't block the
+  whole item) when it's missing. MP-side only; bug-side (debdiff
+  attachments) is a follow-up backlog item, `check_stale_version`'s
+  `_stale_version_bug` split is the template. 551 tests (12 new).
 
 ## Known residual edges (documented in code)
 
