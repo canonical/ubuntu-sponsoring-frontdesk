@@ -1961,3 +1961,137 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   built now.
 * Tests: 551 total (12 new). `ruff check .` / `ruff format --check .`
   both clean.
+* **Addendum, same day: bug-side built.** seb128 asked why the MP/bug
+  split existed at all, expecting the extraction to differ but the
+  analysis to be identical -- confirmed against `check_stale_version`'s
+  own precedent that this is exactly right: `_stale_version_verdict`
+  is genuinely resource-type-agnostic (package/target_series/proposed_
+  entry in, verdict out), and the MP/bug split there is purely about
+  *how* those three inputs get gathered (an MP's git diff + target
+  branch vs. a bug's debdiff attachment + the changelog stanza's own
+  suite field, since a bug has no branch to read a target from) plus
+  one narrow policy difference (the git-ubuntu-importer-race grace
+  period, MP-only, not applicable to bugs at all). This check's own
+  `_sru_version_convention_verdict` was already written the same
+  resource-type-agnostic way, so the bug-side path
+  (`_sru_version_convention_bug`) was a small addition mirroring
+  `_stale_version_bug`'s extraction logic, not a redesign -- and unlike
+  `check_stale_version`, there's no already-landed divergence to
+  handle here at all, so it's a pure input-gathering wrapper around the
+  one shared verdict function. 5 new bug-side tests (conventional
+  suffix, wrong suffix, unknown suite, no attachment, unfetchable
+  attachment). Tests: 555 total (16 new), lint/format clean.
+* **Addendum, 2026-09-11: tier lowered from incomplete to
+  question/advisory, live-found.** A real run (seb128, bug #2166611)
+  showed this check firing as a hard blocker -- "0.2.0-0ubuntu2 does not
+  match expected version 0.2.0-0ubuntu1.26.04.1" -- while a human
+  reviewer (crichton) was already engaged on the item. seb128's
+  observation cut to the actual design flaw: this check validates
+  ubuntu-lint's *recommended* convention, not correctness -- a version
+  can be perfectly safe to use without matching the letter of the
+  suffix pattern, so treating a mismatch as a hard "needs fixing" was
+  always overclaiming what the check actually knows. Lowered to
+  `question`/`advisory`; reworded the finding to say so explicitly
+  ("this isn't necessarily wrong... following the convention avoids
+  surprises"). Side effect worth noting: this also means the finding is
+  now suppressed entirely once a human reviewer is engaged (#94's
+  suppression only ever applied to non-blocking findings) -- exactly
+  the scenario that surfaced this in the first place would no longer
+  have posted anything at all. See #110 for the actually-blocking
+  correctness check this was standing in for.
+
+## 110. Check 14: SRU Version-Precedence Correctness
+
+* **Trigger, same discussion as #109's addendum (seb128):** after
+  lowering #109's tier, seb128 drew the distinction precisely --
+  "there is a difference between 'does it follow the recommendation'
+  and 'is it correct'. Correct would be that the version hasn't been
+  used and is higher than the current version in that series and if
+  there is a newer series then the version there should be higher than
+  the SRU one." That's a genuinely different, more valuable question
+  than #109's convention check, and one that's actually provable from
+  real archive data rather than pattern-matched against a recommended
+  string.
+* **Why comparing current state is enough, not just a heuristic**
+  (worked through before committing to the design): the concern is that
+  an SRU version could numerically exceed what a newer series ships,
+  so that a future upgrade past that series keeps the old SRU build
+  instead of picking up the newer one. Checking each newer series'
+  *current* published version, rather than trying to predict future
+  devel uploads, is sufficient: a properly `ubuntu0.N`-suffixed SRU
+  version sorts *above* a plain future `ubuntuN` bump (dpkg version
+  comparison), so a normal future upload can't retroactively undercut
+  it; the one case that's a real, provable problem *right now* is a
+  newer series that hasn't diverged from Debian at all yet (still on
+  the bare version, no `ubuntu` suffix), and that's exactly what
+  comparing against *current* state catches (`1.2-3 < 1.2-3ubuntu0.1`
+  numerically). So this check complements #109's advisory nudge
+  (forward-looking, about future devel numbering) rather than
+  duplicating it (backward-looking, about today's provable archive
+  state).
+* **Second correctness leg, found by seb128 walking through a concrete
+  scenario, not by design review:** "package 'greatpkg' has
+  `1.1-0ubuntu1` in resolute and got `1.1-0ubuntu2` in stonking and
+  then we synced `1.2-1` from Debian which is now the published
+  version [in stonking] ... if someone does an SRU to resolute using
+  '1.1-0ubuntu2' it would match the condition 'newer than current
+  resolute, lower than stonking' but be rejected because the version
+  already exists in launchpad with different content." This is
+  genuinely invisible to leg 1: once stonking has moved past
+  `1.1-0ubuntu2` (via the Debian sync), its *current* version no longer
+  shows the collision at all -- the historical publication is dead to a
+  current-state comparison, but the version string still permanently
+  occupies a slot in Ubuntu's shared archive pool (one pool per
+  distribution, not per series -- a given (source, version) can only
+  ever point to one set of files). Needed a new primitive:
+  `archive_lookup.any_series_publication(lp, package, version,
+  status=None)` -- an any-status, any-series `getPublishedSources`
+  query (no `distro_series` filter), distinct from `published_source()`
+  (#43's own any-status rescue, but scoped to one series only). Returns
+  a list (possibly empty -- the clean case) rather than None-on-
+  not-found like `published_source()`, since "found nothing" and
+  "lookup failed" must NOT be conflated here: this feeds a blocking
+  finding, so silently treating an API error as "clean" would be wrong.
+  A match in the *target* series itself is deliberately excluded --
+  that's `check_stale_version`'s own territory (its "already uploaded"/
+  "version collision" cases), reporting it again here would just
+  duplicate that finding. Filtering requires reading a matching
+  publication's own series back (`archive_lookup.
+  publication_series_name`, via `pub.distro_series.name`) -- a lazy
+  launchpadlib attribute access with no existing precedent anywhere in
+  this codebase (every other call site passes a series IN, never reads
+  one back out of a result); flagged as unverified against real
+  Launchpad until a live smoke test, same convention as
+  `changelog_text()`'s own caveat.
+* **No "is this an SRU" gate, unlike #109:** leg 1 (newer-series
+  ordering) is naturally a no-op for a devel-targeted MP (nothing is
+  newer than devel), but leg 2 (cross-series reuse) is a real problem
+  regardless of target -- reusing a version that exists elsewhere in
+  the archive is always wrong. Deliberately left ungated rather than
+  restricting scope to match the check's SRU-flavored name.
+* **Consolidated input-gathering, seb128's call ("worth consolidating
+  now in your opinion?"):** this would have been the third check
+  independently re-extracting (package, target_series, proposed_version,
+  proposed_entry) from an MP or bug (after `check_stale_version` and
+  #109's own check) -- a real "keep three copies in sync by hand" risk,
+  the same failure class this codebase has been burned by before
+  (`_MP_TARGET_SERIES_RE`/`_TARGET_SERIES_RE` needing manual sync
+  between `checks.py`/`llm_reviewer.py`). Checked the actual cost first
+  rather than assuming: the expensive I/O (MP diff content, bug
+  attachment content) is already memoized at a lower layer (#39's
+  `_diff_text_cache`, `attachments.py`'s own cache), so duplicating the
+  extraction was cheap compute-wise -- the real cost was code
+  maintainability, not performance. Extracted `_sru_proposal_inputs`/
+  `_sru_proposal_inputs_bug`, used by both #109's
+  `check_sru_version_suffix_convention` and this check;
+  `check_stale_version` deliberately left untouched (its extraction has
+  extra concerns -- the historical-publication rescue, grace-period
+  handling -- that make it a different shape, and there was no active
+  bug motivating touching working code).
+* **Combined into one check, not two, seb128's call:** both legs answer
+  the same underlying question ("is this version number actually safe
+  to use") and are both `incomplete`-tier, deterministic archive facts
+  -- two separate checks would likely fire together on the same root
+  problem, producing redundant findings.
+* Tests: 571 total (16 new: 14 MP-side covering both legs and every
+  failure mode, 2 bug-side). Lint/format clean.

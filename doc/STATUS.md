@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-07-25_
+_Last updated: 2026-09-11_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -1182,9 +1182,46 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   `apt_pkg`); its PPA has no 24.04 build yet, so it's present on the
   bot's VM but absent on GitHub Actions' runner -- `checks.py` imports
   it defensively and the check fails safe (skips, doesn't block the
-  whole item) when it's missing. MP-side only; bug-side (debdiff
-  attachments) is a follow-up backlog item, `check_stale_version`'s
-  `_stale_version_bug` split is the template. 551 tests (12 new).
+  whole item) when it's missing. MP-side and bug-side (debdiff
+  attachments, `_sru_version_convention_bug` mirroring
+  `check_stale_version`'s `_stale_version_bug` split) both covered.
+  555 tests (16 new).
+
+## SRU version-suffix tier fix + Check 14 (2026-09-11, #109 addendum, #110)
+
+- **Check 13 lowered from incomplete to question/advisory** (live-found,
+  bug #2166611): the ubuntu-lint convention check fired as a hard
+  blocker while a human reviewer was already engaged, for a version that
+  wasn't actually unsafe -- just non-conventional. `ubuntu-lint` validates
+  the *recommended* string pattern, not correctness (a version can be
+  fine without matching it), so it shouldn't have been blocking in the
+  first place. Now question/advisory -- also means it's suppressed
+  entirely once a human reviewer is engaged, exactly the case that
+  surfaced this.
+- **Check 14: SRU version-precedence correctness** (#110): the
+  actually-blocking check the convention was standing in for. Two
+  problems provable from real archive state: (1) every series newer
+  than the target must currently publish a *higher* version, or a
+  future upgrade past it would keep this SRU's version instead
+  (`archive_lookup.ubuntu_versions` + `_max_published_version`, same
+  primitives `check_stale_version` already uses); (2) the proposed
+  version must never have been published anywhere else in the archive's
+  history -- new `archive_lookup.any_series_publication` +
+  `publication_series_name` primitives, since Ubuntu's pool is shared
+  across every series and (1) alone misses a version an unrelated
+  series used once and has since moved past (found live in discussion:
+  a resolute SRU proposing a version stonking used before syncing a
+  newer upstream from Debian). No "is this an SRU" gate -- (2) matters
+  for a devel upload too.
+- **Consolidated the by-then-three-times-duplicated input extraction**
+  (package/target_series/proposed_version/proposed_entry, MP or bug)
+  into a shared `_sru_proposal_inputs`/`_sru_proposal_inputs_bug` pair,
+  used by both Check 13 and Check 14 -- worth doing once a third check
+  needed the exact same four values (the underlying I/O was already
+  memoized at a lower layer per #39/attachments.py's own cache, so this
+  was a maintainability fix, not a performance one).
+- Tests: 571 total (16 new for Check 14, tier assertions updated for
+  Check 13). Lint/format clean.
 
 ## Known residual edges (documented in code)
 

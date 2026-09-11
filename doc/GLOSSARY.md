@@ -72,6 +72,7 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `check_sru_newer_series`, `check_direct_source_edit`,
   `check_missing_changelog_stanza`, `check_patch_not_debdiff`,
   `check_ppa_version_suffix`, `check_sru_version_suffix_convention`,
+  `check_sru_version_newer_series_precedence`,
   `check_xsbc_original_maintainer`), run in a fixed order before the LLM
   phase. See `flow.dot`/`flow.svg`.
 - **Fires** — a check "fires" when it finds something to flag (returns
@@ -193,7 +194,7 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   time. MP + bug-debdiff dual path; exempt merge MPs and sync requests.
 - **SRU version-suffix convention check** — Check 13,
   `check_sru_version_suffix_convention` (#109): a proposed SRU version
-  must follow the `ubuntu0.N`-on-top-of-a-release convention, not the
+  should follow the `ubuntu0.N`-on-top-of-a-release convention, not the
   `ubuntuN` numbering regular/devel uploads use. Delegates to
   [`ubuntu-lint`](https://github.com/ubuntu/ubuntu-lint)'s own
   `check_sru_version_string_convention` rather than reimplementing it
@@ -201,8 +202,31 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   Requires `python3-ubuntu-lint` on the host (a system package, like
   `apt_pkg`); fails safe (skips, doesn't block the item) when it's
   absent — present on the bot's VM, not yet on GitHub Actions' runner
-  (no 24.04 PPA build). Deterministic, incomplete-tier. MP-side only;
-  bug-side (debdiff attachments) is backlog.
+  (no 24.04 PPA build). Deterministic, but **question/advisory, not
+  blocking** (#109 addendum, live-found): the convention is a
+  recommendation, not a correctness guarantee -- a version can be safe
+  without matching it, and matching it doesn't itself prove safety. MP +
+  bug-debdiff dual path, input gathering shared with the check below via
+  `_sru_proposal_inputs`.
+- **SRU version-precedence check** — Check 14,
+  `check_sru_version_newer_series_precedence` (#110): unlike the
+  convention check above, this validates actual *correctness* against
+  real archive state, so it's blocking (incomplete-tier). Two
+  independent problems: (1) every series newer than the target must
+  currently publish a version *higher* than the one proposed, or a
+  future upgrade past it would keep this SRU's version instead of that
+  series' own; (2) the proposed version must never have been published
+  anywhere else in the archive's history (`archive_lookup.
+  any_series_publication`) -- Ubuntu's pool is shared across every
+  series, so a version an unrelated series used once, even long since
+  superseded there, can't be reused. (2) is genuinely not covered by
+  (1): once that other series has moved past the colliding version
+  (e.g. via a Debian sync), its *current* version no longer shows the
+  collision at all. No "is this an SRU" gate -- (2) is a real problem
+  for a devel upload too. MP + bug-debdiff dual path via the same
+  `_sru_proposal_inputs` helper (design_journal.md #110's
+  consolidation -- three checks needing this exact extraction was one
+  too many independent copies).
 - **Stale-bounce sweep (Rule B)** — `sweep.py` (#66): after every
   `--all` pass, bugs the bot bounced get revisited using
   `bug_task.date_incomplete` as the clock. A new usable-diff attachment

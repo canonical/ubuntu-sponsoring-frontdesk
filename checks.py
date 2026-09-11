@@ -3448,7 +3448,7 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
 def _sru_version_convention_finding(url, reason):
     logger.info(
         "[%s] proposed version doesn't follow the SRU version-string "
-        "convention (%s). Adding an incomplete finding.",
+        "convention (%s). Adding an advisory finding.",
         url,
         reason,
     )
@@ -3458,11 +3458,15 @@ def _sru_version_convention_finding(url, reason):
     # convention check_ppa_version_suffix already uses).
     reason = reason.split(", see ")[0]
     return Finding(
-        "incomplete",
-        f"The proposed version doesn't follow Ubuntu's SRU version-string "
-        f"convention: {reason}. See "
+        "question",
+        f"The proposed version doesn't follow Ubuntu's recommended SRU "
+        f"version-string convention: {reason}. This isn't necessarily "
+        "wrong (what actually matters is that the version sorts ahead of "
+        "the archive and doesn't collide with anything), but following "
+        "the convention avoids surprises -- see "
         "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/"
-        "version-strings/ for the expected format.",
+        "version-strings/ for the recommended format.",
+        kind="advisory",
     )
 
 
@@ -3568,16 +3572,48 @@ def check_sru_version_suffix_convention(url, lp_obj, lp_client):
     that isn't a stable-series upload -- no separate "is this an SRU" gate
     needed here.
 
-    Bug-side (debdiff attachments) is not yet covered -- see STATUS.md's
-    backlog note; check_stale_version's bug/MP split
-    (_stale_version_bug) is the template for that follow-up.
+    Input gathering (package/target_series/proposed_version/proposed_entry,
+    MP or bug) is shared with check_sru_version_newer_series_precedence via
+    _sru_proposal_inputs (design_journal.md #110) -- both checks need the
+    exact same four values, only the verdict logic differs.
 
-    Returns a Finding (incomplete), False (not applicable, including when
-    ubuntu_lint isn't installed on this host -- see
-    _sru_version_convention_verdict), or None (a lookup/parse failure --
-    retriable, main.py persists no facts).
+    Returns a Finding (question/advisory -- ubuntu-lint validates the
+    *recommended* convention, not correctness; a version can be fine
+    (unused, sorts ahead of the archive, doesn't collide with a newer
+    series) without matching the letter of the suffix pattern, so this
+    doesn't block sponsoring, see design_journal.md #109's addendum),
+    False (not applicable, including when ubuntu_lint isn't installed on
+    this host -- see _sru_version_convention_verdict), or None (a
+    lookup/parse failure -- retriable, main.py persists no facts).
     """
+    result = _sru_proposal_inputs(lp_obj, lp_client)
+    if result is None:
+        return None
+    if result is False:
+        return False
+    package, target_series, _proposed_version, proposed_entry = result
+
+    return _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry)
+
+
+def _sru_proposal_inputs(lp_obj, lp_client):
+    """(package, target_series, proposed_version, proposed_entry) for an
+    SRU-shaped proposal -- an MP's new changelog stanza + git target
+    branch, or a bug's newest usable debdiff attachment's new stanza +
+    the stanza's own suite field (a bug has no git branch to read a
+    target from). Shared by every SRU-version check that needs these
+    same four inputs (design_journal.md #110's consolidation -- a third
+    check needing this exact extraction was one too many independent
+    copies to keep in sync by hand).
+
+    Returns the tuple on success, False (not an MP/bug, no package, no
+    new changelog stanza, or a suite that isn't a currently-known
+    series -- UNRELEASED, a typo, EOL), or None (a lookup/fetch failure
+    -- retriable, not a guess)."""
     resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        return _sru_proposal_inputs_bug(bug, lp_client)
     if resource_type != "branch_merge_proposal":
         return False
 
@@ -3586,7 +3622,7 @@ def check_sru_version_suffix_convention(url, lp_obj, lp_client):
         return False
     proposed_version, proposed_entry = _proposed_changelog_entry(lp_obj)
     if proposed_version is None:
-        logger.debug("check_sru_version_suffix_convention: diff unreadable; can't determine.")
+        logger.debug("_sru_proposal_inputs: diff unreadable; can't determine.")
         return None
     if not proposed_version:
         return False
@@ -3594,12 +3630,207 @@ def check_sru_version_suffix_convention(url, lp_obj, lp_client):
     target_series = _target_ubuntu_series(lp_obj, lp_client.lp)
     if not target_series:
         logger.debug(
-            "check_sru_version_suffix_convention: couldn't determine the "
-            "target series; can't determine."
+            "_sru_proposal_inputs: couldn't determine the target series; can't determine."
         )
         return None
 
-    return _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry)
+    return package, target_series, proposed_version, proposed_entry
+
+
+def _sru_proposal_inputs_bug(bug, lp_client):
+    """_sru_proposal_inputs's bug-side path: the proposed package/
+    version/entry come from the newest usable debdiff attachment's new
+    changelog stanza (attachments.review_target -- memoized, free after
+    checks 8/10), and the target series from the stanza's own suite
+    field ('pkg (1.2-3ubuntu1) noble; urgency=...') -- the authoritative
+    signal here, same approach as _stale_version_bug. A suite that isn't
+    a currently-known series (UNRELEASED, a typo, an EOL series) ->
+    skip, don't guess."""
+    target = attachments.review_target(bug)
+    if target is None:
+        return None
+    if target is False:
+        return False
+    _attachment, text = target
+
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    if not stanza:
+        logger.debug("_sru_proposal_inputs_bug: no new changelog entry; skipping.")
+        return False
+    header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+    if not header:
+        logger.debug("_sru_proposal_inputs_bug: unparseable entry header; skipping.")
+        return False
+    package = header.group("pkg")
+    proposed_version = header.group("version")
+    suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+
+    series_pairs = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_pairs is None:
+        logger.debug("_sru_proposal_inputs_bug: series lookup failed; can't determine.")
+        return None
+    if suite not in (name for name, _version in series_pairs):
+        logger.debug(
+            "_sru_proposal_inputs_bug: suite %r isn't a currently-known series; skipping.",
+            suite,
+        )
+        return False
+
+    return package, suite, proposed_version, stanza
+
+
+def _sru_version_precedence_finding(url, problems):
+    logger.info(
+        "[%s] proposed SRU version has %d version-precedence problem(s). "
+        "Adding an incomplete finding.",
+        url,
+        len(problems),
+    )
+    bullets = "\n".join(f"- {p}" for p in problems)
+    return Finding(
+        "incomplete",
+        "The proposed version doesn't look safe to use:\n"
+        f"{bullets}\n"
+        "Please pick a different version.",
+    )
+
+
+def _sru_version_precedence_verdict(url, lp_client, package, target_series, proposed_version):
+    """
+    Two independently provable correctness problems with a proposed SRU
+    version (design_journal.md #110), checked against real archive state
+    rather than a recommended string pattern (contrast
+    check_sru_version_suffix_convention, which is advisory precisely
+    because it can't tell correct-but-unconventional from actually
+    wrong):
+
+    1. Every series newer than target_series must currently publish a
+       HIGHER version than the one proposed -- otherwise a future
+       upgrade past that series would see this SRU's version as the
+       newer one and keep it, silently skipping whatever that series
+       actually ships. A newer series with no publication at all is
+       skipped (removed/never-synced package there, not a version
+       problem -- mirrors check_sru_newer_series's #69 exemption).
+    2. The proposed version must never have been published anywhere in
+       the archive's history for THIS package, in any OTHER series --
+       Ubuntu's pool is shared across every series (one set of files
+       per (source, version), regardless of which series publishes it),
+       so a version already claimed by an unrelated series' upload --
+       even one long superseded there -- can't be reused. This is
+       genuinely not covered by (1): once that other series has moved
+       on to something newer still, its CURRENT version no longer shows
+       the collision at all (found live, seb128: a resolute SRU
+       proposing a version stonking used once, before syncing a newer
+       upstream from Debian, would pass (1) cleanly). Deliberately
+       excludes a match in target_series itself -- that's
+       check_stale_version's own territory (its "already uploaded"/
+       "version collision" cases), reporting it again here would only
+       duplicate that finding.
+
+    Returns a Finding (incomplete -- both are provable archive facts,
+    not soft judgment calls), False (clean, or target_series isn't in
+    the currently-supported series set -- out of scope, not a guess),
+    or None (any lookup failure -- retriable).
+    """
+    series_order = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_order is None:
+        logger.debug("_sru_version_precedence_verdict: series lookup failed; can't determine.")
+        return None
+    series_names = [name for name, _version in series_order]
+    if target_series not in series_names:
+        logger.debug(
+            "_sru_version_precedence_verdict: target series %r not in the "
+            "supported set; skipping.",
+            target_series,
+        )
+        return False
+
+    problems = []
+
+    newer = series_names[series_names.index(target_series) + 1 :]
+    for series_name in newer:
+        versions = archive_lookup.ubuntu_versions(
+            lp_client.lp, package, series_names=[series_name]
+        )
+        if versions is None:
+            logger.debug(
+                "_sru_version_precedence_verdict: archive lookup failed for %r; can't determine.",
+                series_name,
+            )
+            return None
+        newer_version = _max_published_version(versions)
+        if not newer_version:
+            continue
+        if archive_lookup.version_compare(newer_version, proposed_version) <= 0:
+            problems.append(
+                f"`{series_name}` currently has `{newer_version}`, which is "
+                f"not higher than the proposed `{proposed_version}`"
+            )
+
+    publications = archive_lookup.any_series_publication(lp_client.lp, package, proposed_version)
+    if publications is None:
+        logger.debug(
+            "_sru_version_precedence_verdict: any-series publication lookup "
+            "failed; can't determine."
+        )
+        return None
+    elsewhere = []
+    for pub in publications:
+        series_name = archive_lookup.publication_series_name(pub)
+        if series_name is None:
+            logger.debug(
+                "_sru_version_precedence_verdict: couldn't resolve a "
+                "matching publication's series; can't determine."
+            )
+            return None
+        if series_name != target_series:
+            elsewhere.append(series_name)
+    if elsewhere:
+        problems.append(
+            f"`{proposed_version}` was already published in "
+            f"{', '.join(sorted(set(elsewhere)))} -- Ubuntu's archive pool "
+            "is shared across series, so this exact version can't be "
+            "reused for a different upload"
+        )
+
+    if not problems:
+        return False
+    return _sru_version_precedence_finding(url, problems)
+
+
+def check_sru_version_newer_series_precedence(url, lp_obj, lp_client):
+    """
+    Check 14: SRU version-precedence correctness (design_journal.md #110).
+
+    Companion to check_sru_version_suffix_convention (#109), same input
+    gathering (_sru_proposal_inputs) but a stricter, blocking verdict:
+    where #109 checks whether the version follows the *recommended*
+    convention, this checks whether it's actually *safe* -- provable
+    from real archive state rather than a string pattern (see
+    _sru_version_precedence_verdict for the two problems it looks for).
+
+    Deliberately has no separate "is this an SRU" gate, unlike #109
+    (which relies on ubuntu-lint's own is_stable_release()). For a
+    devel-targeted MP, leg 1 (newer-series ordering) is naturally a
+    no-op -- nothing is newer than devel -- but leg 2 (cross-series
+    version reuse) still runs, and that's kept on purpose: reusing a
+    version that already exists elsewhere in the archive is a real
+    problem regardless of whether the target is an SRU or devel, so
+    there's no reason to gate it away.
+
+    Returns a Finding (incomplete), False (not applicable), or None (a
+    lookup/parse failure -- retriable, main.py persists no facts).
+    """
+    result = _sru_proposal_inputs(lp_obj, lp_client)
+    if result is None:
+        return None
+    if result is False:
+        return False
+    package, target_series, proposed_version, _proposed_entry = result
+
+    return _sru_version_precedence_verdict(
+        url, lp_client, package, target_series, proposed_version
+    )
 
 
 _XSBC_ORIGINAL_MAINTAINER_RE = re.compile(

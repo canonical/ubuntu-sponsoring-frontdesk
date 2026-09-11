@@ -238,6 +238,57 @@ def published_source(lp, package, series_name, version, status="Published"):
         return None
 
 
+def any_series_publication(lp, package, version, status=None):
+    """Every SourcePackagePublishingHistory for `package` == `version`
+    anywhere in the primary archive -- not scoped to one series, unlike
+    published_source() above. Ubuntu's pool is shared across every
+    series (one set of files per (source, version), regardless of which
+    series publishes it), so a version string already used by an
+    unrelated series' upload -- even one long since superseded there --
+    can't be reused for a new upload elsewhere. published_source()'s own
+    any-status rescue (design_journal.md #43) only looks within one
+    series, and so can miss exactly this case once that other series has
+    itself moved past the colliding version (design_journal.md #110,
+    found live: a resolute SRU proposing a version stonking used and
+    later moved on from via a Debian sync).
+
+    ``status`` defaults to None (every status at once -- Published,
+    Superseded, Deleted, ...): the whole point here is archive HISTORY,
+    not current state.
+
+    Returns a list (possibly empty -- genuinely never published anywhere,
+    the clean case) or None if the lookup itself failed (retriable, must
+    NOT be read as "clean")."""
+    try:
+        archive = lp.distributions["ubuntu"].main_archive
+        kwargs = {"source_name": package, "exact_match": True, "version": version}
+        if status is not None:
+            kwargs["status"] = status
+        return list(archive.getPublishedSources(**kwargs))
+    except Exception as e:
+        logger.warning(
+            "Launchpad lookup failed (any-series publication for %s %s): %s",
+            package,
+            version,
+            e,
+        )
+        return None
+
+
+def publication_series_name(pub):
+    """The series name (e.g. 'noble') a SourcePackagePublishingHistory
+    was published into, or None if it can't be read. Reads pub's own
+    distro_series link -- a lazy launchpadlib fetch per distinct series,
+    not covered by any existing live smoke test (see changelog_text()'s
+    own caveat below); treat this specific attribute access as
+    unverified against real Launchpad until one is done."""
+    try:
+        return pub.distro_series.name
+    except Exception as e:
+        logger.warning("could not resolve a publication's distro_series: %s", e)
+        return None
+
+
 def upload_in_queue(lp, package, series_name, version=None):
     """Whether `package` == `version` is sitting in `series_name`'s upload
     queue awaiting archive review -- uploaded, but not yet published, so

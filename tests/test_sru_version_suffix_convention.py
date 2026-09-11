@@ -1,6 +1,9 @@
 """Check 13: SRU version-suffix convention (design_journal.md #109), via
 ubuntu-lint's check_sru_version_string_convention rather than reimplementing
-the suffix logic. MP-side only for now -- see checks.py's docstring.
+the suffix logic. MP-side and bug-side (debdiff attachments) -- see
+checks.py's docstring; the bug path is a pure input-gathering wrapper
+around the same shared verdict function _stale_version_bug's own bug/MP
+split established.
 
 python3-ubuntu-lint is a system package with no 24.04 PPA build yet (see
 checks.py's import comment) -- present on the bot's real VM, absent on
@@ -14,7 +17,7 @@ import pytest
 
 pytest.importorskip("ubuntu_lint")
 
-from fakes import FakeBug, FakeDiff, FakeMP
+from fakes import FakeAttachment, FakeBug, FakeDiff, FakeMP
 
 import archive_lookup
 import checks
@@ -82,11 +85,12 @@ def test_conventional_suffix_is_fine(monkeypatch):
     assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
 
 
-def test_wrong_suffix_bounces(monkeypatch):
+def test_wrong_suffix_is_advisory(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG)
     mp = _mp_with_diff(_diff_for("1.2-3ubuntu1"))
     finding = checks.check_sru_version_suffix_convention(URL, mp, _LP())
-    assert finding.tier == "incomplete"
+    assert finding.tier == "question"
+    assert finding.kind == "advisory"
     assert "1.2-3ubuntu0.1" in finding.message
 
 
@@ -141,6 +145,58 @@ def test_no_new_stanza_is_false(monkeypatch):
     assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
 
 
-def test_bug_side_not_yet_covered_is_false():
+_DEBDIFF_CONVENTIONAL = """\
+diff -Nru testpkg-1.2/debian/changelog testpkg-1.2/debian/changelog
+--- testpkg-1.2/debian/changelog\t2026-06-01 10:00:00.000000000 +0200
++++ testpkg-1.2/debian/changelog\t2026-07-11 10:00:00.000000000 +0200
+@@ -1,3 +1,10 @@
++testpkg (1.2-3ubuntu0.1) noble; urgency=medium
++
++  * Fix something (LP: #2000001).
++
++ -- Riku <riku@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ testpkg (1.2-3) noble; urgency=medium
+"""
+
+_DEBDIFF_WRONG_SUFFIX = _DEBDIFF_CONVENTIONAL.replace("1.2-3ubuntu0.1", "1.2-3ubuntu1")
+
+
+def test_bug_conventional_suffix_is_fine(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG)
+    bug = FakeBug(
+        title="fix",
+        attachments=[FakeAttachment("fix.debdiff", content=_DEBDIFF_CONVENTIONAL)],
+    )
+    assert checks.check_sru_version_suffix_convention(URL, bug, _LP()) is False
+
+
+def test_bug_wrong_suffix_is_advisory(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG)
+    bug = FakeBug(
+        title="fix",
+        attachments=[FakeAttachment("fix.debdiff", content=_DEBDIFF_WRONG_SUFFIX)],
+    )
+    finding = checks.check_sru_version_suffix_convention(URL, bug, _LP())
+    assert finding.tier == "question"
+    assert finding.kind == "advisory"
+    assert "1.2-3ubuntu0.1" in finding.message
+
+
+def test_bug_unknown_suite_is_false(monkeypatch):
+    debdiff = _DEBDIFF_CONVENTIONAL.replace("noble", "totallymadeup")
+    bug = FakeBug(title="fix", attachments=[FakeAttachment("fix.debdiff", content=debdiff)])
+    assert checks.check_sru_version_suffix_convention(URL, bug, _LP()) is False
+
+
+def test_bug_no_attachments_is_false():
     bug = FakeBug(title="fix")
     assert checks.check_sru_version_suffix_convention(URL, bug, _LP()) is False
+
+
+def test_bug_unfetchable_attachment_is_inconclusive():
+    bug = FakeBug(
+        title="fix",
+        attachments=[FakeAttachment("fix.debdiff", fail_fetch=True)],
+    )
+    assert checks.check_sru_version_suffix_convention(URL, bug, _LP()) is None
