@@ -113,23 +113,41 @@ def test_clean_case_is_false(monkeypatch):
     assert checks.check_sru_version_newer_series_precedence(URL, mp, _LP()) is False
 
 
-def test_newer_series_not_ahead_bounces(monkeypatch):
-    # resolute currently sits at exactly the proposed version -- not
-    # strictly ahead, a real ordering problem.
+def test_newer_series_exactly_matching_is_not_leg_one(monkeypatch):
+    # #116, live-found: equality is deliberately NOT leg 1's territory --
+    # a newer series at exactly the proposed version means that version
+    # is already published there, which is leg 2's "reused elsewhere"
+    # case (more precise wording), not "fix not landed yet". With no
+    # leg-2 publication configured, this is clean.
     _patch_archive(
         monkeypatch,
         versions={"resolute": "1.2-3ubuntu0.1", "stonking": "1.3-0ubuntu1"},
     )
     mp = _mp_with_diff(_diff_for("1.2-3ubuntu0.1"))
+    assert checks.check_sru_version_newer_series_precedence(URL, mp, _LP()) is False
+
+
+def test_newer_series_exactly_matching_and_actually_published_is_leg_two(monkeypatch):
+    # Same versions as above, but this time resolute's exact-match
+    # version really is on record as a publication there -- now it's a
+    # genuine "reused elsewhere" problem, reported by leg 2.
+    _patch_archive(
+        monkeypatch,
+        versions={"resolute": "1.2-3ubuntu0.1", "stonking": "1.3-0ubuntu1"},
+        publications=[_Pub("resolute")],
+    )
+    mp = _mp_with_diff(_diff_for("1.2-3ubuntu0.1"))
     finding = checks.check_sru_version_newer_series_precedence(URL, mp, _LP())
     assert finding.tier == "incomplete"
     assert "resolute" in finding.message
-    assert "1.2-3ubuntu0.1" in finding.message
+    assert "reused" in finding.message
 
 
 def test_newer_series_lower_bounces(monkeypatch):
-    # stonking hasn't diverged from the shared base at all -- lower than
-    # the proposed SRU version, the exact scenario that motivated #110.
+    # stonking hasn't diverged from the shared base at all -- strictly
+    # lower than the proposed SRU version, the exact scenario that
+    # motivated #110. #116: this is airtight proof the fix hasn't
+    # landed in devel yet, so the message says so directly.
     _patch_archive(
         monkeypatch,
         versions={"resolute": "1.2-4ubuntu1", "stonking": "1.2-3"},
@@ -138,6 +156,24 @@ def test_newer_series_lower_bounces(monkeypatch):
     finding = checks.check_sru_version_newer_series_precedence(URL, mp, _LP())
     assert finding.tier == "incomplete"
     assert "stonking" in finding.message
+    assert "development release" in finding.message
+    assert "hasn't been uploaded there yet" in finding.message
+
+
+def test_intermediate_stable_series_lower_is_not_called_devel(monkeypatch):
+    # #116: only the actual devel series (last in series_names) gets the
+    # "(the development release)" label -- an intermediate stable series
+    # being behind gets the same "hasn't landed" wording, but must not
+    # be mislabeled as devel.
+    _patch_archive(
+        monkeypatch,
+        versions={"resolute": "1.2-3", "stonking": "1.3-0ubuntu1"},
+    )
+    mp = _mp_with_diff(_diff_for("1.2-3ubuntu0.1"))
+    finding = checks.check_sru_version_newer_series_precedence(URL, mp, _LP())
+    assert finding.tier == "incomplete"
+    assert "`resolute` is still at" in finding.message
+    assert "development release" not in finding.message
 
 
 def test_newer_series_with_nothing_published_is_skipped(monkeypatch):

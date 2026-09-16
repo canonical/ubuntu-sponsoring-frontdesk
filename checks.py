@@ -3766,7 +3766,7 @@ def _sru_version_precedence_finding(url, problems):
         "incomplete",
         "The proposed version doesn't look safe to use:\n"
         f"{bullets}\n"
-        "Please pick a different version.",
+        "Please address the point(s) above.",
     )
 
 
@@ -3783,9 +3783,18 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
        HIGHER version than the one proposed -- otherwise a future
        upgrade past that series would see this SRU's version as the
        newer one and keep it, silently skipping whatever that series
-       actually ships. A newer series with no publication at all is
-       skipped (removed/never-synced package there, not a version
-       problem -- mirrors check_sru_newer_series's #69 exemption).
+       actually ships. Strict `<` only (design_journal.md #116, live-
+       found): a newer series whose CURRENT version is strictly lower
+       than proposed is airtight proof the fix hasn't landed there yet
+       -- landing a fix necessarily means an upload happened, which
+       necessarily raises that series' version, so there's no scenario
+       where the fix landed but the version stayed lower. Equality is
+       deliberately NOT included here -- that means this exact version
+       is already published in that series, which is (2)'s "reused
+       elsewhere" case with more precise wording, not "not landed yet".
+       A newer series with no publication at all is skipped (removed/
+       never-synced package there, not a version problem -- mirrors
+       check_sru_newer_series's #69 exemption).
     2. The proposed version must never have been published anywhere in
        the archive's history for THIS package, in any OTHER series --
        Ubuntu's pool is shared across every series (one set of files
@@ -3836,10 +3845,12 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
         newer_version = _max_published_version(versions)
         if not newer_version:
             continue
-        if archive_lookup.version_compare(newer_version, proposed_version) <= 0:
+        if archive_lookup.version_compare(newer_version, proposed_version) < 0:
+            label = "(the development release) " if series_name == series_names[-1] else ""
             problems.append(
-                f"`{series_name}` currently has `{newer_version}`, which is "
-                f"not higher than the proposed `{proposed_version}`"
+                f"`{series_name}` {label}is still at `{newer_version}` -- "
+                "the fix hasn't been uploaded there yet, which SRU policy "
+                "requires before it can land in an older series"
             )
 
     publications = archive_lookup.any_series_publication(lp_client.lp, package, proposed_version)

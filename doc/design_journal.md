@@ -2281,3 +2281,64 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   SRU-shaped attachment stays "not an SRU," an attachment fetch
   failure during the fallback is inconclusive rather than a guess).
   Lint/format clean.
+
+## 116. Check 14's Newer-Series Message: State the Real Cause, Confidently
+
+* **Trigger, same v4l2-relayd bug #2166611, next run after #115:** Check
+  7 now fired ("SRU to resolute with no sign the fix landed in stonking
+  first"), but it's `question`/`verify` tier and got suppressed once a
+  human reviewer engaged (#94's rule: only `incomplete` findings survive
+  engagement). The posted comment kept only Check 14's "`stonking`
+  currently has `0.2.0-0ubuntu1`, which is not higher than the proposed
+  `0.2.0-0ubuntu2`" -- accurate, but gave no reason, and read like a
+  pure numbering nitpick a version bump alone would fix. seb128: "it
+  should notice that the fix is not in the devel series before picking
+  up on the version."
+* **Explored, then dropped, two suppression-rule fixes** before landing
+  on the actual right one: (a) never suppress `verify`-tier findings
+  once any `incomplete` finding survives, or (b) fold Check 7's
+  evidence into Check 14's message when both fire. Both would have
+  worked but treated the symptom (findings.py's suppression policy) as
+  the bug, when the real gap was narrower: Check 14 already had the
+  evidence to state the cause itself, directly, with no cross-check
+  dependency.
+* **The actual fix, once seb128 pushed on "can't we just be confident
+  here?":** worked through why the archive-version comparison is
+  airtight, not a guess. Check 7 stays advisory-only because its
+  evidence (bug tasks/MPs/attachments) is indirect and can be stale --
+  submitters often lack the privilege to nominate a devel task at all
+  (#58's own original reasoning). But Check 14's evidence is a live
+  archive-version read: if a newer series' CURRENT published version is
+  strictly lower than what's proposed, landing the fix there would
+  necessarily have required an upload, which would necessarily have
+  raised that version -- there is no scenario where the fix landed but
+  the version stayed lower. That's a fact about the archive right now,
+  not an inference from possibly-stale metadata.
+* **One gap had to close first for that confidence to hold:** the
+  comparison used `<=`, including equality. A newer series sitting at
+  *exactly* the proposed version doesn't mean "not landed" -- it means
+  that version is already published there, which is leg 2's "reused
+  elsewhere" case (with more precise wording) and would have been a
+  wrong/overlapping claim under the "hasn't landed" framing. Tightened
+  to strict `<`; the equality case now falls straight through to leg 2,
+  which already independently catches it via `any_series_publication`.
+* **Wording, no hedge:** "`stonking` (the development release) is still
+  at `X` -- the fix hasn't been uploaded there yet, which SRU policy
+  requires before it can land in an older series." The "(the
+  development release)" label only applies when the series actually is
+  devel (last in `series_names`) -- an intermediate stable series
+  between target and devel gets the same "hasn't landed" wording
+  without the devel-specific label, since mislabeling it would be a new
+  wrong claim of its own. Trailing sentence changed from "Please pick a
+  different version" (wrong advice for the "not landed" case) to the
+  neutral "Please address the point(s) above," since a single Finding
+  can carry either or both legs' bullets.
+* **No suppression-rule change needed at all** -- the fix lives entirely
+  in Check 14's own message, which already always posts regardless of
+  engagement (#94). Simpler outcome than either alternative considered,
+  once the actual evidence quality was examined properly instead of
+  assumed.
+* Tests: 583 total (2 new, 1 rewritten to reflect the leg 1/leg 2 split
+  on equality: exact-match-with-no-publication is clean, exact-match-
+  with-a-real-publication is leg 2 not leg 1, an intermediate stable
+  series being behind isn't mislabeled as devel). Lint/format clean.

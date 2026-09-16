@@ -1223,7 +1223,7 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 - Tests: 571 total (16 new for Check 14, tier assertions updated for
   Check 13). Lint/format clean.
 
-## MP content review + Check 1/SYNCED/FFe/Check-7 fixes (2026-09-16, #111-#115)
+## MP content review + Check 1/SYNCED/FFe/Check-7/14 fixes (2026-09-16, #111-#116)
 
 - **MP content review: update-maintainer isn't an unmentioned change**
   (#111, live-found, interimap MP #511434): the LLM's stanza/diff
@@ -1270,6 +1270,16 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   attachment-derived suite detection Checks 13/14 already use
   (`_sru_proposal_inputs_bug`) when no series task exists. Tests: 581
   total (3 new).
+- **Check 14's newer-series message now states the real cause** (#116,
+  same bug, next run after #115): Check 7's own finding was `verify`-
+  tier and got suppressed by engagement (#94), leaving only Check 14's
+  "version doesn't look safe" with no explanation. Rather than change
+  suppression rules, tightened Check 14's own comparison to strict `<`
+  (equality now correctly falls to leg 2's "reused elsewhere" instead)
+  and reworded the message to state directly that the fix hasn't landed
+  in the newer series yet -- an archive-version read this confident is
+  provably true, not a guess. No suppression-rule change needed. Tests:
+  583 total (2 new, 1 reworked).
 
 ## Known residual edges (documented in code)
 
