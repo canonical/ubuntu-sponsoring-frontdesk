@@ -1290,7 +1290,13 @@ debian/. Review ONLY these two questions:
    unmentioned. Do NOT flag a stanza for omitting implementation details
    of a change it already correctly names and attributes (e.g. a stanza
    naming a patch and its general purpose does not need to enumerate every
-   code path, guard, or side effect that patch happens to touch). Report
+   code path, guard, or side effect that patch happens to touch). Do NOT
+   flag a debian/control change that only updates the Maintainer field to
+   an Ubuntu team address and adds/updates XSBC-Original-Maintainer to
+   preserve the previous maintainer -- this is Ubuntu's standard,
+   automated maintainer-update convention (update-maintainer), applied to
+   every first Ubuntu delta, and is never expected to get its own
+   changelog mention. Report
    any real mismatch here under `mismatches`, not `observations` -- it is
    a different kind of finding (see below). Phrase it affirmatively,
    stating the mismatch as a fact and asking for verification -- e.g. "The

@@ -2095,3 +2095,35 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   problem, producing redundant findings.
 * Tests: 571 total (16 new: 14 MP-side covering both legs and every
   failure mode, 2 bug-side). Lint/format clean.
+
+## 111. MP Content Review: update-maintainer Is Not a "Separate Change"
+
+* **Trigger (live, seb128, interimap MP #511434):** the LLM's MP
+  content-review (question 2, `triage_mp`'s stanza/diff consistency
+  check) flagged a `debian/control` change setting `Maintainer:` to
+  Ubuntu Developers and adding `XSBC-Original-Maintainer` as an
+  unmentioned "separate packaging change." seb128: this is
+  `update-maintainer`, a standard requirement for any Ubuntu delta
+  (https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/
+  debian-maintainer/#the-update-maintainer-command) -- it's never
+  expected to get its own changelog line.
+* **Root cause: a prompt gap, not a deterministic-check bug.** The
+  deterministic side already knows this convention
+  (`checks.check_xsbc_original_maintainer`, Check 12, treats exactly
+  this field pair as expected/normal), but that knowledge lives in
+  `checks.py` and the LLM's own prompt (`llm_reviewer.py`, a separate
+  module that can't import `checks`) has no access to it. The prompt's
+  question 2 tells the model to flag "a substantial, separate change...
+  present in the diff but entirely unmentioned" -- with nothing carving
+  out this specific, well-known packaging boilerplate, the model
+  correctly followed its instructions on a case those instructions
+  simply didn't anticipate.
+* **Fix:** one sentence added to the prompt's existing "do NOT flag"
+  list (next to the truncation and implementation-detail exceptions
+  already there): a `debian/control` change that only updates
+  `Maintainer:` to an Ubuntu team address and adds/updates
+  `XSBC-Original-Maintainer` is the standard, automated
+  `update-maintainer` convention and never needs a changelog mention.
+  Pure prompt-text change -- no plumbing touched, no test asserts on
+  this exact wording (prompt content isn't unit-tested verbatim). 571
+  tests unchanged, lint/format clean.
