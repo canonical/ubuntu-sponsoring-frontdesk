@@ -157,7 +157,10 @@ def test_newer_series_lower_bounces(monkeypatch):
     assert finding.tier == "incomplete"
     assert "stonking" in finding.message
     assert "development release" in finding.message
-    assert "hasn't been uploaded there yet" in finding.message
+    assert "doesn't appear to have landed in a newer series" in finding.message
+    # #117: must not frame this as a version-safety problem -- no version
+    # number would fix it, the fix itself needs to land in devel first.
+    assert "doesn't look safe" not in finding.message
 
 
 def test_intermediate_stable_series_lower_is_not_called_devel(monkeypatch):

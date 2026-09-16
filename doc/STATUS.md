@@ -1223,7 +1223,7 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 - Tests: 571 total (16 new for Check 14, tier assertions updated for
   Check 13). Lint/format clean.
 
-## MP content review + Check 1/SYNCED/FFe/Check-7/14 fixes (2026-09-16, #111-#116)
+## MP content review + Check 1/SYNCED/FFe/Check-7/14 fixes (2026-09-16, #111-#117)
 
 - **MP content review: update-maintainer isn't an unmentioned change**
   (#111, live-found, interimap MP #511434): the LLM's stanza/diff
@@ -1280,6 +1280,14 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   in the newer series yet -- an archive-version read this confident is
   provably true, not a guess. No suppression-rule change needed. Tests:
   583 total (2 new, 1 reworked).
+- **Check 14's wrapper sentence still misframed the not-landed case**
+  (#117, same message, same day): the bullet text was fixed but the
+  shared "The proposed version doesn't look safe to use:" wrapper
+  wasn't -- wrong framing for a process/policy gap that no version
+  number would fix. Now buckets into two problem categories
+  (`not_landed`/`reused_elsewhere`) with separate intros; only
+  `reused_elsewhere` keeps the "pick a different version" instruction.
+  Tests: 583 total, unchanged in count (1 reworked).
 
 ## Known residual edges (documented in code)
 

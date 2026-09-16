@@ -3754,20 +3754,36 @@ def _sru_proposal_inputs_bug(bug, lp_client):
     return package, suite, proposed_version, stanza
 
 
-def _sru_version_precedence_finding(url, problems):
+def _sru_version_precedence_finding(url, not_landed, reused_elsewhere):
+    """Builds the Finding for _sru_version_precedence_verdict's two
+    problem categories, each with its own framing (design_journal.md
+    #117, live-found): a version-number wrapper ("doesn't look safe to
+    use") was wrong for not_landed -- that's a process/policy gap (the
+    fix isn't in devel yet), not a version-safety one, and no version
+    number would fix it. Only reused_elsewhere is actually about the
+    version choice itself."""
     logger.info(
-        "[%s] proposed SRU version has %d version-precedence problem(s). "
-        "Adding an incomplete finding.",
+        "[%s] proposed SRU version has %d version-precedence problem(s) "
+        "(%d not-landed, %d reused-elsewhere). Adding an incomplete finding.",
         url,
-        len(problems),
+        len(not_landed) + len(reused_elsewhere),
+        len(not_landed),
+        len(reused_elsewhere),
     )
-    bullets = "\n".join(f"- {p}" for p in problems)
-    return Finding(
-        "incomplete",
-        "The proposed version doesn't look safe to use:\n"
-        f"{bullets}\n"
-        "Please address the point(s) above.",
-    )
+    parts = []
+    if not_landed:
+        bullets = "\n".join(f"- {p}" for p in not_landed)
+        parts.append(
+            "The fix doesn't appear to have landed in a newer series yet, "
+            "which SRU policy requires before it can land here:\n"
+            f"{bullets}"
+        )
+    if reused_elsewhere:
+        bullets = "\n".join(f"- {p}" for p in reused_elsewhere)
+        parts.append(
+            f"The proposed version can't be used:\n{bullets}\nPlease pick a different version."
+        )
+    return Finding("incomplete", "\n".join(parts))
 
 
 def _sru_version_precedence_verdict(url, lp_client, package, target_series, proposed_version):
@@ -3829,7 +3845,7 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
         )
         return False
 
-    problems = []
+    not_landed = []
 
     newer = series_names[series_names.index(target_series) + 1 :]
     for series_name in newer:
@@ -3847,10 +3863,9 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
             continue
         if archive_lookup.version_compare(newer_version, proposed_version) < 0:
             label = "(the development release) " if series_name == series_names[-1] else ""
-            problems.append(
-                f"`{series_name}` {label}is still at `{newer_version}` -- "
-                "the fix hasn't been uploaded there yet, which SRU policy "
-                "requires before it can land in an older series"
+            not_landed.append(
+                f"`{series_name}` {label}is still at `{newer_version}` "
+                f"(proposed: `{proposed_version}`)"
             )
 
     publications = archive_lookup.any_series_publication(lp_client.lp, package, proposed_version)
@@ -3871,17 +3886,18 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
             return None
         if series_name != target_series:
             elsewhere.append(series_name)
+    reused_elsewhere = []
     if elsewhere:
-        problems.append(
+        reused_elsewhere.append(
             f"`{proposed_version}` was already published in "
             f"{', '.join(sorted(set(elsewhere)))} -- Ubuntu's archive pool "
             "is shared across series, so this exact version can't be "
             "reused for a different upload"
         )
 
-    if not problems:
+    if not not_landed and not reused_elsewhere:
         return False
-    return _sru_version_precedence_finding(url, problems)
+    return _sru_version_precedence_finding(url, not_landed, reused_elsewhere)
 
 
 def check_sru_version_newer_series_precedence(url, lp_obj, lp_client):

@@ -2342,3 +2342,28 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   on equality: exact-match-with-no-publication is clean, exact-match-
   with-a-real-publication is leg 2 not leg 1, an intermediate stable
   series being behind isn't mislabeled as devel). Lint/format clean.
+
+## 117. Check 14's Wrapper Sentence Still Misframed Leg 1
+
+* **Trigger, same day, same message #116 just fixed:** seb128, re-
+  reading the actual posted comment: "the first line state[s] the
+  version is unsafe but that's not the core of the issue." #116 fixed
+  the bullet's own wording but left the shared wrapper sentence --
+  "The proposed version doesn't look safe to use:" -- unchanged, and
+  that framing is itself wrong for leg 1: the fix isn't in devel yet is
+  a process/policy gap, not a property of the version string, and no
+  version number would resolve it. Leg 2 (a version genuinely reused
+  elsewhere) IS about the version choice -- the two problems needed
+  different framing, not a shared banner.
+* **Fix:** `_sru_version_precedence_verdict` now buckets into two lists
+  (`not_landed`, `reused_elsewhere`) instead of one flat `problems`
+  list; `_sru_version_precedence_finding` gives each its own intro
+  sentence and only `reused_elsewhere` keeps the "pick a different
+  version" instruction (correct advice there, wrong for `not_landed`).
+  Each bullet's own text was trimmed too, now that the section intro
+  already states the general explanation once rather than repeating it
+  per newer series.
+* Tests: 583 total, unchanged in count (`test_newer_series_lower_
+  bounces` reworded to assert the new "doesn't appear to have landed"
+  phrasing and explicitly assert the old "doesn't look safe" wrapper is
+  gone). Lint/format clean.
