@@ -4,6 +4,8 @@ from fakes import FakeBug, FakeMP, FakeTask
 
 import checks
 
+_FIX_COMMITTED = [FakeTask("foo (Ubuntu)", "Fix Committed")]
+
 
 class _LP:
     def __init__(self):
@@ -108,3 +110,50 @@ def test_mixed_released_and_committed_still_unsubscribes():
     ]
     assert _run(tasks, "foo", lp=lp) is True
     assert lp.unsubscribed == 1
+
+
+def test_closed_task_with_a_still_live_linked_mp_is_not_done():
+    # #112, found live (backport-iwlwifi-dkms bug #2166733): the task went
+    # Fix Committed when an EARLIER MP merged, but a follow-up MP on the
+    # same bug was still Needs review -- a single task can't reflect that
+    # there's a second, unrelated review still pending.
+    lp = _LP()
+    live_mp = FakeMP(queue_status="Needs review")
+    bug = FakeBug(tasks=_FIX_COMMITTED, linked_merge_proposals=[live_mp])
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is False
+    assert lp.comments == [] and lp.unsubscribed == 0
+
+
+def test_closed_task_with_only_a_merged_linked_mp_still_unsubscribes():
+    # The MP that actually closed the task shows up as Merged -- not a
+    # live review, so it must not block the usual Fix-Committed handling.
+    lp = _LP()
+    merged_mp = FakeMP(queue_status="Merged")
+    bug = FakeBug(tasks=_FIX_COMMITTED, linked_merge_proposals=[merged_mp])
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is True
+    assert lp.unsubscribed == 1
+
+
+def test_closed_task_with_only_rejected_or_superseded_mps_still_unsubscribes():
+    lp = _LP()
+    mps = [FakeMP(queue_status="Rejected"), FakeMP(queue_status="Superseded")]
+    bug = FakeBug(tasks=_FIX_COMMITTED, linked_merge_proposals=mps)
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is True
+    assert lp.unsubscribed == 1
+
+
+def test_linked_mp_lookup_failure_is_inconclusive():
+    lp = _LP()
+
+    class _BrokenBug(FakeBug):
+        @property
+        def linked_merge_proposals(self):
+            raise TimeoutError("simulated Launchpad timeout")
+
+        @linked_merge_proposals.setter
+        def linked_merge_proposals(self, value):
+            pass
+
+    bug = _BrokenBug(tasks=_FIX_COMMITTED)
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is None
+    assert lp.comments == [] and lp.unsubscribed == 0

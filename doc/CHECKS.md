@@ -20,7 +20,7 @@ changelog style on a request that's already resolved.
 
 | Check | Tier | Scope | What it does |
 |---|---|---|---|
-| `check_administrative_state` | closing | MP + bug | Every Ubuntu task already closed and something's landed / the MP is Merged — comment (if any Fix Committed tasks remain) and unsubscribe; a fully Fix Released item closes silently. |
+| `check_administrative_state` | closing | MP + bug | Every Ubuntu task already closed and something's landed / the MP is Merged — comment (if any Fix Committed tasks remain) and unsubscribe; a fully Fix Released item closes silently. A still-live (not Merged/Rejected/Superseded) linked MP blocks closing even with a closed task — a task only reflects its most recent transition, not every MP ever linked to the bug. |
 | `check_nothing_to_sponsor` | closing | bug only | No patch and no linked MP (sync requests exempt), or every series the bug asks sponsoring for is already covered by a linked MP's review — unsubscribe, the real review lives elsewhere. Also handles needs-packaging bugs already published or queued. |
 | `check_empty_diff` | closing | MP | The diff is empty — already landed, nothing left to review. |
 | `check_stale_version` | closing / incomplete | MP + bug (debdiff attachment) | Compares the proposed version against every pocket published for the target series. Already uploaded with matching content → closing (or a short defer if <24h old / still in the upload queue); a version collision or stale version → incomplete, asks for a rebase. |

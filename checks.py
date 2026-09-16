@@ -440,7 +440,18 @@ def _relevant_ubuntu_tasks(bug, source_package):
 def check_administrative_state(url, lp_obj, lp_client, source_package=None):
     """
     Check if the request is already fixed/uploaded for Ubuntu.
-    Returns True if we handled it and unsubscribed, False otherwise.
+
+    Bug-side: closed-and-landed Ubuntu tasks alone are not enough (#112)
+    -- a single task only reflects the most recent status transition, so
+    a bug with more than one linked MP over its lifetime could have its
+    task closed by an earlier MP while a later one is still under
+    review. Checked before concluding anything is administratively
+    done; see the live-MP guard below.
+
+    Returns True if we handled it (closed silently, or commented +
+    unsubscribed), False if there's nothing conclusive (including a
+    closed task with a still-live linked MP -- leave it be), or None if
+    a Launchpad lookup failed (retry next run).
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
 
@@ -476,6 +487,36 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
         any_landed,
     )
     if all_closed and any_landed:
+        # A single Ubuntu task only reflects the most recent status
+        # transition -- a bug can accumulate more than one linked MP over
+        # its lifetime, and a task going Fix Committed when the FIRST MP
+        # merged does not mean a SECOND, later MP is reviewed too. Found
+        # live (design_journal.md #112): backport-iwlwifi-dkms bug
+        # #2166733, task Fix Committed from MP #511049 (0ubuntu1,
+        # merged), but a follow-up debdiff/MP #511345 (0ubuntu2) was
+        # still Needs review on the very same bug -- this check closed
+        # it and unsubscribed ~ubuntu-sponsors regardless.
+        try:
+            live_mps = [
+                mp
+                for mp in bug.linked_merge_proposals
+                if mp.queue_status not in _INACTIVE_MP_STATUSES and mp.queue_status != "Merged"
+            ]
+        except Exception as e:
+            logger.warning(
+                "check_administrative_state: couldn't read linked MPs (%s); can't determine.",
+                e,
+            )
+            return None
+        if live_mps:
+            logger.debug(
+                "check_administrative_state: task(s) closed, but %d live "
+                "linked MP(s) remain (e.g. %s); not administratively done.",
+                len(live_mps),
+                live_mps[0].web_link,
+            )
+            return False
+
         summary = ", ".join(sorted(f"{task.bug_target_name}: {task.status}" for task in tasks))
         if any(task.status == "Fix Committed" for task in tasks):
             # Fix Committed (an upload waiting in -proposed/the SRU queue,
@@ -2680,6 +2721,16 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     linked MP targets it, or a patch attachment names it (the common
     'one bug, three MPs' shape).
 
+    Bug-side SRU-shape detection (#115): normally a series-specific task
+    (_SERIES_TASK_RE). When there is none at all, falls back to the
+    newest usable attachment's own changelog stanza suite field, via the
+    same _sru_proposal_inputs_bug Checks 13/14 use -- a bug can carry an
+    SRU-shaped debdiff without ever having been properly nominated for
+    that series, and this check must still ask "did the fix land in
+    devel first?" rather than silently treating the item as "not an
+    SRU" and letting Checks 13/14 evaluate the proposed version with no
+    context on whether the underlying fix is even in devel yet.
+
     When some newer series looks unhandled mechanically, the LLM gets one
     focused question -- does the bug text state the issue is already fixed
     there? (Task tables are often stale: updating them needs privileges
@@ -2765,11 +2816,35 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
             )
             return None
         if not open_series:
-            logger.debug(
-                "check_sru_newer_series: no open series-specific task; not "
-                "an SRU (or nothing left to do)."
-            )
-            return False
+            # No series-specific task -- but the bug can still carry an
+            # SRU-shaped debdiff whose changelog stanza names a stable
+            # series directly, even though the bug itself was never
+            # properly nominated for that series (found live,
+            # design_journal.md #115: v4l2-relayd bug #2166611 -- the
+            # only task was the plain 'v4l2-relayd (Ubuntu): Confirmed',
+            # but the attached 0ubuntu2 debdiff targeted a stable series
+            # explicitly; Checks 13/14 evaluated the proposed version
+            # against the archive fine, but this check never got a
+            # chance to ask "did the fix land in devel first?" at all).
+            # Reuse _sru_proposal_inputs_bug's own suite extraction
+            # (Checks 13/14) rather than re-deriving it here.
+            fallback = _sru_proposal_inputs_bug(bug, lp_client)
+            if fallback is None:
+                logger.debug(
+                    "check_sru_newer_series: no open series-specific task, "
+                    "and the attachment-derived fallback couldn't determine "
+                    "a target series; can't determine."
+                )
+                return None
+            if fallback is False:
+                logger.debug(
+                    "check_sru_newer_series: no open series-specific task "
+                    "and no SRU-shaped attachment; not an SRU (or nothing "
+                    "left to do)."
+                )
+                return False
+            package, suite, _version, _entry = fallback
+            open_series = [suite]
         devel_name = archive_lookup.devel_codename(lp_client.lp)
         if devel_name is None:
             return None

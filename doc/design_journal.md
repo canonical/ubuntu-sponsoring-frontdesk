@@ -2127,3 +2127,157 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   Pure prompt-text change -- no plumbing touched, no test asserts on
   this exact wording (prompt content isn't unit-tested verbatim). 571
   tests unchanged, lint/format clean.
+
+## 112. Check 1: a Closed Task Doesn't Mean Every Linked MP Is Reviewed
+
+* **Trigger (live, seb128, declined at the confirmation prompt):**
+  `check_administrative_state` closed and unsubscribed
+  backport-iwlwifi-dkms bug #2166733 -- "uploaded and awaiting release
+  (backport-iwlwifi-dkms (Ubuntu): Fix Committed)" -- but seb128 flagged
+  it was wrong: "there is a link merge request which hasn't been
+  reviewed and a new debdiff for a 0ubuntu2 version which is a follow
+  up for the 0ubuntu1 uploaded."
+* **Confirmed live** (read-only `lp` query against the real bug, not
+  guessed): one Ubuntu task, Fix Committed; two debdiff attachments
+  (`0ubuntu1`, `0ubuntu2`); two linked MPs -- #511049 (`Merged`, the
+  0ubuntu1 fix that closed the task) and **#511345, still `Needs
+  review`** (the 0ubuntu2 follow-up). Root cause: `check_
+  administrative_state`'s bug-side path only ever looked at the bug's
+  own Ubuntu task status(es) -- but a single task can only reflect the
+  *most recent* transition. A task going Fix Committed when the FIRST
+  MP merged says nothing about whether a SECOND, later MP on the same
+  bug has been reviewed; this check had no notion of "linked MP" at
+  all, unlike `check_nothing_to_sponsor` (#46/#82), which already
+  computes exactly this "live (non-Merged, non-inactive) linked MP"
+  set for a different reason.
+* **Fix:** before treating an all-closed-and-landed bug as
+  administratively done, check for any linked MP still `live` (not
+  Merged, not in `_INACTIVE_MP_STATUSES`) -- reusing the identical
+  `live_mps` filter `check_nothing_to_sponsor` already established,
+  not inventing a new one. If any live MP remains, return `False`
+  (leave it be) rather than closing; a genuine lookup failure on
+  `bug.linked_merge_proposals` returns `None` (retriable), a new
+  return value for this check (its docstring updated -- it never
+  returned `None` before).
+* **Not fully self-healing via facts, worth naming rather than
+  glossing over:** once the follow-up MP eventually merges or is
+  rejected, this check will correctly re-evaluate to `True` only when
+  the *bug's own* facts change enough to re-trigger a pass (a new
+  comment, a task-status flip) -- the bug's fingerprint doesn't include
+  its linked MPs' `queue_status`. In practice this isn't a live
+  problem: the follow-up MP itself is a separate queue entry, triaged
+  on its own URL every `--all` pass regardless of the bug's facts, so
+  it won't sit unreviewed -- but the bug entry specifically could
+  in principle keep returning `False` a while after the MP resolves,
+  until something about the bug itself also changes. Not fixed now;
+  named so it isn't mistaken for a full fix if it comes up again.
+* Tests: 575 total (4 new: live MP blocks closing, a Merged-only linked
+  MP doesn't, Rejected/Superseded-only linked MPs don't, a
+  `linked_merge_proposals` lookup failure is inconclusive not a
+  guess). Lint/format clean.
+
+## 113. SYNCED Close Doesn't Need an Unsubscribe Either
+
+* **Trigger (live, seb128, bitshuffle bug #2167281):** at the
+  confirmation prompt, seb128 declined the `unsubscribe ~ubuntu-
+  sponsors` write after accepting the comment and the Fix Released
+  task-status change: "if we close as fix released no need to also
+  unsubscribe sponsors."
+* **Same principle #75 already established, just a different code
+  path that never got it:** `check_administrative_state`'s own
+  Fix-Released handling is silent and deliberately skips unsubscribing
+  -- "the bug drops off the next sponsoring-report build on its own...
+  unsubscribing changes nothing" (#75). `main.py`'s SYNCED handler
+  (the sync-request archive-check close, `_triage_sync`'s "already
+  synced" outcome) sets the exact same Fix Released status but had
+  always unsubscribed anyway, inherited unchanged from before #75
+  established the silent convention -- a leftover inconsistency, not a
+  new design decision.
+* **Fix:** dropped the `unsubscribe_sponsors` call from the SYNCED
+  branch; comment + Fix Released only, matching Check 1's own
+  Fix-Released path exactly.
+* Tests: 575 total, unchanged in count (`test_synced_status.py`'s
+  end-to-end assertion flipped from `unsubscribed == 1` to `== 0`, its
+  module docstring updated). Lint/format clean.
+
+## 114. FF-Classification Wording: Don't Presume No FFe Exists
+
+* **Trigger (live, seb128, magnum-capi-helm MP #511257):** the FFe
+  bullet ("it will need a Feature Freeze Exception... before it can be
+  sponsored") fired flatly, with no awareness of whether an FFe already
+  existed. seb128: "I don't know if the fact that there is a FFe bug
+  linked to the MP/cited in the changelog is something we notice atm,
+  but if we do the wording... needs fixing... If we see there is one
+  and it is not approved yet... we should word it 'once the FFe is
+  approved'... If we don't have the logic to see if it's approved we
+  could be uncommitted about [that]."
+* **Confirmed we had zero FFe detection** -- design_journal.md #52
+  already named this exact gap as backlog ("the fuller #19 FFe check...
+  stays backlog"), so this wasn't a regression, just never built.
+* **Checked the real trigger MP live rather than guessing the
+  convention:** one linked bug, #2167149, titled **"[FFe] Update
+  magnum-capi-helm to 1.4.0 in Stonking"** -- confirming `[FFe]` as the
+  real, human title convention (not tag-based; `tags=[]` on that bug).
+  Its own Ubuntu task was still `New` and its only comment was the
+  submitter's own -- i.e. filed, not yet approved, exactly the case
+  seb128 anticipated.
+* **Scoped deliberately to detection only, not approval-state
+  guessing:** `_linked_ffe_bugs` scans `lp_obj.bugs` for a `[FFe]`-
+  titled bug (metadata-only, no new lookups -- bugs are already
+  linked) and cites it by number. Approval detection (an `~ubuntu-
+  release` member's comment? a specific tag? Launchpad has no single
+  structured signal) was deliberately NOT attempted: guessing wrong
+  and confidently saying "approved" when it isn't is a much worse
+  failure than staying neutral, which is exactly what seb128's own
+  fallback asked for. Wording therefore always asks the sponsor to
+  *confirm* approval rather than asserting either way, whether or not
+  a `[FFe]` bug was found -- the only difference is citing it by number
+  when one is.
+* Tests: 578 total (3 new: cites a linked `[FFe]` bug and never implies
+  none exists, a non-FFe-titled linked bug doesn't get cited and stays
+  neutral, a `bugs` lookup failure fails safe to the neutral wording
+  rather than crashing the MP review). Lint/format clean.
+
+## 115. Check 7's Bug-Side SRU-Shape Detection Was Too Narrow
+
+* **Trigger (live, seb128, v4l2-relayd bug #2166611):** the posted
+  comment bounced on a Check 14 version-precedence problem ("`stonking`
+  currently has `0.2.0-0ubuntu1`, which is not higher than the proposed
+  `0.2.0-0ubuntu2`") while a human reviewer was engaged. seb128: "The
+  outcome there seems off, it should notice that the fix is not in the
+  devel series before picking up on the version used for the SRU" --
+  i.e. Check 7 (fix-lands-in-devel-first) should have caught the deeper
+  problem before Check 14's version-ordering complaint ever became the
+  headline.
+* **Confirmed live why Check 7 never fired at all:** the bug's only
+  task was the plain `v4l2-relayd (Ubuntu): Confirmed` -- no series-
+  specific task (`v4l2-relayd (Ubuntu Resolute)` or similar) at all.
+  `check_sru_newer_series`'s bug-side SRU-shape gate depends entirely
+  on finding one (`_SERIES_TASK_RE`); with none present it concluded
+  "not an SRU" and returned `False` before ever asking whether devel
+  had the fix. Meanwhile Checks 13/14 (#109/#110) derive their own
+  target series independently, straight from the attached debdiff's
+  changelog suite field via `_sru_proposal_inputs_bug` -- so they
+  evaluated the proposed version fine, but Check 7 never got the
+  chance to name the actually-more-fundamental problem first. Two
+  checks, two different signals for "is this SRU-shaped," silently
+  inconsistent with each other.
+* **Fix:** when `check_sru_newer_series`'s bug-side task scan finds no
+  series-specific task, fall back to the same `_sru_proposal_inputs_bug`
+  Checks 13/14 already use, rather than re-deriving suite extraction a
+  third time or giving up. A devel-targeted fallback result is harmless
+  (same reasoning the original task-based path already documented:
+  nothing is newer than devel, so `newer` comes out empty and the check
+  cleanly returns `False`).
+* **Deliberately scoped as a single fallback, not a merge of both
+  signals:** only tried when there are literally zero series-specific
+  tasks. A bug with both a real series task and a differently-targeted
+  attachment is left to the existing task-based path unchanged -- rare
+  enough, and combining both sources correctly would need real
+  priority rules not worth inventing without a live case motivating
+  them.
+* Tests: 581 total (3 new: a debdiff-only SRU shape still gets
+  evaluated and fires on an unhandled newer series, no task and no
+  SRU-shaped attachment stays "not an SRU," an attachment fetch
+  failure during the fallback is inconclusive rather than a guess).
+  Lint/format clean.

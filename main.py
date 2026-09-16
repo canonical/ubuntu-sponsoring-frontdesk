@@ -550,13 +550,15 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             findings.append(checks.Finding("question", message, kind=kind))
 
     if new_status == "SYNCED":
-        logger.info(
-            "Archive check found this already synced. Commenting, closing, and unsubscribing."
-        )
+        # No unsubscribe here (#113, live-found): setting the task Fix
+        # Released already drops the bug off the sponsoring report on its
+        # own, same as check_administrative_state's Fix-Released path
+        # (#75) -- unsubscribing on top of that is a redundant write that
+        # changes nothing, not an extra safety measure.
+        logger.info("Archive check found this already synced. Commenting and closing.")
         lp_client.comment(lp_obj, comment)
         changed = lp_client.set_bug_tasks_fix_released(lp_obj)
         new_facts = facts.apply_task_status_changes(new_facts, changed)
-        lp_client.unsubscribe_sponsors(lp_obj)
         state_manager.update_status(
             url,
             "DONE",

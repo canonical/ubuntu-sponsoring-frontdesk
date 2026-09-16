@@ -39,8 +39,13 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   plain release pocket for `devel`.
 - **FFe (Feature Freeze Exception)** — required after a cycle's Feature
   Freeze date for a sync/upload that introduces a new feature, not just a bug
-  fix. Backlog, not wired in yet (#19); the freeze date itself lives in
-  `release_schedule.py`.
+  fix. The freeze date lives in `release_schedule.py`. Sync-request handling
+  is still backlog (#19); MP-side, `llm_reviewer._linked_ffe_bugs` (#114)
+  detects a linked bug following the standard `[FFe] ...` title convention
+  and cites it by number in the FF-classification bullet, but deliberately
+  does not attempt to tell whether it's been approved (no single reliable
+  Launchpad signal for that) -- the wording always asks the sponsor to
+  confirm, whether or not a `[FFe]` bug was found.
 - **git-ubuntu** — the tool/workflow Ubuntu packaging MPs are built on
   (`source_git_path` naming conventions, its own importer bot). Two
   git-ubuntu-specific quirks this bot works around: it **rejects direct

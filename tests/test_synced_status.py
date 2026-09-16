@@ -1,6 +1,9 @@
-"""SYNCED status: the archive check found the sync already landed. Sets the matching
-Ubuntu task(s) to Fix Released, comments, unsubscribes sponsors, and folds
-the write into facts so it doesn't re-trigger next run."""
+"""SYNCED status: the archive check found the sync already landed. Sets the
+matching Ubuntu task(s) to Fix Released, comments, and folds the write into
+facts so it doesn't re-trigger next run. No unsubscribe (#113): Fix Released
+already drops the bug off the sponsoring report on its own, same as
+check_administrative_state's Fix-Released path (#75) -- an unsubscribe on
+top of that would be a redundant write."""
 
 from fakes import FakeAudit, FakeBug, FakeLLM, FakeRoot, FakeTask, FakeTriageClient
 
@@ -93,7 +96,7 @@ def test_synced_bug_closed_end_to_end(tmp_path):
 
     assert lp.comments == ["Already synced, closing."]
     assert bug.bug_tasks[0].status == "Fix Released"
-    assert getattr(lp, "unsubscribed", 0) == 1
+    assert getattr(lp, "unsubscribed", 0) == 0
     assert sm.get_status(URL)[0] == "DONE"
 
     # Re-run: facts (task status + description) unchanged by a contributor ->

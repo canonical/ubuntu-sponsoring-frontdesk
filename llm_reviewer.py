@@ -61,6 +61,11 @@ _MP_TARGET_SERIES_RE = re.compile(
     r"(?:-(?:devel|proposed|updates|security|backports))?$"
 )
 
+# The standard human title convention for a Feature Freeze Exception
+# request, e.g. "[FFe] Update foo to 1.4.0 in Stonking" (design #114,
+# found live: magnum-capi-helm MP #511257 / bug #2167149).
+_FFE_BUG_TITLE_RE = re.compile(r"^\s*\[\s*ffe\s*\]", re.IGNORECASE)
+
 
 def _is_sru(tags, description):
     """True if the bug looks like a Stable Release Update."""
@@ -1104,6 +1109,23 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         devel = archive_lookup.devel_codename(self.lp) if self.lp else None
         return series != devel
 
+    def _linked_ffe_bugs(self, lp_obj):
+        """Bug numbers among lp_obj's linked bugs whose title reads as a
+        Feature Freeze Exception request (design #114) -- the standard
+        '[FFe] ...' title convention, best-effort and metadata-only (no
+        new lookups: bugs are already linked). Deliberately does NOT try
+        to tell whether the FFe has been approved -- that would mean
+        guessing at release-team comment/tagging conventions, and a
+        wrong "yes, approved" is a much worse failure than staying
+        neutral; callers phrase around this bug existing, not around its
+        approval state. Fails safe to an empty list (treated the same as
+        "no FFe bug found") on any lookup failure."""
+        try:
+            return [bug.id for bug in lp_obj.bugs if _FFE_BUG_TITLE_RE.match(bug.title or "")]
+        except Exception as e:
+            logger.debug("_linked_ffe_bugs: couldn't read linked bugs (%s); assuming none.", e)
+            return []
+
     def _sru_template_check_for_mp(self, lp_obj):
         """
         For an SRU-shaped MP (#86), every bug it's linked to must follow the
@@ -1344,16 +1366,32 @@ mismatches:     # question 2 only: stanza/diff mismatches -- would matter if rea
         if feature:
             logger.info("MP review: LLM classified this change as a feature.")
             if check_feature:
-                bullets.append(
-                    (
-                        "verify",
+                # #114, found live (magnum-capi-helm MP #511257): the old
+                # wording ("it will need a Feature Freeze Exception...")
+                # flatly implied none existed, even when one was already
+                # linked and just not yet approved. Cite it by number when
+                # found; stay neutral about approval either way (see
+                # _linked_ffe_bugs's own docstring for why).
+                ffe_bugs = self._linked_ffe_bugs(lp_obj)
+                if ffe_bugs:
+                    bug_list = ", ".join(f"#{b}" for b in ffe_bugs)
+                    message = (
                         "This change appears to introduce a new feature, and "
-                        "Feature Freeze is in effect -- it will need a Feature "
-                        "Freeze Exception approved by the release team "
-                        "(https://ubuntu.com/project/docs/release-team/freezes/) "
-                        "before it can be sponsored.",
+                        "Feature Freeze is in effect. It looks like this links "
+                        f"to a Feature Freeze Exception request ({bug_list}) -- "
+                        "please confirm that has been approved by the release "
+                        "team (https://ubuntu.com/project/docs/release-team/"
+                        "freezes/) before this is sponsored."
                     )
-                )
+                else:
+                    message = (
+                        "This change appears to introduce a new feature, and "
+                        "Feature Freeze is in effect -- please confirm there's "
+                        "an approved Feature Freeze Exception "
+                        "(https://ubuntu.com/project/docs/release-team/"
+                        "freezes/) covering it before this is sponsored."
+                    )
+                bullets.append(("verify", message))
 
         if bullets:
             return "ADVISORY", bullets

@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-09-11_
+_Last updated: 2026-09-16_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -1222,6 +1222,54 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   was a maintainability fix, not a performance one).
 - Tests: 571 total (16 new for Check 14, tier assertions updated for
   Check 13). Lint/format clean.
+
+## MP content review + Check 1/SYNCED/FFe/Check-7 fixes (2026-09-16, #111-#115)
+
+- **MP content review: update-maintainer isn't an unmentioned change**
+  (#111, live-found, interimap MP #511434): the LLM's stanza/diff
+  consistency prompt had no exception for Ubuntu's standard, automated
+  `update-maintainer` convention (`Maintainer:`/`XSBC-Original-
+  Maintainer` in `debian/control`), so it flagged it as an unmentioned
+  separate change. `checks.check_xsbc_original_maintainer` (Check 12)
+  already knows this convention, but that knowledge isn't reachable
+  from `llm_reviewer.py`'s own prompt. One sentence added to the
+  prompt's existing "do NOT flag" list. Pure prompt-text change.
+- **Check 1: a closed Ubuntu task doesn't mean every linked MP is
+  reviewed** (#112, live-found, declined at the confirmation prompt:
+  backport-iwlwifi-dkms bug #2166733): `check_administrative_state`
+  closed and unsubscribed the bug on "Fix Committed" alone, but a
+  second, unreviewed MP (#511345, a `0ubuntu2` follow-up on top of the
+  already-merged `0ubuntu1` fix that had closed the task) was still
+  live on the same bug. A single task can only reflect the most recent
+  transition -- fixed by checking for any live (non-Merged,
+  non-inactive) linked MP first, reusing `check_nothing_to_sponsor`'s
+  own `live_mps` filter rather than inventing a new one. Returns
+  `False` (leave it) when one exists, `None` (new for this check) on a
+  genuine `linked_merge_proposals` lookup failure.
+- Tests: 575 total (4 new for #112). Lint/format clean.
+- **SYNCED close no longer unsubscribes** (#113, live-found, bitshuffle
+  bug #2167281): the sync-request archive-check close set the task Fix
+  Released and then unsubscribed anyway -- a leftover inconsistency
+  with #75's already-established rule that a Fix Released bug drops
+  off the sponsoring report on its own, making the unsubscribe a
+  redundant write. Dropped from the SYNCED branch in `main.py`.
+- **FF-classification wording no longer presumes no FFe exists** (#114,
+  live-found, magnum-capi-helm MP #511257): the bullet now scans the
+  MP's linked bugs for the standard `[FFe]` title convention and cites
+  it by number when found, staying deliberately neutral about approval
+  either way (Launchpad has no single reliable "approved" signal to
+  check, and a wrong "yes" would be worse than asking the sponsor to
+  confirm). Closes part of the #19/#52 FFe backlog note (detection, not
+  approval-state checking). Tests: 578 total (3 new).
+- **Check 7's bug-side SRU-shape detection was too narrow** (#115,
+  live-found, v4l2-relayd bug #2166611): a bug with no series-specific
+  task at all but an SRU-shaped debdiff attachment was treated as "not
+  an SRU," so Check 7 never asked whether the fix had landed in devel
+  first -- only Checks 13/14's version-precedence complaint surfaced,
+  which was real but not the actual root cause. Falls back to the same
+  attachment-derived suite detection Checks 13/14 already use
+  (`_sru_proposal_inputs_bug`) when no series task exists. Tests: 581
+  total (3 new).
 
 ## Known residual edges (documented in code)
 

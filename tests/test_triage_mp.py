@@ -314,6 +314,66 @@ def test_devel_series_named_by_codename_still_gets_the_ff_question(monkeypatch):
     assert "Feature Freeze Exception" in payload[0][1]
 
 
+def test_feature_after_freeze_cites_linked_ffe_bug(monkeypatch):
+    # #114, found live (magnum-capi-helm MP #511257 / bug #2167149): a
+    # linked bug titled "[FFe] ..." is cited by number, and the wording
+    # stays neutral about whether it's actually been approved.
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+    ffe_bug = FakeBug(id=2167149, title="[FFe] Update foo to 1.4.0 in Stonking")
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, payload = r.triage_mp(FakeMP(bugs=[ffe_bug]), diff_text=MERGE_DIFF)
+    assert status == "ADVISORY"
+    kind, message = payload[0]
+    assert kind == "verify"
+    assert "#2167149" in message
+    assert "please confirm that has been approved" in message
+    # Never assert or imply an FFe doesn't exist when one is linked.
+    assert "it will need a Feature Freeze Exception" not in message
+
+
+def test_feature_after_freeze_with_no_linked_ffe_bug_stays_neutral(monkeypatch):
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+    other_bug = FakeBug(id=42, title="Some unrelated bug")
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, payload = r.triage_mp(FakeMP(bugs=[other_bug]), diff_text=MERGE_DIFF)
+    assert status == "ADVISORY"
+    kind, message = payload[0]
+    assert kind == "verify"
+    assert "#42" not in message
+    assert "please confirm there's an approved Feature Freeze Exception" in message
+
+
+def test_feature_after_freeze_linked_bug_lookup_failure_falls_back_to_neutral(monkeypatch):
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+
+    class _BrokenBugsMP(FakeMP):
+        @property
+        def bugs(self):
+            raise TimeoutError("simulated Launchpad timeout")
+
+        @bugs.setter
+        def bugs(self, value):
+            pass
+
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, payload = r.triage_mp(_BrokenBugsMP(), diff_text=MERGE_DIFF)
+    assert status == "ADVISORY"
+    kind, message = payload[0]
+    assert "please confirm there's an approved Feature Freeze Exception" in message
+
+
 def test_feature_before_freeze_stays_quiet(monkeypatch):
     monkeypatch.setattr(
         release_schedule,

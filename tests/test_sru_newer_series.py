@@ -200,6 +200,52 @@ def test_series_attachment_content_does_not_match_the_wrong_series():
     assert "stonking" not in finding.message
 
 
+_RESOLUTE_DEBDIFF = """\
+diff -Nru testpkg-1.2/debian/changelog testpkg-1.2/debian/changelog
+--- testpkg-1.2/debian/changelog\t2026-06-01 10:00:00.000000000 +0200
++++ testpkg-1.2/debian/changelog\t2026-07-11 10:00:00.000000000 +0200
+@@ -1,3 +1,7 @@
++testpkg (1.2-4ubuntu1) resolute; urgency=medium
++
++  * Fix things.
++
++ -- Dev <dev@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ testpkg (1.2-3) resolute; urgency=medium
+"""
+
+
+def test_no_series_task_but_sru_shaped_attachment_is_still_evaluated():
+    # #115, found live (v4l2-relayd bug #2166611): the bug's only task was
+    # the plain 'testpkg (Ubuntu)' -- no series-specific task at all -- but
+    # the attached debdiff's changelog stanza named a stable series
+    # (resolute) directly. Must still ask whether stonking (newer) got the
+    # fix first, not silently pass as "not an SRU" the way the bare task
+    # alone would suggest.
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu)", "Confirmed")],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", content=_RESOLUTE_DEBDIFF)],
+    )
+    finding = checks.check_sru_newer_series("url", bug, _LP(), FakeLLM())
+    assert finding and "stonking" in finding.message
+
+
+def test_no_series_task_and_no_sru_shaped_attachment_is_still_not_an_sru():
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu)", "Confirmed")],
+        attachments=[FakeAttachment("notes.txt", type="Unspecified", content="just some notes")],
+    )
+    assert checks.check_sru_newer_series("url", bug, _LP(), FakeLLM()) is False
+
+
+def test_no_series_task_attachment_fetch_failure_is_inconclusive():
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu)", "Confirmed")],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", fail_fetch=True)],
+    )
+    assert checks.check_sru_newer_series("url", bug, _LP(), FakeLLM()) is None
+
+
 # --- the removed-package exemption (#69) --------------------------------------
 
 
