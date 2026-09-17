@@ -2367,3 +2367,25 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   bounces` reworded to assert the new "doesn't appear to have landed"
   phrasing and explicitly assert the old "doesn't look safe" wrapper is
   gone). Lint/format clean.
+
+## 118. Check 7 Wording: "No Evidence", Not "Isn't Fixed"
+
+* **Trigger (live, seb128, python3-defaults MP #511350, SRU to jammy):**
+  Check 7 flagged resolute as unfixed. Bug #2078356's plain
+  `python3-defaults (Ubuntu)` task was Fix Released, noble was covered
+  by a linked MP, resolute had no task and the description never named
+  it -- so mechanical evidence and the LLM text check both came up
+  empty, which is correct. The problem was the wording: "It seems like
+  this bug isn't fixed in ... resolute" asserts a fact we don't have.
+* **Considered and rejected (seb128):** inferring coverage from the
+  plain task's `date_fix_released` vs series release dates, or treating
+  "plain task Fix Released + no series task" as covered. seb128 prefers
+  keeping the evidence model as is (series task / linked MP / debdiff /
+  explicit mention in the description, by codename or version, incl.
+  "fixed in X and newer" -- already what `review_fixed_in_newer_series`
+  asks) and simply stating the absence of evidence.
+* **Fix:** wording only -- "There is no evidence of this issue being
+  resolved in resolute, which is a supported series (<SRU requirements
+  link>). Please make sure to check, and explicitly reflect it in the
+  bug description or the bug status." Plural-aware. Tier/kind unchanged
+  (question/verify). 583 tests (3 assertions updated), lint clean.

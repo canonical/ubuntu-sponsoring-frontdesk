@@ -89,7 +89,7 @@ def test_mp_targeting_a_pocket_branch_is_an_sru(monkeypatch):
     bug = _bug([FakeTask("testpkg (Ubuntu Jammy)", "In Progress")])
     mp = _sru_mp([bug], target="refs/heads/ubuntu/jammy-updates")
     finding = checks.check_sru_newer_series("url", mp, _LP(), FakeLLM())
-    assert finding and "noble, resolute, stonking" in finding.message
+    assert finding and "noble, resolute and stonking" in finding.message
 
 
 def test_mp_targeting_devel_is_not_an_sru():
@@ -300,7 +300,7 @@ def test_absence_from_target_series_disables_the_exemption():
     llm = FakeLLM()
     lp = _lp_with_archive(set())
     finding = checks.check_sru_newer_series("url", _sru_mp([_open_sru_bug()]), lp, llm)
-    assert "resolute, stonking" in finding.message
+    assert "resolute and stonking" in finding.message
 
 
 # --- unhandled newer series: the LLM escape hatch ------------------------------
@@ -320,8 +320,8 @@ def test_unhandled_newer_series_fires_the_advisory():
     # the advisory bucket's "non-blocking... nice to have" framing
     # contradicted).
     assert finding.tier == "question" and finding.kind == "verify"
-    assert "resolute, stonking" in finding.message
-    assert "SRU policy" in finding.message
+    assert "resolute and stonking" in finding.message
+    assert "no evidence" in finding.message and "supported series" in finding.message
     # The LLM was asked exactly about the unhandled series, labeled with
     # their release versions (codenames postdate its training data).
     assert llm.newer_series_queries[0][1] == [

@@ -2984,15 +2984,17 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         target_series,
         series_list,
     )
+    # #118 (live, python3-defaults MP #511350): state what we actually know
+    # -- no evidence -- rather than asserting the series isn't fixed.
+    plural = len(unhandled) > 1
+    series_words = f"{', '.join(unhandled[:-1])} and {unhandled[-1]}" if plural else unhandled[0]
     return Finding(
         "question",
-        f"It seems like this bug isn't fixed in the newer Ubuntu series "
-        f"({series_list}) yet, which SRU policy requires "
+        f"There is no evidence of this issue being resolved in {series_words}, "
+        f"which {'are supported series' if plural else 'is a supported series'} "
         "(https://ubuntu.com/project/docs/SRU/reference/requirements). "
-        "Please check whether it's fixed there, and reflect the status "
-        "clearly in the bug description (and the bug tasks, if you have "
-        "the rights to nominate them). If it isn't fixed yet, the newer "
-        "series should be updated before this SRU.",
+        "Please make sure to check, and explicitly reflect it in the bug "
+        "description or the bug status.",
         kind="verify",
     )
 
