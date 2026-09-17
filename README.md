@@ -96,3 +96,9 @@ If the bot posted something wrong on your bug or merge proposal, please
 file an issue with the Launchpad URL -- every action the bot takes is
 recorded in its audit trail and can be traced. You can also simply reply
 on the bug/MP: the bot backs off as soon as a human reviewer engages.
+
+## License
+
+Copyright (C) 2026 Canonical Ltd.
+
+GPL-3.0-only; see [COPYING](COPYING) for the full text.
