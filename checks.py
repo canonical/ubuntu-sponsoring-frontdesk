@@ -3668,7 +3668,25 @@ def check_sru_version_suffix_convention(url, lp_obj, lp_client):
         return None
     if result is False:
         return False
-    package, target_series, _proposed_version, proposed_entry = result
+    package, target_series, proposed_version, proposed_entry = result
+
+    # #119 (live, python3-defaults MP #511350): `~YY.MM.N` is the documented
+    # convention for backports from the development release
+    # (version-strings/#backporting-from-the-development-release), which
+    # ubuntu-lint doesn't know. Recognise the obvious shape only; whether
+    # it really is a backport is the sponsor's call.
+    series_order = archive_lookup.supported_series_ordered(lp_client.lp)
+    if series_order is None:
+        return None
+    release = dict(series_order).get(target_series)
+    if release and re.search(rf"~{re.escape(release)}\.\d+$", proposed_version):
+        logger.debug(
+            "check_sru_version_suffix_convention: %r uses the ~%s.N backport "
+            "convention; skipping.",
+            proposed_version,
+            release,
+        )
+        return False
 
     return _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry)
 

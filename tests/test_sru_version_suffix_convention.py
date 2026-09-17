@@ -200,3 +200,19 @@ def test_bug_unfetchable_attachment_is_inconclusive():
         attachments=[FakeAttachment("fix.debdiff", fail_fetch=True)],
     )
     assert checks.check_sru_version_suffix_convention(URL, bug, _LP()) is None
+
+
+def test_backport_from_devel_convention_is_accepted(monkeypatch):
+    # #119: `~YY.MM.N` is the documented backport-from-devel convention
+    # (live: python3-defaults 3.10.6-1~22.04.2 for jammy). The conftest
+    # pins noble to 24.04.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG)
+    mp = _mp_with_diff(_diff_for("1.2-3~24.04.2"))
+    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
+
+
+def test_backport_suffix_for_another_series_still_advises(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG)
+    mp = _mp_with_diff(_diff_for("1.2-3~22.04.2"))
+    finding = checks.check_sru_version_suffix_convention(URL, mp, _LP())
+    assert finding and finding.kind == "advisory"

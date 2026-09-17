@@ -2389,3 +2389,22 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   link>). Please make sure to check, and explicitly reflect it in the
   bug description or the bug status." Plural-aware. Tier/kind unchanged
   (question/verify). 583 tests (3 assertions updated), lint clean.
+
+## 119. Check 13: Accept the `~YY.MM.N` Backport-From-Devel Convention
+
+* **Trigger (live, seb128, python3-defaults MP #511350, jammy):**
+  `3.10.6-1~22.04.2` got the "doesn't follow the recommended convention"
+  advisory, but it follows the documented scheme for backports from the
+  development release
+  (https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/#backporting-from-the-development-release),
+  already used by the current -updates upload. ubuntu-lint's
+  `check_sru_version_string_convention` only knows the `ubuntu0.N` shape.
+* **Fix (seb128: catch obvious cases, the sponsor checks the content):**
+  before calling ubuntu-lint, skip when the proposed version ends in
+  `~<target series release>.<N>` (release from distro-info, already used
+  elsewhere). Deliberately a shape match only -- it doesn't verify the
+  upload really is a backport from devel. A `~YY.MM.N` suffix for a
+  different series still gets the advisory.
+* Worth reporting upstream to ubuntu-lint so its check knows this
+  convention too.
+* Tests: 585 total (2 new). Lint/format clean.
