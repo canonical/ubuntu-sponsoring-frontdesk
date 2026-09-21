@@ -1366,32 +1366,29 @@ mismatches:     # question 2 only: stanza/diff mismatches -- would matter if rea
         if feature:
             logger.info("MP review: LLM classified this change as a feature.")
             if check_feature:
-                # #114, found live (magnum-capi-helm MP #511257): the old
-                # wording ("it will need a Feature Freeze Exception...")
-                # flatly implied none existed, even when one was already
-                # linked and just not yet approved. Cite it by number when
-                # found; stay neutral about approval either way (see
-                # _linked_ffe_bugs's own docstring for why).
+                # #120 (live, magnum-capi-helm MP #511257): a linked
+                # "[FFe] ..." bug means the contributor already filed the
+                # exception -- telling them about it is noise, so stay
+                # silent. Approval status isn't checked (see
+                # _linked_ffe_bugs); that's the sponsor's call.
                 ffe_bugs = self._linked_ffe_bugs(lp_obj)
                 if ffe_bugs:
-                    bug_list = ", ".join(f"#{b}" for b in ffe_bugs)
-                    message = (
-                        "This change appears to introduce a new feature, and "
-                        "Feature Freeze is in effect. It looks like this links "
-                        f"to a Feature Freeze Exception request ({bug_list}) -- "
-                        "please confirm that has been approved by the release "
-                        "team (https://ubuntu.com/project/docs/release-team/"
-                        "freezes/) before this is sponsored."
+                    logger.info(
+                        "MP review: feature, but a Feature Freeze Exception "
+                        "request is linked (%s); not flagging.",
+                        ", ".join(f"#{b}" for b in ffe_bugs),
                     )
                 else:
-                    message = (
-                        "This change appears to introduce a new feature, and "
-                        "Feature Freeze is in effect -- please confirm there's "
-                        "an approved Feature Freeze Exception "
-                        "(https://ubuntu.com/project/docs/release-team/"
-                        "freezes/) covering it before this is sponsored."
+                    bullets.append(
+                        (
+                            "verify",
+                            "This change appears to introduce a new feature, and "
+                            "Feature Freeze is in effect -- please confirm there's "
+                            "an approved Feature Freeze Exception "
+                            "(https://ubuntu.com/project/docs/release-team/"
+                            "freezes/) covering it before this is sponsored.",
+                        )
                     )
-                bullets.append(("verify", message))
 
         if bullets:
             return "ADVISORY", bullets

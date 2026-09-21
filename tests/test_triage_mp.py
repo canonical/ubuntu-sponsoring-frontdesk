@@ -314,10 +314,9 @@ def test_devel_series_named_by_codename_still_gets_the_ff_question(monkeypatch):
     assert "Feature Freeze Exception" in payload[0][1]
 
 
-def test_feature_after_freeze_cites_linked_ffe_bug(monkeypatch):
-    # #114, found live (magnum-capi-helm MP #511257 / bug #2167149): a
-    # linked bug titled "[FFe] ..." is cited by number, and the wording
-    # stays neutral about whether it's actually been approved.
+def test_feature_after_freeze_with_linked_ffe_bug_stays_silent(monkeypatch):
+    # #120, found live (magnum-capi-helm MP #511257 / bug #2167149): the
+    # contributor already filed the FFe -- nothing to tell them.
     monkeypatch.setattr(
         release_schedule,
         "FEATURE_FREEZE",
@@ -325,14 +324,8 @@ def test_feature_after_freeze_cites_linked_ffe_bug(monkeypatch):
     )
     ffe_bug = FakeBug(id=2167149, title="[FFe] Update foo to 1.4.0 in Stonking")
     r = ScriptedReviewer(_reply(feature="yes"))
-    status, payload = r.triage_mp(FakeMP(bugs=[ffe_bug]), diff_text=MERGE_DIFF)
-    assert status == "ADVISORY"
-    kind, message = payload[0]
-    assert kind == "verify"
-    assert "#2167149" in message
-    assert "please confirm that has been approved" in message
-    # Never assert or imply an FFe doesn't exist when one is linked.
-    assert "it will need a Feature Freeze Exception" not in message
+    status, _ = r.triage_mp(FakeMP(bugs=[ffe_bug]), diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
 
 
 def test_feature_after_freeze_with_no_linked_ffe_bug_stays_neutral(monkeypatch):

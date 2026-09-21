@@ -2408,3 +2408,16 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Worth reporting upstream to ubuntu-lint so its check knows this
   convention too.
 * Tests: 585 total (2 new). Lint/format clean.
+
+## 120. FF Classification: Stay Silent When an FFe Request Is Linked
+
+* **Trigger (live, seb128, magnum-capi-helm MP #511257, same MP as
+  #114):** after #114 the bullet cited the linked `[FFe]` bug and asked
+  to confirm its approval. seb128: "we detected there is a FFe request,
+  it is pending, no point telling the contributors about it, he knows."
+* **Fix:** when `_linked_ffe_bugs` finds a linked `[FFe]`-titled bug,
+  add no finding (logged only). The neutral "please confirm there's an
+  approved FFe" bullet still fires when a feature is classified post-FF
+  and no FFe request is linked. Approval state is still not checked;
+  that remains the sponsor's call.
+* Tests: 585 total (1 rewritten: linked FFe bug -> READY_FOR_HUMAN).
