@@ -2271,6 +2271,36 @@ def _classify_against_publication(url, lp_obj, lp_client, package, version, prop
     )
 
     if same_content:
+        # #121 (live, rust-coreutils MP #511575): the grace defer, the #49
+        # rich-history diagnosis and the #48 "importer didn't auto-close"
+        # ping all assume git-ubuntu will auto-close the MP. A debian/*-
+        # targeted MP never lands on its target branch, so none of them
+        # apply: just say it's uploaded and can be closed.
+        target = getattr(lp_obj, "target_git_path", "") or ""
+        if _DEBIAN_MERGE_TARGET_RE.search(target):
+            logger.info(
+                "[%s] version %r already published with matching content; "
+                "debian/* target, so no autoclose expected. Commenting.",
+                url,
+                version,
+            )
+            lp_client.comment(
+                lp_obj,
+                "Thanks for your contribution! This change was already "
+                f"uploaded to the archive as `{package} {version}` "
+                f"({archive_lookup.published_source_url(package, version)}), "
+                "so this merge proposal can be closed.",
+            )
+            # The bot can't set queue_status on git-ubuntu MPs (#25), and
+            # nothing will close this one on its own -- ask the git-ubuntu
+            # maintainers to (seb128).
+            notify.notify(
+                f":information_source: {url} targets `{target}` and was "
+                f"uploaded as `{package} {version}`; git-ubuntu doesn't "
+                "auto-close debian/* MPs, so it needs to be closed manually."
+            )
+            return "done"
+
         date_published = getattr(pub, "date_published", None)
         if date_published is not None:
             try:

@@ -275,3 +275,48 @@ def test_b_no_proposed_sha_falls_through(tmp_path, monkeypatch, posts):
     assert lp.comments == []
     assert len(posts) == 1
     assert "did not auto-close" in posts[0]
+
+
+# --- debian/* targets: no autoclose expected, so none of it applies (#121) ---
+
+
+def _debian_target(mp):
+    mp.target_git_path = "refs/heads/debian/sid"
+    return mp
+
+
+def test_debian_target_gets_plain_close_comment_no_vcs_note(tmp_path, monkeypatch, posts):
+    # Live (rust-coreutils MP #511575): the Vcs-headers note and the
+    # "importer didn't auto-close" ping assume an ubuntu/* target.
+    _configure_webhook(tmp_path, monkeypatch)
+    notify.setup(True)
+    mp = _debian_target(_already_uploaded_mp(monkeypatch, vcs_keys={}))
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert len(lp.comments) == 1
+    assert "can be closed" in lp.comments[0]
+    assert "Vcs" not in lp.comments[0]
+    # No Vcs/importer-failure ping, but the git-ubuntu maintainers still
+    # need to close it manually.
+    assert len(posts) == 1
+    assert "closed manually" in posts[0]
+    assert "debian/sid" in posts[0]
+    assert "rich history" not in posts[0]
+
+
+def test_debian_target_skips_the_autoclose_grace_period(monkeypatch, posts):
+    import datetime
+
+    notify.setup(True)
+    recent = datetime.datetime.now(datetime.timezone.utc)
+    test_mp_checks._patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=test_mp_checks._ARCHIVE_CHANGELOG_MATCHING,
+        pub=type("P", (), {"date_published": recent, "status": "Published"})(),
+    )
+    monkeypatch.setattr(archive_lookup, "changes_file_vcs_keys", lambda pub: {})
+    mp = _debian_target(test_mp_checks._merge_mp_with_diff(test_mp_checks._CHANGELOG_DIFF_V124))
+    lp = test_mp_checks._LP()
+    assert checks.check_stale_version("url", mp, lp) == "done"
+    assert len(lp.comments) == 1

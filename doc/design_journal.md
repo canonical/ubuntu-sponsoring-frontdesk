@@ -2421,3 +2421,30 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   and no FFe request is linked. Approval state is still not checked;
   that remains the sponsor's call.
 * Tests: 585 total (1 rewritten: linked FFe bug -> READY_FOR_HUMAN).
+
+## 121. Already-Uploaded MPs Targeting debian/*: No Autoclose Assumptions
+
+* **Trigger (live, seb128, rust-coreutils MP #511575, target
+  `debian/sid`):** the "already uploaded, can be closed" comment carried
+  the #49 sponsor note about missing Vcs headers. seb128: "the Vcs-
+  section doesn't apply when target branch is debian/...".
+* **Root cause:** three behaviours in `_classify_against_publication`'s
+  matching-content path all assume git-ubuntu's importer will auto-close
+  the MP once the upload lands -- the 24h grace defer (#43), the #49
+  rich-history diagnosis (A/B1/B2, with its operator pings) and the #48
+  fallback ("importer did not auto-close" operator ping, silent on the
+  MP). A `debian/*`-targeted MP never lands on its target branch, so
+  none of that applies and all three would mislead (a Vcs note that
+  can't matter, a false importer alarm, a pointless 24h wait).
+* **Fix (seb128 chose all three):** for a target matching
+  `_DEBIAN_MERGE_TARGET_RE` (the same `debian/(sid|experimental)` pattern
+  `check_target_branch` uses), post the plain "already uploaded as
+  `pkg ver` (<link>), so this merge proposal can be closed" comment
+  immediately and return "done". `ubuntu/*` targets unchanged.
+* **Operator ping kept, adapted (seb128's follow-up):** nothing closes a
+  `debian/*` MP on its own and the bot can't set `queue_status` (#25),
+  so it still notifies the git-ubuntu maintainers -- as a plain "was
+  uploaded, doesn't auto-close, needs closing manually" note rather
+  than the #48/#49 importer-failure wording.
+* Tests: 587 total (2 new: debian target gets the plain comment with no
+  Vcs note and no operator ping; a fresh upload isn't deferred).
