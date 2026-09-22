@@ -580,3 +580,35 @@ def test_main_passes_memoized_diff_text_to_triage_mp(tmp_path):
 
     main.triage_url(URL, sm, lp, RecordingLLM())
     assert seen["diff_text"] == CLEAN_DIFF_TEXT
+
+
+def test_version_bounce_skips_the_convention_advisory(tmp_path, monkeypatch):
+    # #122 (live, alsa-ucm-conf MP #509669): Check 6 bounced the version as
+    # a duplicate; Check 12's "doesn't follow the convention, expected
+    # <bumped version>" is that same rebase, said twice.
+    import archive_lookup
+    import checks
+    import test_mp_checks
+
+    called = []
+    monkeypatch.setattr(
+        checks,
+        "check_sru_version_suffix_convention",
+        lambda *a: called.append(a) or False,
+    )
+    monkeypatch.setattr(checks, "check_sru_version_newer_series_precedence", lambda *a: False)
+    test_mp_checks._patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=test_mp_checks._ARCHIVE_CHANGELOG_DIFFERENT,
+    )
+    monkeypatch.setattr(archive_lookup, "changes_file_vcs_keys", lambda pub: None)
+    sm = StateManager(db_path=str(tmp_path / "state.db"))
+    mp = test_mp_checks._merge_mp_with_diff(test_mp_checks._CHANGELOG_DIFF_V124)
+    lp = FakeTriageClient(objects={URL: mp})
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    assert called == []
+    assert "rebased" in lp.comments[0]
+    assert "convention" not in lp.comments[0]

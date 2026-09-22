@@ -310,6 +310,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         findings.append(result)
 
     # Check 6: proposed version vs. archive (stale / already-uploaded).
+    version_bounced = False
     # Mixed tiers: returns a Finding (incomplete -- stale/duplicate version),
     # "done"/"pending" (closing -- already landed), "queued" (uploaded,
     # waiting in the series' upload queue -- deferred, #55), False, or None.
@@ -364,6 +365,12 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         return
     elif outcome:
         findings.append(outcome)
+        # #122 (live, alsa-ucm-conf MP #509669): Check 6 already asked for a
+        # rebase with a new version number, so Check 12's convention advice
+        # about that same version is a consequence of it, not a separate
+        # point -- and its "expected" value is just the bump Check 6 asked
+        # for. Skip it.
+        version_bounced = True
 
     # Check 8: upstream source edited directly instead of via
     # debian/patches (#60). Deterministic, so it runs with checks 1-6
@@ -406,15 +413,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif result:
         findings.append(result)
 
-    # Check 12: SRU version-suffix convention (#109), via ubuntu-lint.
-    # Deterministic, pre-gate.
-    result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)
-    checkpoint("check_sru_version_suffix_convention")
-    logger.debug("check_sru_version_suffix_convention -> %s", result)
-    if result is None:
-        inconclusive = True
-    elif result:
-        findings.append(result)
+    # Check 12: SRU version-suffix convention (#109), via ubuntu-lint --
+    # skipped when Check 6 already bounced the version itself (#122).
+    if not version_bounced:
+        result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)
+        checkpoint("check_sru_version_suffix_convention")
+        logger.debug("check_sru_version_suffix_convention -> %s", result)
+        if result is None:
+            inconclusive = True
+        elif result:
+            findings.append(result)
 
     # Check 14: SRU version-precedence correctness (#110). Deterministic,
     # pre-gate.

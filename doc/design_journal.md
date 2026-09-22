@@ -2448,3 +2448,22 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   than the #48/#49 importer-failure wording.
 * Tests: 587 total (2 new: debian target gets the plain comment with no
   Vcs note and no operator ping; a fresh upload isn't deferred).
+
+## 122. Skip the Convention Advisory When the Version Was Already Bounced
+
+* **Trigger (live, seb128, alsa-ucm-conf MP #509669):** Check 6 bounced
+  `1.2.10-1ubuntu5.15` as a same-version-different-content collision
+  ("needs to be rebased with a new version number"), and Check 12 then
+  added an advisory that the version "doesn't follow the recommended SRU
+  convention: ... does not match expected version 1.2.10-1ubuntu5.16".
+  seb128: "the version warning is a consequence of the first issue and
+  version conflict and the advise seems off". Both true -- ubuntu-lint
+  computes `expected = previous + 1`, so a version that duplicates what's
+  already published always reads as a convention mismatch, and its
+  "expected" value is just the bump Check 6 already asked for.
+* **Fix:** main.py sets `version_bounced` when `check_stale_version`
+  returns a Finding and skips Check 12 in that case -- the same shape as
+  Check 3 being skipped when Check 2 found a wrong target branch (#105).
+  Check 12 still runs whenever the version itself wasn't bounced.
+* Tests: 588 total (1 new: a version-collision bounce leaves the
+  convention check uncalled and the comment free of its wording).
