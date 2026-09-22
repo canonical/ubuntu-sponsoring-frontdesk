@@ -3836,7 +3836,47 @@ def _sru_version_precedence_finding(url, not_landed, reused_elsewhere):
     return Finding("incomplete", "\n".join(parts))
 
 
-def _sru_version_precedence_verdict(url, lp_client, package, target_series, proposed_version):
+def _extends_version(proposed, base):
+    """True when `proposed` is `base` plus a series-specific suffix
+    (`0.2.2-0ubuntu3` -> `0.2.2-0ubuntu3.22.04.1`). #124: a newer series
+    sitting on that very base holds the same upload this SRU derives
+    from, so it isn't "behind" -- each series adds its own suffix to the
+    shared base and they sort by series version (noble's eventual
+    `...3.24.04.1` sorts above jammy's `...3.22.04.1`)."""
+    return any(proposed.startswith(f"{base}{sep}") for sep in (".", "~", "+"))
+
+
+def _mp_covered_series(lp_obj, series_names):
+    """Series covered by a linked merge proposal (any status but
+    Rejected/Superseded), across the item's own bugs -- #124: a series
+    with a review in flight must not be called "not landed". 'devel'
+    venues map to the last (devel) series name. Best-effort: an empty
+    set on any lookup failure."""
+    covered = set()
+    try:
+        resource_type = lp_obj.resource_type_link.split("#")[-1]
+        if resource_type in ("bug", "bug_task"):
+            bugs = [lp_obj.bug if resource_type == "bug_task" else lp_obj]
+        else:
+            bugs = list(lp_obj.bugs)
+        for bug in bugs:
+            for mp in bug.linked_merge_proposals:
+                if mp.queue_status in _INACTIVE_MP_STATUSES:
+                    continue
+                venue = _bug_sponsoring_venue_series(mp)
+                if venue == "devel":
+                    covered.add(series_names[-1])
+                elif venue:
+                    covered.add(venue)
+    except Exception as e:
+        logger.debug("_mp_covered_series: couldn't read linked MPs (%s); assuming none.", e)
+        return set()
+    return covered
+
+
+def _sru_version_precedence_verdict(
+    url, lp_client, package, target_series, proposed_version, lp_obj=None
+):
     """
     Two independently provable correctness problems with a proposed SRU
     version (design_journal.md #110), checked against real archive state
@@ -3896,6 +3936,7 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
         return False
 
     not_landed = []
+    mp_covered = _mp_covered_series(lp_obj, series_names) if lp_obj is not None else set()
 
     newer = series_names[series_names.index(target_series) + 1 :]
     for series_name in newer:
@@ -3910,6 +3951,22 @@ def _sru_version_precedence_verdict(url, lp_client, package, target_series, prop
             return None
         newer_version = _max_published_version(versions)
         if not newer_version:
+            continue
+        if _extends_version(proposed_version, newer_version):
+            # Same base upload, series-specific suffix on top (#124).
+            logger.debug(
+                "_sru_version_precedence_verdict: %r extends %r's %r; same base, skipping.",
+                proposed_version,
+                series_name,
+                newer_version,
+            )
+            continue
+        if series_name in mp_covered:
+            logger.debug(
+                "_sru_version_precedence_verdict: %r has a linked MP in "
+                "flight; not claiming the fix hasn't landed (#124).",
+                series_name,
+            )
             continue
         if archive_lookup.version_compare(newer_version, proposed_version) < 0:
             label = "(the development release) " if series_name == series_names[-1] else ""
@@ -3981,7 +4038,7 @@ def check_sru_version_newer_series_precedence(url, lp_obj, lp_client):
     package, target_series, proposed_version, _proposed_entry = result
 
     return _sru_version_precedence_verdict(
-        url, lp_client, package, target_series, proposed_version
+        url, lp_client, package, target_series, proposed_version, lp_obj=lp_obj
     )
 
 

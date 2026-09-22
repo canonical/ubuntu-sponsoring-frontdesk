@@ -2497,3 +2497,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Tests: 588 total, unchanged (prompt text isn't asserted verbatim).
 * Fixed in passing: the #122 test's import order broke `ruff check` --
   committed because only the tail of `make lint` output was read.
+
+## 124. Check 14 Leg 1: Same-Base SRUs and Reviews In Flight
+
+* **Trigger (live, seb128, spice-html5 MP #508967, SRU to jammy):**
+  blocking finding "`noble` is still at `0.2.2-0ubuntu3` (proposed:
+  `0.2.2-0ubuntu3.22.04.1`)" under a "fix doesn't appear to have landed
+  in a newer series" heading. seb128: "the needs fixing section is weird
+  ... also checking the linked bug it is fixed for stonking and seems to
+  have PRs for the different series?"
+* **Live facts:** jammy and noble both at `0.2.2-0ubuntu3`, resolute
+  `0ubuntu4`, stonking `0ubuntu5` and Fix Released; bug #2157521 has MPs
+  for jammy, noble, resolute (Needs review) and devel (Merged).
+* **Two distinct errors in leg 1:**
+  1. **The comparison was meaningless.** `0.2.2-0ubuntu3.22.04.1` extends
+     the very `0.2.2-0ubuntu3` noble carries -- the shared base of a
+     multi-series SRU, where each series adds its own suffix and they sort
+     by series version (noble's `...3.24.04.1` will sort above jammy's).
+     Noble wasn't behind at all. #116's "strictly lower proves the fix
+     isn't there" reasoning breaks precisely here: "lower" was an
+     artifact of the suffix scheme, not evidence.
+  2. **The claim contradicted available evidence:** stonking Fix Released,
+     noble/resolute MPs in flight.
+* **Fix:** leg 1 now skips a newer series when (a) the proposed version
+  is that series' version plus a `.`/`~`/`+` suffix (`_extends_version`),
+  or (b) that series has a linked MP in any status but Rejected/
+  Superseded (`_mp_covered_series`, reusing `_bug_sponsoring_venue_series`
+  so it agrees with Check 7's evidence model). Leg 2 unchanged.
+* Tests: 592 total (4 new: same-base `.YY.MM.N` and `~YY.MM.N` suffixes
+  are not "behind", a series with a linked MP isn't flagged, a series on
+  a genuinely older base with no MP still is).

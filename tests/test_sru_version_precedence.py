@@ -318,3 +318,38 @@ def test_bug_clean_case_is_false(monkeypatch):
         attachments=[FakeAttachment("fix.debdiff", content=_DEBDIFF_CONVENTIONAL)],
     )
     assert checks.check_sru_version_newer_series_precedence(URL, bug, _LP()) is False
+
+
+def test_newer_series_holding_the_base_version_is_not_behind(monkeypatch):
+    # #124, found live (spice-html5 MP #508967): a jammy SRU
+    # `0.2.2-0ubuntu3.22.04.1` derives from the very `0.2.2-0ubuntu3`
+    # noble still carries. Noble isn't behind -- its own SRU will be
+    # `...3.24.04.1`, which sorts above jammy's.
+    _patch_archive(monkeypatch, versions={"resolute": "1.2-3", "stonking": "1.2-3"})
+    mp = _mp_with_diff(_diff_for("1.2-3.24.04.1"))
+    assert checks.check_sru_version_newer_series_precedence(URL, mp, _LP()) is False
+
+
+def test_tilde_backport_suffix_over_the_base_is_not_behind(monkeypatch):
+    _patch_archive(monkeypatch, versions={"resolute": "1.2-3", "stonking": "1.2-3"})
+    mp = _mp_with_diff(_diff_for("1.2-3~24.04.1"))
+    assert checks.check_sru_version_newer_series_precedence(URL, mp, _LP()) is False
+
+
+def test_newer_series_with_a_linked_mp_is_not_called_not_landed(monkeypatch):
+    # #124: resolute is on an older base, but has a review in flight.
+    _patch_archive(monkeypatch, versions={"resolute": "1.1-1", "stonking": "1.3-1"})
+    bug = FakeBug(
+        linked_merge_proposals=[FakeMP(target="refs/heads/ubuntu/resolute-devel")],
+    )
+    mp = _mp_with_diff(_diff_for("1.2-3ubuntu0.1"))
+    mp.bugs = [bug]
+    assert checks.check_sru_version_newer_series_precedence(URL, mp, _LP()) is False
+
+
+def test_newer_series_on_an_older_base_without_an_mp_still_fires(monkeypatch):
+    _patch_archive(monkeypatch, versions={"resolute": "1.1-1", "stonking": "1.3-1"})
+    mp = _mp_with_diff(_diff_for("1.2-3ubuntu0.1"))
+    finding = checks.check_sru_version_newer_series_precedence(URL, mp, _LP())
+    assert finding.tier == "incomplete"
+    assert "resolute" in finding.message
