@@ -2467,3 +2467,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   Check 12 still runs whenever the version itself wasn't bounced.
 * Tests: 588 total (1 new: a version-collision bounce leaves the
   convention check uncalled and the comment free of its wording).
+
+## 123. Newer-Series Escape Hatch: Releases Inherit Fixes
+
+* **Trigger (live, seb128, gtk+3.0 bug #2162853, SRU to noble):** the
+  finding named resolute AND stonking, although the description says
+  "The current Ubuntu 26.04 (Resolute) archive carries gtk+3.0
+  3.24.52-0ubuntu1 ... No Resolute SRU is required" (a comment repeats it
+  with tarball hashes). Confirmed live: the description mentions Resolute
+  and 26.04, never stonking or 26.10.
+* **Root cause:** `review_fixed_in_newer_series` asks one all-or-nothing
+  question -- is the text saying ALL listed series are fixed -- so
+  `not-stated` was literally correct, and the finding then listed both.
+  The missing idea is monotonicity: a release carrying the fix means
+  every LATER release carries that version or newer.
+* **Fix:** prompt now states that evidence for one release covers every
+  later listed release (the series already arrive labelled with their
+  YY.MM versions in date order), with an exception for text that says a
+  later release regressed.
+* **Considered, not done:** a per-series verdict (flag only the
+  uncovered ones). The monotonic rule leaves only the narrow case where
+  the text covers a newer release but not an intermediate older one --
+  which is worth asking about anyway -- and a returned list would need
+  validating/mapping back, more failure modes for a non-blocking nudge.
+  Backlog if live runs show partial cases.
+* **Also noted, not changed:** the escape hatch reads only title +
+  description, so newer-series status documented in a comment (as this
+  bug also did) still gets flagged.
+* Tests: 588 total, unchanged (prompt text isn't asserted verbatim).
+* Fixed in passing: the #122 test's import order broke `ruff check` --
+  committed because only the tail of `make lint` output was read.

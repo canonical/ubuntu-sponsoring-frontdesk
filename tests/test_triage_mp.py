@@ -586,9 +586,10 @@ def test_version_bounce_skips_the_convention_advisory(tmp_path, monkeypatch):
     # #122 (live, alsa-ucm-conf MP #509669): Check 6 bounced the version as
     # a duplicate; Check 12's "doesn't follow the convention, expected
     # <bumped version>" is that same rebase, said twice.
+    import test_mp_checks
+
     import archive_lookup
     import checks
-    import test_mp_checks
 
     called = []
     monkeypatch.setattr(
