@@ -2527,3 +2527,39 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Tests: 592 total (4 new: same-base `.YY.MM.N` and `~YY.MM.N` suffixes
   are not "behind", a series with a linked MP isn't flagged, a series on
   a genuinely older base with no MP still is).
+
+## 125. An FFe for devel Is Not an SRU
+
+* **Trigger (live, seb128, backport-iwlwifi-dkms bug #2159856):** the bug
+  was bounced with "This looks like an SRU, but the bug description
+  doesn't follow the official SRU bug template ... This uses an FFE
+  template (Rationale/Scope/Regression Potential/Testing)". seb128: "why
+  do we think that's a SRU? the linked MP and bug task are targetting
+  stonking (=devel)".
+* **Root cause, confirmed live:** `_is_sru` matches any canonical SRU
+  section header, and `_SRU_SECTION_RE` includes `regression potential`
+  (older SRU templates use it) -- which FFe templates carry too. This
+  bug's `[ Regression Potential ]` alone made it SRU-shaped, though its
+  tasks are `(Ubuntu)` + `(Ubuntu Stonking)` (stonking IS devel), its
+  only MP targets `ubuntu/devel`, and it has no `sru` tag.
+* **Fix:** `triage_bug` now also requires something to actually point at
+  a stable series before routing to the SRU template review. New
+  `_targets_only_devel(lp_obj, devel_name)`: no open series-specific task
+  for a non-devel series, and no linked MP targeting one. An explicit
+  `sru` tag still wins. Fails open (routes as before) when devel can't be
+  determined or the metadata can't be read. Regexes untouched -- dropping
+  `regression potential` from them would miss real older-style SRUs.
+* **Two gaps closed right after (seb128 asked what counts as "points at
+  stable"):** a Rejected/Superseded MP targeting a stable series no
+  longer counts, and a debdiff attachment does -- its own changelog
+  stanza names the upload target, read straight from the header
+  (`attachments.review_target` + `_CHANGELOG_SUITE_RE`, pocket suffix
+  stripped, UNRELEASED ignored). No LLM involved: seb128 rightly
+  questioned my phrasing, which had confused the module name
+  (`llm_reviewer.py`) with needing a model. `attachments.py` is
+  stdlib-only, so importing it here adds no cycle.
+* Tests: 603 total (11 new: FFe text alone still reads SRU-shaped, the
+  devel-only combination suppresses it, a stable task or stable-targeted
+  MP doesn't, a closed stable task doesn't count, unknown devel doesn't
+  suppress, plus two triage_bug routing tests including the `sru` tag
+  override).

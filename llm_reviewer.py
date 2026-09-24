@@ -6,6 +6,7 @@ import subprocess
 import yaml
 
 import archive_lookup
+import attachments
 import notify
 import release_schedule
 
@@ -72,6 +73,74 @@ def _is_sru(tags, description):
     if _SRU_TAGS.intersection(t.lower() for t in (tags or [])):
         return True
     return bool(_SRU_SECTION_RE.search(description or ""))
+
+
+# A bug task naming a specific series: 'pkg (Ubuntu Noble)'. Kept local
+# (this module can't import checks -- checks imports it), same shape as
+# checks._SERIES_TASK_RE.
+_BUG_SERIES_TASK_RE = re.compile(r"\(Ubuntu (?P<series>[A-Za-z]+)\)$")
+
+# The suite field of a changelog stanza header: 'pkg (1.2-3) noble; ...'.
+_CHANGELOG_SUITE_RE = re.compile(r"^\S+ \([^)]+\) (?P<suite>[^;]+);")
+_POCKET_SUFFIX_RE = re.compile(r"-(proposed|updates|security|backports)$")
+
+# Linked MPs in these states aren't a live ask (mirrors
+# checks._INACTIVE_MP_STATUSES).
+_INACTIVE_MP_STATUSES = ("Rejected", "Superseded")
+
+# Task statuses that no longer ask for anything in that series.
+_CLOSED_TASK_STATUSES = (
+    "Fix Released",
+    "Fix Committed",
+    "Won't Fix",
+    "Invalid",
+    "Opinion",
+    "Expired",
+)
+
+
+def _targets_only_devel(lp_obj, devel_name):
+    """True when nothing about this bug points at a stable (non-devel)
+    series: no open series-specific task for one, and no linked merge
+    proposal targeting one (design #125). An FFe for the development
+    release reads as an SRU to `_is_sru` -- FFe templates carry a
+    "[ Regression Potential ]" section too -- so the SRU template review
+    would bounce it for missing [Impact]. Best-effort: False (i.e. don't
+    suppress) when devel can't be determined or the metadata can't be
+    read, leaving the pre-#125 behaviour."""
+    if not devel_name:
+        return False
+    stable = set()
+    try:
+        for task in lp_obj.bug_tasks:
+            if task.status in _CLOSED_TASK_STATUSES:
+                continue
+            match = _BUG_SERIES_TASK_RE.search(task.bug_target_name or "")
+            if match and match.group("series").lower() != devel_name:
+                stable.add(match.group("series").lower())
+        for mp in lp_obj.linked_merge_proposals:
+            if getattr(mp, "queue_status", None) in _INACTIVE_MP_STATUSES:
+                continue
+            target = getattr(mp, "target_git_path", "") or ""
+            match = _MP_TARGET_SERIES_RE.search(target)
+            series = match.group("series") if match else None
+            if series and series not in ("devel", devel_name):
+                stable.add(series)
+        # A debdiff's own changelog stanza names where it would be
+        # uploaded -- the same signal check_sru_newer_series uses (#115),
+        # read straight from the stanza header, no LLM involved.
+        target = attachments.review_target(lp_obj)
+        if isinstance(target, tuple):
+            stanza = _new_changelog_stanza(target[1])
+            header = _CHANGELOG_SUITE_RE.match(stanza.splitlines()[0]) if stanza else None
+            if header:
+                suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").strip().lower())
+                if suite not in ("devel", devel_name, "unreleased"):
+                    stable.add(suite)
+    except Exception as e:
+        logger.debug("_targets_only_devel: couldn't read the bug's metadata (%s).", e)
+        return False
+    return not stable
 
 
 def _is_sync(title, description):
@@ -985,6 +1054,18 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
 
         is_sru = _is_sru(tags, description)
         is_sync = _is_sync(title, description)
+        if is_sru and "sru" not in {t.lower() for t in tags or []}:
+            # #125: an FFe for the development release matches the SRU
+            # section regex ("[ Regression Potential ]"). An explicit `sru`
+            # tag still wins; otherwise devel-only metadata rules it out.
+            devel = archive_lookup.devel_codename(self.lp) if self.lp else None
+            if _targets_only_devel(lp_obj, devel):
+                logger.info(
+                    "triage_bug: SRU-shaped text but nothing targets a stable "
+                    "series (devel is %s); not treating it as an SRU.",
+                    devel,
+                )
+                is_sru = False
         logger.debug("triage_bug: is_sru=%s is_sync=%s", is_sru, is_sync)
 
         if is_sru:
