@@ -1289,6 +1289,20 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   `reused_elsewhere` keeps the "pick a different version" instruction.
   Tests: 583 total, unchanged in count (1 reworked).
 
+## Backlog: ubuntu-lint follow-ups
+
+- **Drop the dotted-Debian-revision workaround** in
+  `_sru_version_convention_verdict` (#129) once a fixed `python3-ubuntu-lint`
+  is installed on the VM. The bug (expected SRU version computed from only
+  the leading digits of the revision, so `0.10.1-4.1` -> expects
+  `0.10.1-4ubuntu0.1`) is unfixed upstream as of HEAD `6c0dad0` / release
+  0.2.3; the VM runs 0.2.1. A fix + reproducer is prepared and handed over
+  for a session with `gh` access to file.
+- **Nothing pins or logs the installed `ubuntu_lint` version** (#129), so its
+  verdicts can change under us on package upgrade -- same class of problem as
+  #108's unpinned ruff. Consider logging it at startup, or asserting a
+  minimum version.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

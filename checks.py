@@ -3779,6 +3779,27 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
 
     try:
         parsed = debian_changelog.Changelog(proposed_entry + "\n" + archive_text)
+        # #129 (live, xrdp MP #507677): ubuntu-lint derives the expected
+        # version with `re.search(r"-[0-9]*", prev)`, which keeps only the
+        # leading digits of the Debian revision -- for a dotted (NMU-style)
+        # revision like `0.10.1-4.1` it reads the revision as `4` and the
+        # `.1` as an Ubuntu revision, then expects `0.10.1-4ubuntu0.1`
+        # instead of `0.10.1-4.1ubuntu0.1`. Its verdict is unusable there,
+        # so say nothing rather than advise a wrong version.
+        # DROP THIS once a fixed ubuntu-lint is installed on the VM: the fix
+        # (match the whole dotted revision) is prepared for upstream, still
+        # unfixed as of HEAD 6c0dad0 / release 0.2.3, and the VM runs 0.2.1.
+        # See STATUS.md's backlog note.
+        previous = parsed[1].version if len(parsed) > 1 else None
+        revision = getattr(previous, "debian_revision", None) or ""
+        if "." in revision:
+            logger.debug(
+                "_sru_version_convention_verdict: previous version %s has a "
+                "dotted Debian revision; ubuntu-lint miscomputes the expected "
+                "version, skipping.",
+                previous,
+            )
+            return False
         context = ubuntu_lint.Context(debian_changelog=parsed)
         ubuntu_lint.check_sru_version_string_convention(context)
     except ubuntu_lint.LintException as e:

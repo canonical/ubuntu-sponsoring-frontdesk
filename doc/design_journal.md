@@ -2644,3 +2644,33 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Tests: 615 total (4 new: advisory when not behind, incomplete when
   `-updates` is ahead, advisory when the pocket lookup fails, wrong
   series still bounces).
+
+## 129. Skip the Convention Advisory for Dotted Debian Revisions
+
+* **Trigger (live, seb128, xrdp MP #507677):** advisory claimed
+  `0.10.1-4.1ubuntu0.1` "does not match expected version
+  `0.10.1-4ubuntu0.1`". seb128: "why does it expect 0.10.1-4ubuntu0.1?
+  resolute has 0.10.1-4.1 so 4.1ubuntu0.1 is the correct version".
+* **Root cause is an ubuntu-lint bug**, reproduced directly: its expected
+  version comes from only the leading digits of the Debian revision, so an
+  NMU-style `4.1` reads as revision `4` with `.1` as an Ubuntu revision.
+  Confirmed still unfixed on upstream HEAD (`6c0dad0`, release 0.2.3),
+  where the line is `re.search(r"[0-9]+", prev_version.debian_version)`;
+  the VM runs the 0.2.1 deb, which has the older `-[0-9]*` form with the
+  same flaw.
+* **Fix prepared upstream** (seb128: "if it's an ubuntu-lint bug let's fix
+  it there?"): `re.match(r"[0-9]+(?:\\.[0-9]+)*", ...)` so the whole
+  dotted revision is matched. Verified against a clone: unpatched FAILs
+  with the wrong expectation, patched passes; their suite is unchanged (47
+  pass, 12 skip, 12 pre-existing errors from a missing `pytest-mock`).
+  This sandbox has no `gh`, so the PR is handed over as a paste-ready
+  brief.
+* **Local workaround meanwhile:** skip the advisory when the previous
+  version's Debian revision contains a dot. Marked DROP THIS in the code
+  and in STATUS.md's backlog -- it becomes dead weight as soon as a fixed
+  ubuntu-lint is packaged and installed.
+* **Also noted:** nothing pins or logs the installed `ubuntu_lint`
+  version, so its behaviour can shift under us on upgrade (same class as
+  #108's ruff drift). Backlog.
+* Tests: 617 total (2 new: a dotted revision is skipped, including when
+  the proposed version really is odd).

@@ -216,3 +216,26 @@ def test_backport_suffix_for_another_series_still_advises(monkeypatch):
     mp = _mp_with_diff(_diff_for("1.2-3~22.04.2"))
     finding = checks.check_sru_version_suffix_convention(URL, mp, _LP())
     assert finding and finding.kind == "advisory"
+
+
+_DOTTED_ARCHIVE_CHANGELOG = """testpkg (1.2-4.1) noble; urgency=medium
+
+  * NMU.
+
+ -- NMUer <nmu@example.com>  Wed, 01 Jun 2026 10:27:27 +0200
+"""
+
+
+def test_dotted_debian_revision_is_skipped(monkeypatch):
+    # #129 (live, xrdp MP #507677): ubuntu-lint reads `1.2-4.1` as revision
+    # `4` + ubuntu revision `.1` and would expect `1.2-4ubuntu0.1`, when
+    # `1.2-4.1ubuntu0.1` is right. Say nothing rather than advise wrongly.
+    _patch_archive(monkeypatch, versions={"noble": "1.2-4.1"}, changelog=_DOTTED_ARCHIVE_CHANGELOG)
+    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu0.1"))
+    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
+
+
+def test_dotted_debian_revision_skipped_even_when_the_version_is_odd(monkeypatch):
+    _patch_archive(monkeypatch, versions={"noble": "1.2-4.1"}, changelog=_DOTTED_ARCHIVE_CHANGELOG)
+    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu99"))
+    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
