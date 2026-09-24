@@ -1090,3 +1090,65 @@ def test_stale_version_sru_older_than_noble_needs_fixing(monkeypatch):
     assert finding.tier == "incomplete"
     assert "noble" in finding.message
     assert "stonking" not in finding.message
+
+
+# --- #128: ubuntu/<series> vs <series>-devel -----------------------------------
+
+_RESOLUTE_SRU_DIFF = """diff --git a/debian/changelog b/debian/changelog
+index e84b35c..8f19411 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,7 @@
++testpkg (0.10.1-4.1ubuntu0.1) resolute; urgency=medium
++
++  * Fix things.
++
++ -- Dev <dev@example.com>  Wed, 01 Jul 2026 10:27:27 +0200
++
+ testpkg (0.10.1-4.1) resolute; urgency=medium
+"""
+
+
+def _plain_series_mp(target="refs/heads/ubuntu/resolute"):
+    return FakeMP(
+        target=target,
+        source="refs/heads/fix-lp2000001",
+        diff=FakeDiff("/d/1", 174, diff_text=_RESOLUTE_SRU_DIFF),
+        package="testpkg",
+    )
+
+
+def test_plain_series_branch_is_advisory_when_not_behind(monkeypatch):
+    # Live (xrdp MP #507677): ubuntu/<series> is the release pocket, not an
+    # alias of -devel, but they match when nothing was SRU'd since release.
+    _patch_archive(monkeypatch, versions={"resolute": "0.10.1-4.1"})
+    finding = checks.check_target_branch("url", _plain_series_mp(), _LP())
+    assert finding.tier == "question" and finding.kind == "advisory"
+    assert "recommended target" in finding.message
+    assert "-updates" in finding.message
+
+
+def test_plain_series_branch_bounces_when_behind(monkeypatch):
+    # An SRU already published in -updates: the release-pocket branch is
+    # genuinely outdated content to base on.
+    _patch_archive(
+        monkeypatch,
+        versions={"resolute": "0.10.1-4.1", "resolute-updates": "0.10.1-4.1ubuntu0.1"},
+    )
+    finding = checks.check_target_branch("url", _plain_series_mp(), _LP())
+    assert finding.tier == "incomplete"
+    assert "behind" in finding.message
+
+
+def test_plain_series_branch_advises_when_the_pocket_lookup_fails(monkeypatch):
+    _patch_archive(monkeypatch, versions=None)
+    finding = checks.check_target_branch("url", _plain_series_mp(), _LP())
+    assert finding.tier == "question"
+
+
+def test_wrong_series_branch_still_bounces(monkeypatch):
+    _patch_archive(monkeypatch, versions={"resolute": "0.10.1-4.1"})
+    mp = _plain_series_mp(target="refs/heads/ubuntu/noble-devel")
+    finding = checks.check_target_branch("url", mp, _LP())
+    assert finding.tier == "incomplete"
+    assert "resolute-devel" in finding.message

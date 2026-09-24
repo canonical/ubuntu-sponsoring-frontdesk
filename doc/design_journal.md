@@ -2617,3 +2617,30 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   series debdiff to that series' task, no attachment and an unmatched
   suite both fall back to all tasks). `FakeTriageClient` grew the same
   parameter.
+
+## 128. ubuntu/<series> Is the Release Pocket, Not a Wrong Branch
+
+* **Trigger (live, seb128, xrdp MP #507677):** Check 2 bounced an MP
+  targeting `refs/heads/ubuntu/resolute` with a resolute changelog entry,
+  demanding `resolute-devel`. seb128: "I don't think targetting
+  'resolute' instead of 'resolute-devel' is an issue ... to me they are
+  aliases", and asked to check the documentation.
+* **Documentation checked** (git-ubuntu uploads page): they are NOT
+  aliases -- `ubuntu/jammy` is the release pocket as published,
+  `jammy-devel` the tip including `-updates` and anything staged in
+  `-proposed` (that page's own example shows different hashes). But
+  `-devel` is a recommendation ("Most commonly, it will be the -devel
+  branch you're interested in"), not a rule, and the two branches are the
+  same commit whenever nothing has been SRU'd since release -- the common
+  case, which we were blocking.
+* **Fix (seb128's "mix of 2 and 3"):** for the RIGHT series on the plain
+  `ubuntu/<suite>` branch, always say `-devel` is the recommended target
+  and why (it includes SRUs already in `-updates`/`-proposed`), but only
+  block when that branch is actually behind in content -- i.e. another
+  pocket carries a newer version than the release pocket
+  (`ubuntu_versions` already returns per-pocket entries). Advisory
+  otherwise, and advisory too when the pocket lookup or package name
+  isn't available. A genuinely wrong series still bounces unchanged.
+* Tests: 615 total (4 new: advisory when not behind, incomplete when
+  `-updates` is ahead, advisory when the pocket lookup fails, wrong
+  series still bounces).

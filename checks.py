@@ -1509,6 +1509,71 @@ def _check_sru_target_series(url, lp_obj, lp_client):
     if target_branch_name == expected:
         return False
 
+    # #128 (live, xrdp MP #507677): the RIGHT series, just the plain
+    # `ubuntu/<suite>` branch instead of `<suite>-devel`. They are not
+    # aliases -- per the git-ubuntu uploads doc, `ubuntu/jammy` is the
+    # release pocket as published while `jammy-devel` is the tip including
+    # -updates and anything staged in -proposed -- but they point at the
+    # same commit whenever nothing has been SRU'd since release, which is
+    # the common case and was wrongly blocked. So: always say -devel is
+    # the recommended target, but only block when the targeted branch is
+    # actually behind in content (a newer version in another pocket).
+    if target_branch_name == f"refs/heads/ubuntu/{suite}":
+        recommendation = (
+            f"This Merge Proposal targets `{target_branch_name}`. The "
+            f"recommended target is `{expected}`, which also includes any "
+            "SRUs already in `-updates` (and anything staged in "
+            "`-proposed`), so the change is based on what is actually "
+            "published today -- see https://ubuntu.com/project/docs/"
+            "contributors/advanced/handle-git-ubuntu-uploads/"
+        )
+        package = _source_package_from_mp(lp_obj)
+        versions = (
+            archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=[suite])
+            if package
+            else None
+        )
+        if versions is None:
+            logger.debug(
+                "_check_sru_target_series: pocket lookup failed for %r; "
+                "advising -devel without checking whether it's behind.",
+                suite,
+            )
+            behind = None
+        else:
+            release = versions.get(suite)
+            newest = _max_published_version(versions)
+            behind = bool(
+                release and newest and archive_lookup.version_compare(newest, release) > 0
+            )
+        if behind:
+            logger.info(
+                "[%s] targets the %r release pocket branch, which is behind "
+                "(%s vs %s). Adding an incomplete finding.",
+                url,
+                suite,
+                release,
+                newest,
+            )
+            return Finding(
+                "incomplete",
+                f"The branch this Merge Proposal targets "
+                f"(`{target_branch_name}`) is behind: it carries `{release}` "
+                f"while `{newest}` is already published, so this change "
+                f"would be based on outdated content. Please target "
+                f"`{expected}` instead -- it includes any SRUs already in "
+                "`-updates` (and anything staged in `-proposed`) -- and "
+                "rebase on it. See https://ubuntu.com/project/docs/"
+                "contributors/advanced/handle-git-ubuntu-uploads/",
+            )
+        logger.info(
+            "[%s] targets the %r release pocket branch rather than "
+            "-devel, but it isn't behind. Adding an advisory finding.",
+            url,
+            suite,
+        )
+        return Finding("question", f"{recommendation}.", kind="advisory")
+
     logger.info(
         "[%s] targets %r but its changelog entry is for %r; expected %r. "
         "Adding an incomplete finding.",
