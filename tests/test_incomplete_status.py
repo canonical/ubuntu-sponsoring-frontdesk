@@ -134,3 +134,82 @@ def test_deterministic_bug_bounce_also_sets_incomplete(tmp_path):
     assert "set it back to New" in lp.comments[0]
     assert bug.bug_tasks[0].status == "Incomplete"
     assert sm.get_status(URL)[0] == "WAITING_ON_CONTRIBUTOR"
+
+
+# --- #127: scope the bounce to the reviewed debdiff's series -------------------
+
+
+def _debdiff(suite):
+    return f"""\
+diff -Nru foo-1.2/debian/changelog foo-1.2/debian/changelog
+--- foo-1.2/debian/changelog\t2026-06-01 10:00:00.000000000 +0200
++++ foo-1.2/debian/changelog\t2026-07-11 10:00:00.000000000 +0200
+@@ -1,3 +1,7 @@
++foo (1.2-3ubuntu0.1) {suite}; urgency=medium
++
++  * Fix things.
++
++ -- Dev <dev@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ foo (1.2-3) {suite}; urgency=medium
+"""
+
+
+class _LPDevel:
+    def __init__(self, devel="stonking"):
+        import types
+
+        self.lp = types.SimpleNamespace(
+            distributions={
+                "ubuntu": types.SimpleNamespace(current_series=types.SimpleNamespace(name=devel))
+            }
+        )
+
+
+def _scoping_bug(suite):
+    from fakes import FakeAttachment, FakeBug, FakeTask
+
+    import attachments
+
+    attachments.reset_cache()
+    return FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu)", "In Progress"),
+            FakeTask("foo (Ubuntu Resolute)", "In Progress"),
+        ],
+        attachments=[FakeAttachment("foo.debdiff", type="Patch", content=_debdiff(suite))],
+    )
+
+
+def test_devel_debdiff_scopes_the_bounce_to_the_plain_task():
+    # Live (swift bug #2156199): a stonking version conflict must not
+    # bounce the resolute task.
+    import checks
+
+    bug = _scoping_bug("stonking")
+    assert checks.bounce_task_targets(bug, _LPDevel()) == {"foo (Ubuntu)"}
+
+
+def test_series_debdiff_scopes_the_bounce_to_that_series_task():
+    import checks
+
+    bug = _scoping_bug("resolute")
+    assert checks.bounce_task_targets(bug, _LPDevel()) == {"foo (Ubuntu Resolute)"}
+
+
+def test_no_usable_attachment_bounces_every_task_as_before():
+    from fakes import FakeBug, FakeTask
+
+    import checks
+
+    bug = FakeBug(tasks=[FakeTask("foo (Ubuntu)", "In Progress")])
+    assert checks.bounce_task_targets(bug, _LPDevel()) is None
+
+
+def test_unmatched_suite_bounces_every_task_as_before():
+    # A debdiff for a series with no task of its own: scoping would skip
+    # the bounce entirely, so fall back to all open tasks.
+    import checks
+
+    bug = _scoping_bug("jammy")
+    assert checks.bounce_task_targets(bug, _LPDevel()) is None

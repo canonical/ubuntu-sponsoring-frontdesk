@@ -2563,3 +2563,57 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   MP doesn't, a closed stable task doesn't count, unknown devel doesn't
   suppress, plus two triage_bug routing tests including the `sru` tag
   override).
+
+## 126. Check 1: A Multi-Series Debdiff Set Isn't Done
+
+* **Trigger (live, seb128, sabnzbdplus bug #2164656):** Check 1 closed
+  the bug and unsubscribed on "sabnzbdplus (Ubuntu): Fix Committed",
+  though four debdiffs are attached -- `4.5.4+dfsg-4ubuntu0.1`,
+  `4.2.2+dfsg-3ubuntu0.1`, `3.5.1+dfsg-1ubuntu0.1`,
+  `3.0.0~0git20200408+dfsg-1ubuntu0.1` -- i.e. a security SRU set with one
+  debdiff per supported series. Only the devel upload had landed; the
+  rest were still unsponsored.
+* **Root cause:** the same blind spot as #112 (a closed task says nothing
+  about other pending work) but via attachments rather than MPs. Only the
+  plain `(Ubuntu)` task existed -- nominating per-series tasks needs
+  privileges most submitters lack -- so the task table read as "all
+  closed and landed".
+* **Fix:** before closing, read each debdiff's own upload target with
+  `_bug_attachment_target_series` (#97, the stanza suite field, not the
+  filename) and keep the bug in the queue when one names a series no
+  CLOSED task covers. The plain `(Ubuntu)` task counts as covering devel
+  (via `archive_lookup.devel_codename`). An attachment fetch failure
+  returns False (don't close this pass) rather than risking a wrong
+  close.
+* Tests: 607 total (4 new: a multi-series set stays open, a devel-only
+  debdiff still closes, a debdiff whose series has its own closed task
+  still closes, an unfetchable attachment doesn't close).
+
+## 127. Bug Bounces Scope Incomplete to the Reviewed Debdiff's Series
+
+* **Trigger (live, seb128, swift bug #2156199):** a stale-version bounce
+  for the stonking debdiff (`2.38.0+git...-0ubuntu2` older than the
+  archive's `2.38.1-0ubuntu1` in stonking) then proposed setting BOTH
+  `swift (Ubuntu)` and `swift (Ubuntu Resolute)` Incomplete. seb128: "the
+  version conflict is for stonking so it shouldn't propose to mark
+  resolute as incomplete probably?"
+* **Root cause:** `set_bug_tasks_incomplete` walks every open `(Ubuntu*)`
+  task (#70), which is right for a single-series bug but wrong for a
+  multi-series SRU: all bug-side checks read ONE attachment (the newest
+  usable one, `attachments.review_target`), so their findings speak for
+  that series alone.
+* **Fix:** new `checks.bounce_task_targets(lp_obj, lp_client)` returns the
+  task name(s) matching the reviewed debdiff's own suite (plain
+  `(Ubuntu)` = devel via `devel_codename`), passed to
+  `set_bug_tasks_incomplete(only_targets=...)`. Falls back to None (=
+  every open task, pre-#127 behaviour) when there's no usable attachment,
+  the suite can't be read, or no task matches it -- scoping must never
+  silently skip the bounce.
+* **Considered, not done:** a `series` field on `Finding` scoped per
+  finding. More accurate for mixed cases (a changelog-hygiene finding
+  applies to every series) but it touches the Finding schema and every
+  producer; no live case needs it yet.
+* Tests: 611 total (4 new: devel debdiff scopes to the plain task, a
+  series debdiff to that series' task, no attachment and an unmatched
+  suite both fall back to all tasks). `FakeTriageClient` grew the same
+  parameter.

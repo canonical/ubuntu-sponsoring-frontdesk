@@ -517,6 +517,44 @@ def check_administrative_state(url, lp_obj, lp_client, source_package=None):
             )
             return False
 
+        # #126 (live, sabnzbdplus bug #2164656): a multi-series SRU set can
+        # carry one debdiff per series while only the devel upload has
+        # landed -- and nobody nominated series tasks for the rest (that
+        # needs privileges most submitters lack), so the task table alone
+        # says "all done". Read each debdiff's own upload target (#97) and
+        # keep the bug in the queue when one names a series no closed task
+        # covers.
+        try:
+            attachment_series = _bug_attachment_target_series(bug)
+        except Exception as e:
+            logger.warning(
+                "check_administrative_state: couldn't read the bug's "
+                "attachments (%s); not closing this pass.",
+                e,
+            )
+            return False
+        if attachment_series:
+            devel_name = archive_lookup.devel_codename(lp_client.lp)
+            covered = set()
+            for task in tasks:
+                if task.status not in CLOSED_STATUSES:
+                    continue
+                match = _UBUNTU_TASK_SERIES_RE.search(task.bug_target_name or "")
+                series = match.group("series") if match else None
+                if series:
+                    covered.add(series.lower())
+                elif devel_name:
+                    covered.add(devel_name)
+            pending = attachment_series - covered
+            if pending:
+                logger.debug(
+                    "check_administrative_state: debdiff(s) target %s, which "
+                    "no closed task covers (covered: %s); not administratively done.",
+                    ", ".join(sorted(pending)),
+                    ", ".join(sorted(covered)) or "none",
+                )
+                return False
+
         summary = ", ".join(sorted(f"{task.bug_target_name}: {task.status}" for task in tasks))
         if any(task.status == "Fix Committed" for task in tasks):
             # Fix Committed (an upload waiting in -proposed/the SRU queue,
@@ -2669,6 +2707,47 @@ def _classify_against_publication_bug(url, bug, lp_client, package, version, pro
 
 # Task shape of a series-specific Ubuntu bug task: 'pkg (Ubuntu Noble)'.
 _SERIES_TASK_RE = re.compile(r"^(?P<pkg>\S+) \(Ubuntu (?P<series>[A-Za-z]+)\)$")
+
+
+def bounce_task_targets(lp_obj, lp_client):
+    """The `bug_target_name`s a bounce should mark Incomplete: the task for
+    the series the reviewed debdiff actually targets (#127). All bug-side
+    checks read one attachment (the newest usable one,
+    attachments.review_target), so their findings speak for that series
+    only -- a multi-series SRU's other tasks must not be bounced with it.
+
+    The plain 'pkg (Ubuntu)' task counts as the devel series. Returns None
+    (= every open Ubuntu task, the pre-#127 behaviour) when there is no
+    usable attachment to scope by, when its suite can't be read, or when
+    no task matches it -- scoping must never silently skip the bounce."""
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return None
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+
+    target = attachments.review_target(bug)
+    if not isinstance(target, tuple):
+        return None
+    stanza = llm_reviewer._new_changelog_stanza(target[1])
+    header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0]) if stanza else None
+    if not header:
+        return None
+    suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+    devel_name = archive_lookup.devel_codename(lp_client.lp)
+
+    names = set()
+    for task in bug.bug_tasks:
+        name = task.bug_target_name or ""
+        match = _UBUNTU_TASK_SERIES_RE.search(name)
+        if not match:
+            continue
+        series = match.group("series")
+        if series is None:
+            if devel_name and suite == devel_name:
+                names.add(name)
+        elif series.lower() == suite:
+            names.add(name)
+    return names or None
 
 
 def _bug_attachment_target_series(bug):

@@ -673,7 +673,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             # bot's action is not mistaken for a contributor change on the
             # next run (Fix #2). Rule B's sweep (#66) also depends on this:
             # its clock is date_incomplete.
-            changed = lp_client.set_bug_tasks_incomplete(lp_obj)
+            # #127: scope the bounce to the series the reviewed debdiff
+            # targets, so a multi-series SRU's other tasks stay untouched.
+            changed = lp_client.set_bug_tasks_incomplete(
+                lp_obj, only_targets=checks.bounce_task_targets(lp_obj, lp_client)
+            )
             new_facts = facts.apply_task_status_changes(new_facts, changed)
         if blocking:
             state_manager.update_status(

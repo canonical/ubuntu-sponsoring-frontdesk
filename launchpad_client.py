@@ -440,11 +440,18 @@ class LPClient:
             )
             logger.warning("Could not unsubscribe: %s", e)
 
-    def set_bug_tasks_incomplete(self, lp_obj):
+    def set_bug_tasks_incomplete(self, lp_obj, only_targets=None):
         """
         Set every open Ubuntu task on the bug to Incomplete -- the standard status
         for "waiting on the submitter". Tasks already resolved or already
         Incomplete are left untouched. Each transition is gated and audited.
+
+        ``only_targets``: restrict the write to these `bug_target_name`s
+        (#127). A multi-series SRU carries one debdiff per series, and the
+        review only looked at one of them -- bouncing the other series'
+        tasks over a finding about this one is wrong (live: swift bug
+        #2156199, a stonking version conflict marking the resolute task
+        Incomplete too). None means every open Ubuntu task, as before.
 
         Returns ``{bug_target_name: 'Incomplete'}`` for the tasks actually
         changed, so the caller can fold those into its facts snapshot: the bot
@@ -472,6 +479,8 @@ class LPClient:
             if "(Ubuntu" not in name:
                 continue
             if task.status in _CONCLUSIVE_STATUSES:
+                continue
+            if only_targets is not None and name not in only_targets:
                 continue
             decision = self._decide(f"Set '{name}' status to Incomplete (was {task.status}).")
             if decision != "perform":

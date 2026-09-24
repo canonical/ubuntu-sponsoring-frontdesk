@@ -332,7 +332,7 @@ class FakeTriageClient:
         self.unsubscribed = getattr(self, "unsubscribed", 0) + 1
         self.write_outcomes.append(self.write_outcome)
 
-    def set_bug_tasks_incomplete(self, obj):
+    def set_bug_tasks_incomplete(self, obj, only_targets=None):
         bug = obj.bug if getattr(obj, "resource_type_link", "").endswith("bug_task") else obj
         resolved = (
             "Fix Released",
@@ -343,6 +343,8 @@ class FakeTriageClient:
         )
         changed = {}
         for task in bug.bug_tasks:
+            if only_targets is not None and task.bug_target_name not in only_targets:
+                continue
             if "(Ubuntu" in task.bug_target_name and task.status not in resolved:
                 task.status = "Incomplete"
                 task.lp_save()

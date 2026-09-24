@@ -157,3 +157,92 @@ def test_linked_mp_lookup_failure_is_inconclusive():
     bug = _BrokenBug(tasks=_FIX_COMMITTED)
     assert checks.check_administrative_state("url", bug, lp, source_package="foo") is None
     assert lp.comments == [] and lp.unsubscribed == 0
+
+
+# --- #126: multi-series debdiff sets are not done -----------------------------
+
+
+def _debdiff_for(suite, version="1.2-3ubuntu0.1"):
+    return f"""\
+diff -Nru foo-1.2/debian/changelog foo-1.2/debian/changelog
+--- foo-1.2/debian/changelog\t2026-06-01 10:00:00.000000000 +0200
++++ foo-1.2/debian/changelog\t2026-07-11 10:00:00.000000000 +0200
+@@ -1,3 +1,7 @@
++foo ({version}) {suite}; urgency=medium
++
++  * Fix things.
++
++ -- Dev <dev@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ foo (1.2-3) {suite}; urgency=medium
+"""
+
+
+def _bug_with_debdiffs(suites, tasks=None):
+    from fakes import FakeAttachment
+
+    import attachments
+
+    attachments.reset_cache()
+    return FakeBug(
+        tasks=tasks or _FIX_COMMITTED,
+        attachments=[
+            FakeAttachment(f"foo_{i}.debdiff", type="Patch", content=_debdiff_for(s))
+            for i, s in enumerate(suites)
+        ],
+    )
+
+
+class _LPWithDevel(_LP):
+    def __init__(self, devel="stonking"):
+        super().__init__()
+        import types
+
+        self.lp = types.SimpleNamespace(
+            distributions={
+                "ubuntu": types.SimpleNamespace(current_series=types.SimpleNamespace(name=devel))
+            }
+        )
+
+
+def test_debdiffs_for_other_series_keep_the_bug_open():
+    # Live (sabnzbdplus bug #2164656): only the devel upload landed, but
+    # jammy/noble/resolute debdiffs are still waiting for a sponsor.
+    lp = _LPWithDevel()
+    bug = _bug_with_debdiffs(["stonking", "resolute", "noble", "jammy"])
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is False
+    assert lp.comments == [] and lp.unsubscribed == 0
+
+
+def test_debdiff_only_for_devel_still_closes():
+    lp = _LPWithDevel()
+    bug = _bug_with_debdiffs(["stonking"])
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is True
+    assert lp.unsubscribed == 1
+
+
+def test_debdiff_for_a_series_with_its_own_closed_task_still_closes():
+    lp = _LPWithDevel()
+    bug = _bug_with_debdiffs(
+        ["noble"],
+        tasks=[
+            FakeTask("foo (Ubuntu)", "Fix Released"),
+            FakeTask("foo (Ubuntu Noble)", "Fix Committed"),
+        ],
+    )
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is True
+
+
+def test_unfetchable_attachment_does_not_close():
+    from fakes import FakeAttachment
+
+    import attachments
+
+    attachments.reset_cache()
+    lp = _LPWithDevel()
+    bug = FakeBug(
+        tasks=_FIX_COMMITTED,
+        attachments=[FakeAttachment("foo.debdiff", type="Patch", fail_fetch=True)],
+    )
+    assert checks.check_administrative_state("url", bug, lp, source_package="foo") is False
+    assert lp.comments == []
