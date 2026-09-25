@@ -3829,6 +3829,169 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
     return False
 
 
+# A buildN revision at the end of a version: '1.2.16-1.1build1'.
+_BUILD_REVISION_RE = re.compile(r"build(?P<n>\d+)$")
+
+# The only debian/control edit a no-change rebuild legitimately carries:
+# update-maintainer's boilerplate (#132). Anything else there is a real
+# delta, which is exactly when an `ubuntuN` revision IS correct.
+_MAINTAINER_FIELD_RE = re.compile(r"^[+-](XSBC-Original-)?Maintainer:", re.IGNORECASE)
+
+
+def _changed_lines_by_path(text):
+    """{path: [changed lines]} for a unified diff, keyed on the normalized
+    '+++' path so it works for both git diffs and debdiffs (whose paths
+    carry a version-dir prefix). Only added/removed lines are collected;
+    headers and context are skipped."""
+    per_path = {}
+    current = None
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if (
+            line.startswith("--- ")
+            and index + 1 < len(lines)
+            and lines[index + 1].startswith("+++ ")
+        ):
+            current = attachments._norm_path(lines[index + 1][4:]) or attachments._norm_path(
+                line[4:]
+            )
+            per_path.setdefault(current, [])
+            continue
+        if line.startswith("+++ ") or line.startswith("@@") or line.startswith("diff "):
+            continue
+        if current and line[:1] in "+-":
+            per_path[current].append(line)
+    return per_path
+
+
+def _is_no_change_rebuild(text):
+    """True when the diff carries no functional change: `debian/changelog`
+    only, optionally with update-maintainer's Maintainer/
+    XSBC-Original-Maintainer lines in `debian/control` (#132, live: the
+    gfarm2fs fuse-transition branch did exactly that). Any other file, or
+    any other control field, means a real Ubuntu delta -- and then an
+    `ubuntuN` revision is the right answer, not `buildN`. Deliberately
+    not keyed on the changelog wording: "rebuild for the <x> transition"
+    is just as common as "no-change rebuild", and the phrase says nothing
+    about whether a delta is actually present (seb128)."""
+    per_path = _changed_lines_by_path(text)
+    if not per_path or "debian/changelog" not in per_path:
+        return False
+    for path, changed in per_path.items():
+        if path == "debian/changelog":
+            continue
+        if path != "debian/control":
+            return False
+        if any(not _MAINTAINER_FIELD_RE.match(line) for line in changed):
+            return False
+    return True
+
+
+def _expected_rebuild_version(old_version):
+    """The version a no-change rebuild on top of `old_version` should use:
+    buildN incremented when there already is one, else buildN appended
+    (https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/
+    version-strings/#no-change-rebuilds-build). Live example: on top of
+    `1.2.16-1.1build1` the next rebuild is `1.2.16-1.1build2`, not
+    `1.2.16-1.1ubuntu1`."""
+    match = _BUILD_REVISION_RE.search(old_version)
+    if match:
+        return f"{old_version[: match.start()]}build{int(match.group('n')) + 1}"
+    return f"{old_version}build1"
+
+
+def _no_change_rebuild_finding(url, proposed_version, expected):
+    logger.info(
+        "[%s] no-change rebuild proposes %r; expected %r. Adding an incomplete finding.",
+        url,
+        proposed_version,
+        expected,
+    )
+    return Finding(
+        "incomplete",
+        f"This is a no-change rebuild, so the version should be "
+        f"`{expected}`, not `{proposed_version}`: an `ubuntuN` revision "
+        "declares an Ubuntu delta that later merges would try to "
+        "preserve. See https://ubuntu.com/project/docs/how-ubuntu-is-made/"
+        "concepts/version-strings/#no-change-rebuilds-build",
+    )
+
+
+def check_no_change_rebuild_version(url, lp_obj, lp_client):
+    """
+    Check 15: a no-change rebuild must use a `buildN` revision
+    (design_journal.md #132).
+
+    Triggered by the diff carrying no functional change (see
+    _is_no_change_rebuild), not by the changelog wording: "rebuild for
+    the <x> transition" is as common as "no-change rebuild", and either
+    phrase can sit on an upload that does have a delta (seb128).
+    Deliberately not tied to the SRU
+    checks -- a no-change rebuild is part of a devel transition, never an
+    SRU, and Checks 13/14 skip devel anyway.
+
+    Needs the previous version to be visible in the diff/attachment
+    context, since `buildN` increments; returns False when it isn't
+    rather than guessing which N is right.
+
+    Returns a Finding (incomplete), False (not a rebuild, already a
+    buildN, or nothing to compare against), or None (the diff/attachment
+    couldn't be fetched -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        target = attachments.review_target(bug)
+        if target is None:
+            return None
+        if target is False:
+            return False
+        text = target[1]
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        if not stanza:
+            return False
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0])
+        if not header:
+            return False
+        proposed_version = header.group("version")
+        old_version = _old_changelog_version_from_lines(
+            attachments.classify_diff(text).get("changelog_lines") or []
+        )
+    elif resource_type == "branch_merge_proposal":
+        proposed_version, _stanza = _proposed_changelog_entry(lp_obj)
+        if proposed_version is None:
+            return None
+        if not proposed_version:
+            return False
+        text = diff_text(lp_obj)
+        if text is None:
+            return None
+        if not text:
+            return False
+        old_version = _old_changelog_version(lp_obj)
+    else:
+        return False
+
+    if not _is_no_change_rebuild(text):
+        return False
+    if _BUILD_REVISION_RE.search(proposed_version):
+        logger.debug(
+            "check_no_change_rebuild_version: %r already carries a buildN revision.",
+            proposed_version,
+        )
+        return False
+    if not old_version:
+        logger.debug(
+            "check_no_change_rebuild_version: the previous version isn't "
+            "visible; not guessing which buildN is expected."
+        )
+        return False
+
+    return _no_change_rebuild_finding(
+        url, proposed_version, _expected_rebuild_version(old_version)
+    )
+
+
 def check_sru_version_suffix_convention(url, lp_obj, lp_client):
     """
     Check 13: SRU version-suffix convention (design_journal.md #109).

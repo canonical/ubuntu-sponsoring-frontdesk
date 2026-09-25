@@ -78,6 +78,7 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `check_missing_changelog_stanza`, `check_patch_not_debdiff`,
   `check_ppa_version_suffix`, `check_sru_version_suffix_convention`,
   `check_sru_version_newer_series_precedence`,
+  `check_no_change_rebuild_version`,
   `check_xsbc_original_maintainer`), run in a fixed order before the LLM
   phase. See `flow.dot`/`flow.svg`.
 - **Fires** — a check "fires" when it finds something to flag (returns

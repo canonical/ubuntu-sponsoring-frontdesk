@@ -525,6 +525,17 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif result:
         add_finding("check_sru_version_newer_series_precedence", result)
 
+    # Check 15: a no-change rebuild must use a buildN revision (#132).
+    # Deterministic, pre-gate; unrelated to the SRU version checks (a
+    # rebuild is part of a devel transition, never an SRU).
+    result = checks.check_no_change_rebuild_version(url, lp_obj, lp_client)
+    checkpoint("check_no_change_rebuild_version")
+    logger.debug("check_no_change_rebuild_version -> %s", result)
+    if result is None:
+        inconclusive = True
+    elif result:
+        add_finding("check_no_change_rebuild_version", result)
+
     # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
     # Deterministic, pre-gate.
     result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)

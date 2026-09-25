@@ -2737,3 +2737,45 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   months). seb128: small by current standards -- note and watch. Also
   still open: the feedback mechanism, and reading `state.db` for a
   "current queue" view.
+
+## 132. Check 15: A No-Change Rebuild Takes a buildN Revision
+
+* **Trigger (seb128, a case the bot missed):** an MP proposed a no-change
+  rebuild of a package in sync with Debian using `-1ubuntu1` instead of
+  `-1build1`
+  (https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/#no-change-rebuilds-build).
+  The MP was deleted, but the branch survived
+  (~chawthorne/gfarm2fs `gfarm2fs-fuse-transition`), so the real diff was
+  read rather than reconstructed from description.
+* **Not an SRU concern:** a no-change rebuild belongs to a devel
+  transition and is never SRU'd, so Checks 13/14 (which skip devel) could
+  never have caught it. Standalone check, no series gating.
+* **ubuntu-lint doesn't cover it:** its `check_missing_version_suffix`
+  accepts `ubuntu` *or* `build`, so `-1ubuntu1` passes.
+* **Trigger design, corrected twice by seb128:**
+  1. My first idea was "diff touches only debian/changelog". The real
+     branch also ran update-maintainer, changing `Maintainer`/
+     `XSBC-Original-Maintainer` in `debian/control`, so changelog-only
+     alone would have missed it.
+  2. I then proposed matching the changelog text ("no-change rebuild").
+     seb128 rejected that: people also write "rebuild for the <x>
+     transition", and the phrase says nothing about whether a delta
+     exists. Correct signal is structural -- the diff carries no
+     functional change.
+  So: fires when the only changed paths are `debian/changelog` and,
+  optionally, `debian/control` with every changed line a Maintainer/
+  XSBC-Original-Maintainer field. Any other file or control field means a
+  real delta, and then `ubuntuN` IS right.
+* **Expected version:** `buildN` incremented when one exists, else
+  appended -- the live case sits on `1.2.16-1.1build1`, so the answer is
+  `build2`, not `build1`. Skips when the previous version isn't visible in
+  the diff context rather than guessing N.
+* **Tier: incomplete** (seb128): deterministic, documented, trivial to fix,
+  and an `ubuntuN` revision invents a delta later merges try to preserve.
+  MP and bug debdiff (seb128 asked for both).
+* One existing fixture (`test_human_engaged`'s `_ONLY_FINDING_DIFF`) was a
+  changelog-only diff claiming a code fix, so the new check fired on it;
+  gave it a `debian/patches/series` change so it keeps testing the LLM
+  covered-finding filter.
+* Tests: 641 total (8 new). Not yet live-verified: the trigger MP was
+  deleted, so this waits for the next real rebuild.

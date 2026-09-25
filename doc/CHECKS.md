@@ -44,6 +44,8 @@ changelog style on a request that's already resolved.
 | `check_ppa_version_suffix` | incomplete | MP + bug (debdiff attachment) | The proposed version carries a leftover `~ppaN` suffix from a PPA build — not valid for an archive upload. |
 | `check_xsbc_original_maintainer` | question (`advisory`) | MP + bug (debdiff attachment) | A package's first Ubuntu delta should add `XSBC-Original-Maintainer` to `debian/control`, preserving the Debian maintainer. Non-blocking — a sponsor can add it at upload time. |
 
+| `check_no_change_rebuild_version` | incomplete | MP + bug (debdiff attachment) | A rebuild with no functional change (only `debian/changelog`, optionally with update-maintainer's `debian/control` lines) must take a `buildN` revision, incremented when one is already there, not an `ubuntuN` one — that would declare an Ubuntu delta later merges try to preserve. Triggered by the diff's content, not the changelog wording. |
+
 ## Patch shape
 
 | Check | Tier | Scope | What it does |

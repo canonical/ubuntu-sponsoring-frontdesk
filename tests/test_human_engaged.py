@@ -272,6 +272,12 @@ diff --git a/debian/changelog b/debian/changelog
  testpkg (1.2-3ubuntu1) stonking; urgency=medium
 
    * Old entry.
+diff --git a/debian/patches/series b/debian/patches/series
+--- a/debian/patches/series
++++ b/debian/patches/series
+@@ -1 +1,2 @@
+ existing.patch
++fix-resize-crash.patch
 """
 
 
