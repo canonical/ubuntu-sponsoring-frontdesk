@@ -53,6 +53,10 @@ Machine-local setup, none of it in the repository:
 - **Launchpad credentials**: OAuth token cached under
   `~/.cache/ubuntu-sponsoring-frontdesk/` (env-overridable, see
   `launchpad_client.py`); first run opens a browser to authorise.
+- **Runtime state**: the audit trail (`audit.jsonl`) and the state DB
+  (`state.db`) live under `~/.cache/ubuntu-sponsoring-frontdesk/` too,
+  overridable via `SPONSORING_BOT_AUDIT` / `SPONSORING_BOT_STATE`. Never in
+  the checkout: they are machine-local records, not source.
 - **Bot's Launchpad username**: defaults to `ubuntu-sponsoring-bot`
   (`checks.BOT_USERNAME`), overridable via `SPONSORING_BOT_LP_USERNAME` if
   the account is ever renamed -- used to recognise the bot's own past

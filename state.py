@@ -1,11 +1,28 @@
 import datetime
 import json
+import os
 import sqlite3
 
 
+# Same reasoning as audit.py's default_path (#130): machine-local runtime
+# state under ~/.cache/ubuntu-sponsoring-frontdesk/, not the checkout.
+def default_db_path():
+    """Where the state DB lives, overridable with SPONSORING_BOT_STATE."""
+    return os.environ.get(
+        "SPONSORING_BOT_STATE",
+        os.path.join(
+            os.path.expanduser("~"),
+            ".cache",
+            "ubuntu-sponsoring-frontdesk",
+            "state.db",
+        ),
+    )
+
+
 class StateManager:
-    def __init__(self, db_path="state.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or default_db_path()
+        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._init_db()
 
     def _init_db(self):

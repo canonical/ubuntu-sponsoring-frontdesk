@@ -387,3 +387,23 @@ def test_comment_digest_lookup_failure_is_inconclusive_not_cached(tmp_path):
     lp = FakeTriageClient(objects={bug_url: bug})
     main.triage_url(bug_url, sm, lp, FakeLLM())
     assert sm.get_facts(bug_url) is None
+
+
+# --- #130: default location is the cache dir, not the checkout -----------------
+
+
+def test_default_db_path_is_the_cache_dir(monkeypatch):
+    import state as state_module
+
+    monkeypatch.delenv("SPONSORING_BOT_STATE", raising=False)
+    monkeypatch.setenv("HOME", "/home/someone")
+    assert state_module.default_db_path() == (
+        "/home/someone/.cache/ubuntu-sponsoring-frontdesk/state.db"
+    )
+
+
+def test_default_db_path_is_env_overridable(monkeypatch, tmp_path):
+    import state as state_module
+
+    monkeypatch.setenv("SPONSORING_BOT_STATE", str(tmp_path / "s.db"))
+    assert state_module.default_db_path() == str(tmp_path / "s.db")

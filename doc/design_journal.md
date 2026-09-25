@@ -2674,3 +2674,23 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   #108's ruff drift). Backlog.
 * Tests: 617 total (2 new: a dotted revision is skipped, including when
   the proposed version really is odd).
+
+## 130. Runtime State Lives in the Cache Dir, Not the Checkout
+
+* **Trigger (seb128, opening the metrics/stats discussion):** "the stats
+  should be stored in a cache on the system where the bot runs and not in
+  the Vcs". `audit.jsonl` and `state.db` were gitignored, so nothing was
+  ever committed, but both defaulted to the *current working directory* --
+  i.e. the checkout, one `git add -f` away from being committed, and a
+  different file whenever the bot is run from elsewhere.
+* **Fix:** both default to `~/.cache/ubuntu-sponsoring-frontdesk/` (where
+  the OAuth token already lives), env-overridable as
+  `SPONSORING_BOT_AUDIT` / `SPONSORING_BOT_STATE`, same convention as the
+  credentials/cache/config paths (#107). The directory is created on use.
+  seb128 moved the existing files by hand, preserving 721 audit rows and
+  the facts snapshots -- otherwise the first run would have started a
+  fresh log and re-triaged the whole queue.
+* **Done as its own commit before the stats work** (seb128's call), so the
+  path move and the new metrics records don't land mixed together.
+* Tests: 622 total (5 new: default paths, env overrides, directory
+  creation).

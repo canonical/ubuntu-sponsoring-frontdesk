@@ -9,6 +9,24 @@ is durable, greppable, and reviewable after the fact.
 
 import datetime
 import json
+import os
+
+
+# Runtime data belongs with the bot's other machine-local state
+# (~/.cache/ubuntu-sponsoring-frontdesk/, where the OAuth token already
+# lives), not in the working directory it happens to be run from -- a
+# checkout, one `git add -f` away from being committed (#130).
+def default_path():
+    """Where the audit trail lives, overridable with SPONSORING_BOT_AUDIT."""
+    return os.environ.get(
+        "SPONSORING_BOT_AUDIT",
+        os.path.join(
+            os.path.expanduser("~"),
+            ".cache",
+            "ubuntu-sponsoring-frontdesk",
+            "audit.jsonl",
+        ),
+    )
 
 
 def _summarize(text, limit=120):
@@ -20,8 +38,9 @@ def _summarize(text, limit=120):
 
 
 class AuditLog:
-    def __init__(self, path="audit.jsonl"):
-        self.path = path
+    def __init__(self, path=None):
+        self.path = path or default_path()
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
 
     def record(self, *, url, action, target, mode, outcome, detail=""):
         """
