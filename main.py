@@ -27,13 +27,85 @@ logger = logging.getLogger(__name__)
 _NEW_BUG_GRACE = datetime.timedelta(minutes=10)
 
 
+class ItemReport:
+    """What one item's triage pass did, recorded as a single structured
+    audit row (#131). The write rows already say what the bot changed;
+    this says what it FOUND -- which checks fired, at which tier, whether
+    a human was engaged, what it cost -- so `stats.py` can answer "what
+    does the bot actually catch" without re-parsing comment text."""
+
+    def __init__(self, url):
+        self.url = url
+        self.target = None
+        self.findings = []
+        self.suppressed = []
+        self.closing = None
+        self.engaged = None
+        self.outcome = None
+        self.detail = ""
+        self._entries = []
+
+    def add(self, check, finding):
+        entry = {"check": check, "tier": finding.tier, "kind": finding.kind}
+        self.findings.append(entry)
+        self._entries.append((finding, entry))
+
+    def mark_suppressed(self, kept):
+        """Record which findings engagement silenced: everything added that
+        isn't in `kept`. Compared by identity -- two checks can produce
+        findings with the same tier/kind."""
+        self.suppressed = [
+            entry for finding, entry in self._entries if not any(finding is k for k in kept)
+        ]
+
+    def extra(self, llm_reviewer, elapsed_s):
+        usage = getattr(llm_reviewer, "item_usage", lambda: {})() or {}
+        return {
+            "findings": self.findings,
+            "suppressed": self.suppressed,
+            "closing": self.closing,
+            "engaged": self.engaged,
+            "llm": usage,
+            "elapsed_s": round(elapsed_s, 2),
+        }
+
+
+class _RecordingStateManager:
+    """Forwards to the real StateManager, remembering the status it was
+    last told to store -- that status IS the item's outcome, and every
+    terminal path already calls update_status, so nothing has to be
+    threaded through the 10 return sites."""
+
+    def __init__(self, inner, report):
+        self._inner = inner
+        self._report = report
+
+    def update_status(self, url, status, details=None, facts=None, **kwargs):
+        self._report.outcome = status
+        self._report.detail = details or ""
+        return self._inner.update_status(url, status, details, facts=facts, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=None):
     # Verbose timing: log how long each step takes, and the total for the URL
     # regardless of which return path was taken, so a slow --all --dry-run
     # scan can be attributed to a specific check/lookup instead of guessed at.
     t_start = time.monotonic()
+    report = ItemReport(url)
     try:
-        return _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start)
+        return _triage_url(
+            url,
+            _RecordingStateManager(state_manager, report),
+            lp_client,
+            llm_reviewer,
+            force,
+            item,
+            t_start,
+            report,
+        )
     except Exception:
         # Several launchpadlib attribute reads in facts.build_facts and the
         # checks (queue_status, bug_tasks, target_git_path, ...) have no
@@ -45,14 +117,30 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
         # gets persisted here, so this URL is retried from scratch next run,
         # same as an unhandled load_url failure already was.
         logger.exception("Unexpected error triaging %s; skipping for this run.", url)
+        report.outcome = report.outcome or "error"
         return None
     finally:
+        audit_log = getattr(lp_client, "audit", None)
+        if audit_log is not None:
+            audit_log.record(
+                url=url,
+                action="triage",
+                target=report.target or "unknown",
+                mode=getattr(lp_client, "mode", "?"),
+                outcome=report.outcome or "inconclusive",
+                detail=report.detail,
+                extra=report.extra(llm_reviewer, time.monotonic() - t_start),
+            )
         logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
         logger.info("--- Finished triage for: %s ---\n", url)
 
 
-def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start):
+def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start, report):
     logger.info("--- Starting triage for: %s ---", url)
+
+    def add_finding(check, finding):
+        findings.append(finding)
+        report.add(check, finding)
 
     t_last = [t_start]
 
@@ -100,6 +188,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             return
 
     resource_type = lp_obj.resource_type_link.split("#")[-1]
+    report.target = resource_type
 
     # Private items are never processed (#103, external-review follow-up).
     # Triage would ship the item's content to a third-party LLM provider
@@ -227,6 +316,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if fired is None:
         inconclusive = True
     elif fired:
+        report.closing = "check_administrative_state"
         state_manager.update_status(
             url,
             "DONE",
@@ -270,7 +360,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_target_branch", result)
 
     # Check 3: MP Conflicts (incomplete tier) -- skipped when Check 2 already
     # found a wrong target branch: conflicts are the expected symptom of
@@ -283,7 +373,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         if result is None:
             inconclusive = True
         elif result:
-            findings.append(result)
+            add_finding("check_mp_conflicts", result)
 
     # Check 4: MP Empty Diff (closing tier -- short-circuits)
     fired = checks.check_empty_diff(url, lp_obj, lp_client)
@@ -292,6 +382,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if fired is None:
         inconclusive = True
     elif fired:
+        report.closing = "check_empty_diff"
         state_manager.update_status(
             url,
             "DONE",
@@ -307,7 +398,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_changelog_bug_reference", result)
 
     # Check 6: proposed version vs. archive (stale / already-uploaded).
     version_bounced = False
@@ -364,7 +455,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
     elif outcome:
-        findings.append(outcome)
+        add_finding("check_stale_version", outcome)
         # #122 (live, alsa-ucm-conf MP #509669): Check 6 already asked for a
         # rebase with a new version number, so Check 12's convention advice
         # about that same version is a consequence of it, not a separate
@@ -381,7 +472,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_direct_source_edit", result)
 
     # Check 9: no debian/changelog entry in the diff (#61). Deterministic,
     # runs with checks 1-6/8 before the inconclusive gate.
@@ -391,7 +482,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_missing_changelog_stanza", result)
 
     # Check 10: a plain code patch on a bug needs to become a debdiff
     # (#64). Deterministic, pre-gate.
@@ -401,7 +492,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_patch_not_debdiff", result)
 
     # Check 11: proposed version carries a ~ppaN suffix (#90). Deterministic,
     # pre-gate.
@@ -411,7 +502,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_ppa_version_suffix", result)
 
     # Check 12: SRU version-suffix convention (#109), via ubuntu-lint --
     # skipped when Check 6 already bounced the version itself (#122).
@@ -422,7 +513,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         if result is None:
             inconclusive = True
         elif result:
-            findings.append(result)
+            add_finding("check_sru_version_suffix_convention", result)
 
     # Check 14: SRU version-precedence correctness (#110). Deterministic,
     # pre-gate.
@@ -432,7 +523,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_sru_version_newer_series_precedence", result)
 
     # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
     # Deterministic, pre-gate.
@@ -442,7 +533,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if result is None:
         inconclusive = True
     elif result:
-        findings.append(result)
+        add_finding("check_xsbc_original_maintainer", result)
 
     if inconclusive:
         # Design #31's addendum: the aggregated comment presents itself as
@@ -475,6 +566,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # None (unreadable history) falls through: only the end-of-pass consult
     # (memoized, so it's free) decides whether that matters.
     engaged = checks.check_human_engaged(lp_obj, lp_client)
+    report.engaged = engaged
     checkpoint("check_human_engaged")
     logger.debug("check_human_engaged -> %s", engaged)
     already_blocking = any(f.tier == "incomplete" for f in findings)
@@ -509,7 +601,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
     if result:
-        findings.append(result)
+        add_finding("check_sru_newer_series", result)
 
     logger.info("Deterministic checks evaluated. Moving to LLM review...")
 
@@ -549,13 +641,13 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("llm_reviewer")
 
     if new_status == "INCOMPLETE":
-        findings.append(checks.Finding("incomplete", comment))
+        add_finding("llm_review", checks.Finding("incomplete", comment))
     elif new_status == "ADVISORY":
         # The MP content review (#47): a list of (kind, bullet) pairs, each
         # one question-tier -- rendered in the aggregate's "please verify"
         # or "nice to have" section per kind, never blocking, never voting.
         for kind, message in comment:
-            findings.append(checks.Finding("question", message, kind=kind))
+            add_finding("llm_review", checks.Finding("question", message, kind=kind))
 
     if new_status == "SYNCED":
         # No unsubscribe here (#113, live-found): setting the task Fix
@@ -590,6 +682,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         # resolve them and they're never suppressed. Only the non-blocking
         # (tier="question") findings get silenced when a human is engaged.
         engaged = checks.check_human_engaged(lp_obj, lp_client)
+        report.engaged = engaged
         checkpoint("check_human_engaged")
         logger.debug("check_human_engaged -> %s", engaged)
         if engaged is None:
@@ -624,6 +717,9 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                         blocking_findings = [
                             f for i, f in enumerate(blocking_findings, start=1) if i not in covered
                         ]
+            # #131: remember what engagement silenced, so stats can tell
+            # "nothing found" from "found, but a human was already on it".
+            report.mark_suppressed(blocking_findings)
             if not blocking_findings:
                 # A determined, stable state -- persist facts like a clean
                 # pass, so the facts-unchanged gate skips this URL until a

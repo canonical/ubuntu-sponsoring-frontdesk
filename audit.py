@@ -42,12 +42,17 @@ class AuditLog:
         self.path = path or default_path()
         os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
 
-    def record(self, *, url, action, target, mode, outcome, detail=""):
+    def record(self, *, url, action, target, mode, outcome, detail="", extra=None):
         """
         Append one audit entry.
 
         outcome is one of:
           performed | dry-run | declined | no-tty | skipped-duplicate | error
+
+        ``extra``: structured data stored verbatim under an "extra" key
+        (#131). Unlike ``detail``, which is summarized to one truncated
+        line for human reading, this is meant to be machine-read -- the
+        per-item "triage" row keeps its findings there.
         """
         entry = {
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -58,6 +63,8 @@ class AuditLog:
             "outcome": outcome,
             "detail": _summarize(detail),
         }
+        if extra:
+            entry["extra"] = extra
         with open(self.path, "a") as fh:
             fh.write(json.dumps(entry, sort_keys=True) + "\n")
         return entry

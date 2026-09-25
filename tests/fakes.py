@@ -307,6 +307,8 @@ class FakeTriageClient:
         self.lp = lp
         self.comments = []
         self.votes = []
+        # #131: main writes one structured "triage" audit row per item.
+        self.audit = FakeAudit()
         # Mirrors LPClient's per-item write-outcome tracking: main persists an
         # item's facts only when every write took effect. Defaults to
         # "performed" so existing tests behave like a real --yes run;

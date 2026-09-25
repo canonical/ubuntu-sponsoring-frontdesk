@@ -271,7 +271,11 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
 - **Write modes** — `--dry-run` (default, logs intended writes, does
   nothing), `--interactive` (`[y/N]` prompt, refuses without a TTY), `--yes`
   (unattended/cron). Enforced by `LPClient._decide` (#11). Every attempt,
-  including skips, is appended to `audit.jsonl` (#14).
+  including skips, is appended to `audit.jsonl` (#14). Since #131 each
+  triaged item also gets one `action="triage"` row whose `extra` field
+  carries the findings (check name, tier, kind), what engagement
+  suppressed, the item's LLM usage and its elapsed time -- the data
+  `stats.py` reports on.
 - **Bot self-subscribe on bug comments** — `LPClient._subscribe_self`
   (#88): every time the bot posts a comment on a BUG (any tier), it also
   subscribes its own account, so follow-up activity generates an email

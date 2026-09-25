@@ -1303,6 +1303,14 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   #108's unpinned ruff. Consider logging it at startup, or asserting a
   minimum version.
 
+## Backlog: metrics/stats follow-ups (#131)
+
+- `audit.jsonl` grows unboundedly (231 KB for ~2 months of runs). Small by
+  current standards -- watch it rather than build rotation now.
+- Feedback mechanism (was explicitly out of scope): `stats.py` already
+  approximates it via findings on items whose write was declined.
+- A "current queue" view would need `state.db` as well; v1 is audit-only.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past

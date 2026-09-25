@@ -2694,3 +2694,46 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   path move and the new metrics records don't land mixed together.
 * Tests: 622 total (5 new: default paths, env overrides, directory
   creation).
+
+## 131. Per-Item Audit Record + stats.py
+
+* **Request (seb128):** collect metrics on what the bot catches, what it
+  misses, plus token use, to retrospect on how the service works; a
+  feedback mechanism seen as out of scope for now.
+* **What already existed:** `audit.jsonl` has every write and every LLM
+  call with tokens and cost (#100), so spend, write volume, decline and
+  error rates were already derivable. The gap was *what was found*: a
+  `comment` row keeps only the first line of the posted text, so "which
+  checks fire most" was only recoverable by re-parsing comment bodies --
+  fragile, and it breaks every time we reword a finding (which #116-#128
+  did repeatedly). The other gap was the denominator: nothing recorded
+  clean items or why a pass stopped.
+* **Design agreed before implementing:** one `action="triage"` row per
+  item, with structured data in a new `extra` field (`detail` stays the
+  human-readable one-liner), plus a read-only `stats.py`. seb128 chose
+  (a) attaching check names at main's dispatch sites over (b) adding a
+  `check` field to `Finding` -- no schema change, and the LLM-derived
+  findings have no single check name anyway. Audit-only for v1 (no
+  `state.db` reads).
+* **Implementation notes:** `ItemReport` collects findings/suppressed/
+  closing/engaged/outcome; the outcome comes from a `_RecordingStateManager`
+  wrapper around the real state manager, since every terminal path already
+  calls `update_status` -- that avoided threading a report through all 10
+  return sites. `llm_reviewer.item_usage()` exposes per-item calls/tokens/
+  cost (previously only per-run totals existed). Suppression is recorded by
+  object identity, not by comparing tier/kind dicts (two checks can produce
+  identical-looking findings).
+* **stats.py** reports outcomes, findings by check and by tier, what
+  engagement suppressed, findings on items whose write was declined (the
+  closest thing to a wrong-finding signal we have -- your `n` at the
+  prompt), LLM calls/tokens/cost with the top spenders, and errors. It
+  tolerates a log it doesn't fully understand: rows predating #131, a
+  truncated last line, missing `extra`.
+* Verified against the real 722-row log: writes, LLM and error sections
+  populate; `items: 0` until the next run writes the first triage rows.
+* Tests: 633 total (11 new for stats.py and the record; `FakeTriageClient`
+  gained a `FakeAudit`).
+* **Noted, not built:** `audit.jsonl` grows unboundedly (231 KB for ~2
+  months). seb128: small by current standards -- note and watch. Also
+  still open: the feedback mechanism, and reading `state.db` for a
+  "current queue" view.

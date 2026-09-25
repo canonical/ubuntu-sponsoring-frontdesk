@@ -30,6 +30,16 @@ python3 main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--ve
   `--verbose` logs every decision step, including LLM prompts/replies
   and token usage.
 
+Retrospective over the audit trail (read-only, writes nothing):
+
+```
+python3 stats.py [--since 30d] [--json]
+```
+
+It reports what the checks actually caught (per check and tier), what a
+human's engagement suppressed, which findings sat on items whose write you
+declined, LLM tokens/cost per item, and errors.
+
 Items are re-triaged only when their contributor-controlled state
 changes (see "facts" in the [glossary](doc/GLOSSARY.md)); runs are
 idempotent and safe to repeat.

@@ -295,12 +295,20 @@ class LLMReviewer:
         self._run_calls = 0
         self._run_budget_notified = False
         self._run_usage_totals = {"total": 0, "cost": 0.0}
+        self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
 
     def start_item(self, url=""):
         """Reset per-item LLM state (#100). Called by main/sweep at the
         start of each URL, mirroring LPClient.start_item()."""
         self._item_calls = 0
+        self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
         self._current_url = url or ""
+
+    def item_usage(self):
+        """This item's LLM spend so far: calls, tokens, cost (#131). Used by
+        main's per-item audit record, so cost can be attributed per item
+        rather than only per run."""
+        return dict(self._item_usage)
 
     def log_run_summary(self):
         """One end-of-run line: LLM calls made and tokens/cost consumed."""
@@ -412,6 +420,11 @@ class LLMReviewer:
                 # than via LPClient (which would gate facts persistence).
                 self._run_usage_totals["total"] += usage["total"]
                 self._run_usage_totals["cost"] += usage["cost"]
+                self._item_usage["calls"] += 1
+                self._item_usage["tokens"] += usage["total"]
+                self._item_usage["cost_usd"] = round(
+                    self._item_usage["cost_usd"] + usage["cost"], 6
+                )
                 if self.audit is not None:
                     self.audit.record(
                         url=self._current_url,

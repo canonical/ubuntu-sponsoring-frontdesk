@@ -55,3 +55,28 @@ def test_audit_log_creates_its_directory(tmp_path):
     log = AuditLog(path=str(path))
     log.record(url="u", action="comment", target="t", mode="yes", outcome="performed")
     assert path.exists()
+
+
+def test_extra_is_stored_verbatim(tmp_path):
+    # #131: unlike `detail`, `extra` is machine-read, so it must not be
+    # summarized or truncated.
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path=str(path))
+    log.record(
+        url="u",
+        action="triage",
+        target="bug",
+        mode="yes",
+        outcome="DONE",
+        extra={"findings": [{"check": "check_stale_version", "tier": "incomplete"}]},
+    )
+    row = json.loads(path.read_text().splitlines()[0])
+    assert row["extra"]["findings"][0]["check"] == "check_stale_version"
+
+
+def test_extra_is_omitted_when_empty(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    AuditLog(path=str(path)).record(
+        url="u", action="comment", target="t", mode="yes", outcome="performed"
+    )
+    assert "extra" not in json.loads(path.read_text().splitlines()[0])

@@ -161,3 +161,53 @@ def test_inconclusive_pass_posts_no_aggregate_and_skips_the_llm(tmp_path, monkey
     assert llm_calls == []
     assert sm.get_status(URL) is None
     assert sm.get_facts(URL) is None
+
+
+# --- #131: the per-item audit record ------------------------------------------
+
+
+def test_triage_writes_one_item_record_with_check_names(tmp_path):
+    from fakes import FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+
+    import checks
+    import main
+    from state import StateManager
+
+    url = "https://code.launchpad.net/~x/+merge/1"
+    mp = FakeMP(diff=FakeDiff("/d/1", 50, conflicts="foo.c"))
+    lp = FakeTriageClient(objects={url: mp})
+    sm = StateManager(db_path=str(tmp_path / "s.db"))
+
+    main.triage_url(url, sm, lp, FakeLLM())
+
+    rows = [r for r in lp.audit.records if r["action"] == "triage"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["url"] == url
+    assert row["target"] == "branch_merge_proposal"
+    # This fixture has no usable `lp`, so a version check comes back None
+    # and the pass is inconclusive -- which the record must say, since
+    # "found nothing" and "couldn't tell" are different answers.
+    assert row["outcome"] == "inconclusive"
+    checks_fired = {f["check"] for f in row["extra"]["findings"]}
+    assert "check_mp_conflicts" in checks_fired
+    assert all(f["tier"] for f in row["extra"]["findings"])
+    assert "elapsed_s" in row["extra"]
+    assert isinstance(checks.Finding("incomplete", "x").tier, str)
+
+
+def test_clean_item_records_no_findings(tmp_path):
+    from fakes import CLEAN_DIFF_TEXT, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+
+    import main
+    from state import StateManager
+
+    url = "https://code.launchpad.net/~x/+merge/2"
+    mp = FakeMP(diff=FakeDiff("/d/2", 50, diff_text=CLEAN_DIFF_TEXT))
+    lp = FakeTriageClient(objects={url: mp})
+    sm = StateManager(db_path=str(tmp_path / "s.db"))
+
+    main.triage_url(url, sm, lp, FakeLLM())
+
+    row = [r for r in lp.audit.records if r["action"] == "triage"][0]
+    assert row["extra"]["findings"] == []
