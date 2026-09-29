@@ -2779,3 +2779,59 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   covered-finding filter.
 * Tests: 641 total (8 new). Not yet live-verified: the trigger MP was
   deleted, so this waits for the next real rebuild.
+
+## 133. Workshop Definition for a Sandboxed Hacking Setup
+
+* **Request (seb128):** add a [Workshop](https://ubuntu.com/workshop/docs/)
+  configuration so the project has an easy sandboxed hacking setup. Also
+  flagged as a precursor to charming the bot later -- a *machine* charm for
+  this one, unlike the ubuntu-manpages-operator example.
+* **Grounded in the real tool, not the docs:** the definition reference is
+  behind a Canonical SSO wall, so the format came from `workshop 0.9.7`
+  installed locally (`workshop init` writes `.workshop/<name>.yaml`, not a
+  root `workshop.yaml`) plus a colleague's PR
+  (canonical/ubuntu-manpages-operator#67) for the in-project-SDK shape:
+  `.workshop/<sdk>/sdk.yaml` consumed as `project-<sdk>`, with
+  `hooks/setup-base`, `hooks/setup-project`, `hooks/check-health`.
+* **No language SDK composed:** the bot runs on system Python (`apt_pkg` is
+  a compiled extension tied to it, #62/#83), so the in-project SDK's
+  setup-base installs distro packages -- python3-apt, python3-debian,
+  python3-launchpadlib, python3-yaml, python3-pytest, distro-info -- and
+  pins `ruff==0.15.21` to match CI (#108).
+* **base ubuntu@26.04 deliberately:** `python3-ubuntu-lint` (Check 13) has
+  no 24.04 build (#109/#129), so a 26.04 workshop is closer to the eventual
+  deployment than the current VM. Its install is best-effort: if it's
+  missing, Check 13 already fails safe and its tests skip via
+  `pytest.importorskip`, so the build must not fail.
+* **Deliberately outside the sandbox:** Launchpad credentials (lint/unit/
+  stats need none; `triage`/`smoke` do, and CONTRIBUTING.md notes that
+  authorising the real bot account inside a sandbox still grants its write
+  access -- `--dry-run` is the safety, not the container) and `opencode`,
+  so the LLM phases skip and the deterministic checks are what get
+  exercised.
+* **Actions:** lint, unit, check, stats, triage, smoke. `.workshop.lock` is
+  gitignored, as in the manpages PR.
+* **Not launched yet:** building the workshop needs LXD and a base image
+  download, so the definition is unverified -- first `workshop launch dev`
+  on the VM is the test.
+* Also fixed in passing: `test_since_filters_by_timestamp` (#131) pinned a
+  "recent" timestamp, so it failed a day later. Uses a relative one now.
+
+## 134. Check 7 Wording: Say That the Newer Series Must Be Fixed First
+
+* **Trigger (live, seb128, ubuntu-insights MP #512179):** the finding said
+  "There is no evidence of this issue being resolved in stonking, which is
+  a supported series (<policy link>). Please make sure to check, and
+  explicitly reflect it in the bug description or the bug status." seb128:
+  it "doesn't explicitly state that uploading to the new series is a
+  pre-requirement for a SRU (the documentation referenced covers it but
+  still the comment wording doesn't)".
+* **Fix:** lead with the requirement -- "SRU policy requires the fix to
+  land in newer supported series first" -- then the absence of evidence,
+  then both branches: if it isn't fixed there, that series needs updating
+  before this SRU can be sponsored; if it is, reflect that in the bug.
+  Keeps #118's care not to assert the series is unfixed. Plural-aware
+  ("those series need" / "that series needs"). Tier/kind unchanged
+  (question/verify).
+* Tests: 641 total, unchanged (the existing assertions check "no evidence"
+  and the series names, both still present).

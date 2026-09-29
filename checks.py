@@ -3162,13 +3162,20 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     # -- no evidence -- rather than asserting the series isn't fixed.
     plural = len(unhandled) > 1
     series_words = f"{', '.join(unhandled[:-1])} and {unhandled[-1]}" if plural else unhandled[0]
+    # #134 (live, ubuntu-insights MP #512179): the old wording left the
+    # requirement itself implicit -- it only said the series was supported
+    # and pointed at the policy. Say why it matters: an SRU can't land
+    # before the newer series are fixed.
     return Finding(
         "question",
-        f"There is no evidence of this issue being resolved in {series_words}, "
-        f"which {'are supported series' if plural else 'is a supported series'} "
-        "(https://ubuntu.com/project/docs/SRU/reference/requirements). "
-        "Please make sure to check, and explicitly reflect it in the bug "
-        "description or the bug status.",
+        f"SRU policy requires the fix to land in newer supported series "
+        f"first, and there is no evidence of it being resolved in "
+        f"{series_words}. Please check: if it isn't fixed there yet, "
+        f"{'those series need' if plural else 'that series needs'} to be "
+        "updated "
+        "before this SRU can be sponsored; if it is, please reflect that "
+        "explicitly in the bug description or the bug status. See "
+        "https://ubuntu.com/project/docs/SRU/reference/requirements",
         kind="verify",
     )
 
