@@ -1,0 +1,37 @@
+#!/bin/bash
+# Runs as root when the workshop is built or refreshed.
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+
+# The bot runs on system Python: apt_pkg (python3-apt) is a compiled
+# extension tied to it, so these are distro packages, not pip installs.
+# python3-pip and software-properties-common are only needed by the two
+# steps below (a minimal image has neither).
+apt-get install --no-install-recommends -y \
+    python3-apt \
+    python3-debian \
+    python3-launchpadlib \
+    python3-yaml \
+    python3-pytest \
+    python3-pip \
+    software-properties-common \
+    distro-info \
+    git \
+    make
+
+# Check 13 delegates to ubuntu-lint, which isn't in the archive yet; it
+# comes from its author's PPA. If that fails the check fails safe (returns
+# "not applicable") and its tests skip via pytest.importorskip, so a
+# missing package must not fail the build.
+if add-apt-repository -y ppa:enr0n/ubuntu-lint; then
+    apt-get install --no-install-recommends -y python3-ubuntu-lint \
+        || echo "note: python3-ubuntu-lint unavailable; Check 13 will be skipped"
+else
+    echo "note: could not add ppa:enr0n/ubuntu-lint; Check 13 will be skipped"
+fi
+
+# ruff is pinned to the version CI uses (#108: an unpinned ruff drifted and
+# broke CI on its own). Not packaged for every series, hence pip.
+python3 -m pip install --break-system-packages "ruff==0.15.21"

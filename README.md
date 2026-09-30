@@ -44,8 +44,24 @@ Items are re-triaged only when their contributor-controlled state
 changes (see "facts" in the [glossary](doc/GLOSSARY.md)); runs are
 idempotent and safe to repeat.
 
+## Hacking
+
+`.workshop/dev.yaml` defines a [Workshop](https://ubuntu.com/workshop/docs/)
+so lint, the unit suite and dry-run triages can be run in a throwaway
+container instead of on the machine that runs the real bot:
+
+```
+workshop launch dev
+workshop run dev check  # lint + unit suite, as CI runs them
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the other actions and for what is
+deliberately left out of the sandbox (Launchpad credentials, `opencode`).
+
 ## Documentation
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) -- development environment (Workshop),
+  and what a change is expected to come with.
 - [doc/CHECKS.md](doc/CHECKS.md) -- the complete, categorized list of
   every check currently implemented.
 - [doc/STATUS.md](doc/STATUS.md) -- current state, run history, backlog.

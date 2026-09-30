@@ -2783,106 +2783,74 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 ## 133. Workshop Definition for a Sandboxed Hacking Setup
 
 * **Request (seb128):** add a [Workshop](https://ubuntu.com/workshop/docs/)
-  configuration so the project has an easy sandboxed hacking setup. Also
-  flagged as a precursor to charming the bot later -- a *machine* charm for
-  this one, unlike the ubuntu-manpages-operator example.
-* **Grounded in the real tool, not the docs:** the definition reference is
-  behind a Canonical SSO wall, so the format came from `workshop 0.9.7`
-  installed locally (`workshop init` writes `.workshop/<name>.yaml`, not a
-  root `workshop.yaml`) plus a colleague's PR
-  (canonical/ubuntu-manpages-operator#67) for the in-project-SDK shape:
+  configuration for an easy sandboxed hacking setup. Also flagged as a
+  precursor to charming the bot (a *machine* charm here, unlike the
+  ubuntu-manpages-operator example).
+* **Format learned from the tool, not the docs** (the definition reference
+  is behind Canonical SSO): `workshop 0.9.7` is installed, and
+  `workshop init` writes `.workshop/<name>.yaml`. The in-project SDK shape
+  came from canonical/ubuntu-manpages-operator#67:
   `.workshop/<sdk>/sdk.yaml` consumed as `project-<sdk>`, with
   `hooks/setup-base`, `hooks/setup-project`, `hooks/check-health`.
-* **No language SDK composed:** the bot runs on system Python (`apt_pkg` is
-  a compiled extension tied to it, #62/#83), so the in-project SDK's
-  setup-base installs distro packages -- python3-apt, python3-debian,
-  python3-launchpadlib, python3-yaml, python3-pytest, distro-info -- and
-  pins `ruff==0.15.21` to match CI (#108).
-* **base ubuntu@26.04 deliberately:** `python3-ubuntu-lint` (Check 13) has
-  no 24.04 build (#109/#129), so a 26.04 workshop is closer to the eventual
-  deployment than the current VM. Its install is best-effort: if it's
-  missing, Check 13 already fails safe and its tests skip via
-  `pytest.importorskip`, so the build must not fail.
-* **Deliberately outside the sandbox:** Launchpad credentials (lint/unit/
-  stats need none; `triage`/`smoke` do, and CONTRIBUTING.md notes that
-  authorising the real bot account inside a sandbox still grants its write
-  access -- `--dry-run` is the safety, not the container) and `opencode`,
-  so the LLM phases skip and the deterministic checks are what get
-  exercised.
-* **Actions:** lint, unit, check, stats, triage, smoke. `.workshop.lock` is
-  gitignored, as in the manpages PR.
-* **Not launched yet:** building the workshop needs LXD and a base image
-  download, so the definition is unverified -- first `workshop launch dev`
-  on the VM is the test.
-* Also fixed in passing: `test_since_filters_by_timestamp` (#131) pinned a
-  "recent" timestamp, so it failed a day later. Uses a relative one now.
-
-## 134. Check 7 Wording: Say That the Newer Series Must Be Fixed First
-
-* **Trigger (live, seb128, ubuntu-insights MP #512179):** the finding said
-  "There is no evidence of this issue being resolved in stonking, which is
-  a supported series (<policy link>). Please make sure to check, and
-  explicitly reflect it in the bug description or the bug status." seb128:
-  it "doesn't explicitly state that uploading to the new series is a
-  pre-requirement for a SRU (the documentation referenced covers it but
-  still the comment wording doesn't)".
-* **Fix:** lead with the requirement -- "SRU policy requires the fix to
-  land in newer supported series first" -- then the absence of evidence,
-  then both branches: if it isn't fixed there, that series needs updating
-  before this SRU can be sponsored; if it is, reflect that in the bug.
-  Keeps #118's care not to assert the series is unfixed. Plural-aware
-  ("those series need" / "that series needs"). Tier/kind unchanged
-  (question/verify).
-* Tests: 641 total, unchanged (the existing assertions check "no evidence"
-  and the series names, both still present).
-
-## 135. FFe Detection: the "FFe:" Title Form and Grant Comments
-
-* **Trigger (live, seb128, wireplumber MP #511976):** the FF-classification
-  bullet fired although the linked bug #2167863 is an FFe request that had
-  already been granted. seb128: "do we try to figure out if the FFe is
-  approved? comment #3 has 'FFe granted'".
-* **Two findings from the real bug:**
-  1. Its title is `FFe: Please merge 0.5.17-1 into Stonking` -- the `FFe:`
-     form, while `_FFE_BUG_TITLE_RE` (#114) only matched `[FFe]`. So
-     detection failed and the neutral "please confirm there's an approved
-     FFe" branch fired; #120's silence never had a chance to apply.
-  2. Comment #3 (~skia) reads "FFe granted, please make sure to also test
-     the first live ISO that come out with this change (beta or daily)".
-* **Fix:** the title regex accepts both forms, and when the title carries
-  no marker the linked bug's comments are scanned for a grant
-  (`\\bffe\\b ... (granted|approved)`). Comments are only read when the
-  title doesn't already match, so the common case stays metadata-only.
-* **Still no approval verdict** (#114's reasoning stands): a grant comment
-  is positive evidence, but its absence proves nothing, and per #120 "an
-  FFe exists" leads to the same action either way -- stay silent, the
-  contributor filed it. Answering seb128's question directly: no, we don't
-  decide approval; we now just recognise the grant as evidence an FFe
-  exists.
-* Tests: 645 total (4 new: the `FFe:` title form, a grant comment without
-  an FFe title, an unrelated bug still getting the bullet, unreadable
-  comments failing safe to the bullet rather than crashing).
-
-## 136. Kernel Packages Are Out of Scope
-
-* **Request (seb128):** "can we ignore 'linux' package entries? the kernel
-  team has a special workflow and I don't want to step on their toes".
-* **Where:** alongside the private-item guard in `_triage_url` -- before
-  any check, LLM call or lookup, so a kernel item costs one metadata read.
-  Nothing is persisted (same as the private-item and grace-period skips),
-  which is free here since the pass exits immediately; the per-item audit
-  row records `outcome=skipped-kernel`, so `stats.py` shows how much of
-  the queue this removes.
-* **Matching is prefix-based**, `^linux(-|$)`, over every name available
-  without a lookup: the queue JSON's `source_package`, the MP's URL, and
-  the Ubuntu bug tasks. A new per-flavour kernel (`linux-<cloud>`,
-  `linux-<vendor>`) is then out of scope the day it appears rather than
-  the day we notice. `linux-firmware` is included -- also kernel-team.
-  DKMS drivers (`backport-iwlwifi-dkms`, seen live in #112/#126) do NOT
-  match: they go through the normal sponsoring queue.
-* Unreadable bug tasks fail toward "not kernel", i.e. normal triage,
-  rather than silently dropping an item we can't classify.
-* Tests: 652 total (7 new: `linux` and derived names match, lookalikes
-  (`linuxlogo`, `util-linux`) and DKMS drivers don't, bug tasks and the
-  queue's own name are both checked, unreadable tasks don't claim kernel,
-  and an end-to-end skip writes nothing while recording the outcome).
+* **Built and verified for real, three launches:**
+  1. First failed -- `setup-base` exit 127: a minimal 26.04 image has
+     neither `pip` nor `add-apt-repository`, so those are installed first.
+  2. Second failed -- `check-health` "health status is unknown": health
+     hooks must report via `workshopctl set-health okay` /
+     `--code=<code> error "<msg>"`, and run as root, dropping to the
+     workshop user for the checks (pattern taken from the manpages hook).
+  3. Third launched; `workshop run -- check` runs all 652 tests inside.
+     Note the `--`: without it Workshop can't tell an action name from a
+     workshop name.
+* **base ubuntu@26.04** (seb128 confirmed it as the better default now the
+  LTS is out): it also lets `python3-ubuntu-lint` install from
+  `ppa:enr0n/ubuntu-lint` (seb128 supplied the PPA), so Check 13 is
+  exercised in the workshop even though the VM on 24.04 can't (#109/#129).
+  Best-effort: if the PPA or package is unavailable the build still
+  succeeds, the check fails safe and its tests skip.
+* **No language SDK and no uv:** the bot runs on system Python
+  (`apt_pkg` is a compiled extension tied to it), and the container
+  already provides the isolation uv would.
+* **Actions trimmed to `check | stats | triage`** (seb128: six was too
+  many; `lint`/`unit`/`smoke` are reachable via `workshop exec`).
+  `triage` no longer passes `--dry-run` -- `main.py` defaults to it, so
+  the flag was noise and hid that a write mode can be passed deliberately.
+* **Credentials: configure once, by hand** (seb128's model, which matches
+  how Workshop actually behaves -- a container you keep, not a fresh
+  sandbox per command). Nothing is copied or mounted in from the host: the
+  Launchpad authorisation and the opencode login are done once, inside.
+* **Persistence via mount plugs.** A `refresh` that re-provisions clears
+  the container's home, which would have cost that setup every time the
+  definition changed (verified with a marker file). The fix is the
+  documented mount interface (seb128 pointed at the how-to after I wasted
+  a batch of guesses on the attribute name -- it is `workshop-target`):
+  our SDK declares a `state` plug for
+  `~/.cache/ubuntu-sponsoring-frontdesk`, so the OAuth token, audit.jsonl
+  and state.db (#130) survive. Verified: marker file intact across a
+  re-provisioning refresh. Workshop backs each plug with a managed host
+  directory under `~/.local/share/workshop/id/<id>/dev/mount/`, listed by
+  `workshop info dev` -- outside the checkout, so it can't be committed by
+  accident. This is the same mechanism the opencode SDK uses
+  (`opencode-config`, `opencode-data`), visible in
+  `workshop connections`.
+* **opencode comes from Canonical's `opencode` SDK** (seb128 found it with
+  `sdk find opencode`; I had written a manual installer step first, which
+  was both a 185MB download and lost on every refresh). Composing the SDK
+  gives `opencode` 1.18.33 on PATH and persists its config and auth. The
+  login stays manual -- it's per-person. `setup-project` still writes the
+  tool-less `sponsoring-reviewer` agent config if absent, since that is
+  the security-critical part (#99), is configuration rather than a secret,
+  and now lands in the persisted config mount.
+* **`ubuntu-lint` has no SDK** (`sdk find` finds none) and isn't on PyPI,
+  so the PPA stays: it's also what the production VM installs, whereas a
+  git install would pin a commit and could disagree with it.
+* **Running actions: name the workshop** -- `workshop run dev check`. A
+  single bare argument is ambiguous (Workshop can't tell an action from a
+  workshop name) for any action, not just `check`; `workshop run -- check`
+  is the other way out.
+* **The container is not a credential boundary** -- authorising the real
+  bot account inside it grants that account's write access to whatever
+  runs there. Said plainly in CONTRIBUTING.md; `--dry-run` is the safety.
+* Docs: new CONTRIBUTING.md (beginner overview, first-run, credentials,
+  the refresh caveat), README "Hacking" section, `.workshop.lock`
+  gitignored.

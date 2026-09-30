@@ -1,0 +1,54 @@
+# Workshop definition for hacking on Frontdesk.
+#
+# Workshop builds a container you KEEP: this file says how it gets
+# provisioned, and whatever you do inside it afterwards stays until the
+# workshop is removed (or re-provisioned -- see CONTRIBUTING.md). The point
+# here is to run lint, the unit suite and dry-run triages away from the
+# machine that runs the real bot, which writes to a public tracker.
+#
+# Credentials are set up by hand inside the container, once (Launchpad
+# authorisation, opencode login) -- nothing from the host is copied or
+# mounted in. Both survive a re-provisioning refresh, because the SDKs keep
+# them in Workshop-managed mount storage.
+#
+# base ubuntu@26.04: it's the current LTS, and python3-ubuntu-lint (which
+# Check 13 delegates to) has no 24.04 build, so a 26.04 workshop exercises
+# more of the bot than the VM currently can.
+#
+# Everything is installed by the in-project SDK's hooks -- the bot runs on
+# system Python with distro packages (apt_pkg is a compiled extension tied
+# to it), not a virtualenv, so there is no language SDK to compose here.
+
+name: dev
+base: ubuntu@26.04
+
+sdks:
+  # Canonical's opencode SDK: the LLM phases invoke `opencode`, and this
+  # keeps its config and login persisted across workshop updates (unlike
+  # anything installed by hand into the container's home, which a
+  # re-provisioning refresh clears). The login itself is still yours to do
+  # once, inside the workshop -- see CONTRIBUTING.md.
+  - name: opencode
+  - name: project-frontdesk-dev  # .workshop/frontdesk-dev/sdk.yaml
+
+actions:
+  # What CI runs: ruff check, ruff format --check, then the unit suite.
+  #   workshop run dev check
+  # For a subset, use the underlying tools directly, e.g.
+  #   workshop exec dev -- python3 -m pytest tests/ -k rebuild
+  check: |
+    make all
+
+  # Retrospective over the audit trail (audit.jsonl). Empty in a fresh
+  # workshop until a triage has run here.
+  stats: |
+    python3 stats.py "$@"
+
+  # Triage one item. main.py defaults to --dry-run, so this logs intended
+  # writes and performs none unless a write mode is passed deliberately:
+  #   workshop run dev triage --url <bug-or-mp-url>
+  # Needs the Launchpad authorisation and the opencode login done once
+  # inside the workshop; without the latter the LLM phases fail safe and
+  # only the deterministic checks are exercised. See CONTRIBUTING.md.
+  triage: |
+    python3 main.py "$@"

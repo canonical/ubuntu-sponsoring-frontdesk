@@ -1,0 +1,48 @@
+#!/bin/bash
+# Runs as the workshop user after setup-base.
+set -euo pipefail
+
+# Where audit.jsonl and state.db live (#130), and where launchpadlib caches
+# the OAuth token. Created up front so a first dry-run triage doesn't have
+# to.
+mkdir -p "${HOME}/.cache/ubuntu-sponsoring-frontdesk"
+
+# The LLM phases invoke opencode under a dedicated TOOL-LESS agent: the
+# prompts embed contributor-controlled bug/MP text, so the model must not
+# be able to act (design_journal.md #99). That agent is configuration, not
+# a secret, so it's written here rather than left as a manual step -- if it
+# were missing, the bot would fail every LLM-phase item safe instead.
+#
+# opencode itself comes from the `opencode` SDK composed in dev.yaml; only
+# its login is manual, being per-person. This file is written just once (see
+# the test below), so edits -- e.g. adding a "model" line to pin a model --
+# survive a refresh along with the rest of the persisted config mount.
+config_dir="${HOME}/.config/opencode"
+mkdir -p "${config_dir}"
+if [ ! -e "${config_dir}/opencode.jsonc" ]; then
+    cat > "${config_dir}/opencode.jsonc" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Tool-less agent for the sponsoring bot's LLM review calls
+  // (design_journal.md #99). Every tool is disabled and permissions deny
+  // as a second layer; llm_reviewer.py additionally discards any reply
+  // whose event stream contains a tool_use, in case this config regresses.
+  "agent": {
+    "sponsoring-reviewer": {
+      "description": "Tool-less text reviewer for the Ubuntu sponsoring bot",
+      "mode": "primary",
+      "tools": {
+        "*": false
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "deny"
+      }
+    }
+  }
+}
+JSON
+fi
+
+echo "Frontdesk workshop ready: 'workshop run -- check' for lint + tests."

@@ -1,0 +1,26 @@
+# In-project SDK for developing Frontdesk. Consumed as
+# `project-frontdesk-dev` from .workshop/dev.yaml. In-project SDKs have no
+# build-time features -- they are configured entirely by the hooks under
+# hooks/.
+#
+# setup-base installs the distro packages the bot imports (python3-apt's
+# apt_pkg, launchpadlib, python-debian, yaml) plus the tooling the Makefile
+# expects; setup-project prepares the runtime cache directory and writes the
+# tool-less opencode agent the LLM phases require (design_journal.md #99).
+# Credentials are never provisioned here -- they're set up by hand, once.
+name: frontdesk-dev
+version: "0"
+summary: In-project setup for developing the Ubuntu sponsoring Frontdesk bot
+
+# The bot's runtime state: the Launchpad OAuth token, audit.jsonl and
+# state.db (#130). Declared as a mount plug so Workshop keeps it in SDK
+# state storage, which survives a re-provisioning `workshop refresh` --
+# otherwise every definition change would cost another Launchpad
+# authorisation. Nothing from the host is mounted: the token is created
+# inside the workshop, once.
+plugs:
+  state:
+    interface: mount
+    workshop-target: /home/workshop/.cache/ubuntu-sponsoring-frontdesk
+    uid: 1000
+    gid: 1000

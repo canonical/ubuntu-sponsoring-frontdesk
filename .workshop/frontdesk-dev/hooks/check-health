@@ -1,0 +1,36 @@
+#!/bin/bash
+# Healthy when the tooling the Makefile needs is on PATH and every module
+# the bot imports is importable. Runs as root, so each check is run as the
+# workshop user to match the environment the actions actually use.
+#
+# On failure, name the specific check that tripped, so it's clear whether to
+# re-run setup-base (missing package) or file a bug (something stranger).
+
+missing=()
+for tool in ruff ubuntu-distro-info make git; do
+    if ! sudo -H -i -u workshop -- command -v "$tool" >/dev/null 2>&1; then
+        missing+=("$tool")
+    fi
+done
+
+if [ ${#missing[@]} -ne 0 ]; then
+    workshopctl set-health --code="frontdesk-tools-missing" error \
+        "missing tool(s) on PATH: ${missing[*]} (run 'workshop refresh dev' to reinstall)"
+    exit 0
+fi
+
+import_err=$(sudo -H -i -u workshop -- python3 -c \
+    'import apt_pkg, launchpadlib, yaml, pytest; import debian.changelog' 2>&1)
+if [ $? -ne 0 ]; then
+    workshopctl set-health --code="frontdesk-imports-failed" error \
+        "a module the bot imports is missing; first error: ${import_err##*$'\n'}"
+    exit 0
+fi
+
+# ubuntu-lint is optional: Check 13 fails safe without it and its tests skip
+# (see setup-base), so its absence is a note, not an error.
+if ! sudo -H -i -u workshop -- python3 -c 'import ubuntu_lint' >/dev/null 2>&1; then
+    echo "note: ubuntu_lint absent -- Check 13 skipped, its tests too"
+fi
+
+workshopctl set-health okay
