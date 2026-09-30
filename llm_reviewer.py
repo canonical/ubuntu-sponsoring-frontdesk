@@ -62,10 +62,17 @@ _MP_TARGET_SERIES_RE = re.compile(
     r"(?:-(?:devel|proposed|updates|security|backports))?$"
 )
 
-# The standard human title convention for a Feature Freeze Exception
-# request, e.g. "[FFe] Update foo to 1.4.0 in Stonking" (design #114,
-# found live: magnum-capi-helm MP #511257 / bug #2167149).
-_FFE_BUG_TITLE_RE = re.compile(r"^\s*\[\s*ffe\s*\]", re.IGNORECASE)
+# How Feature Freeze Exception requests title themselves. Both forms are
+# in live use: "[FFe] Update foo to 1.4.0 in Stonking" (#114,
+# magnum-capi-helm bug #2167149) and "FFe: Please merge 0.5.17-1 into
+# Stonking" (#135, wireplumber bug #2167863 -- the bracket-only regex
+# missed it).
+_FFE_BUG_TITLE_RE = re.compile(r"^\s*(\[\s*ffe\s*\]|ffe\s*:)", re.IGNORECASE)
+
+# The release team's grant, e.g. "FFe granted, please make sure to also
+# test the first live ISO ..." (#135, live on the same bug). Evidence that
+# an exception exists even when the title doesn't say so.
+_FFE_GRANTED_RE = re.compile(r"\bffe\b[^.\n]{0,40}\b(granted|approved)\b", re.IGNORECASE)
 
 
 def _is_sru(tags, description):
@@ -1214,21 +1221,29 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         return series != devel
 
     def _linked_ffe_bugs(self, lp_obj):
-        """Bug numbers among lp_obj's linked bugs whose title reads as a
-        Feature Freeze Exception request (design #114) -- the standard
-        '[FFe] ...' title convention, best-effort and metadata-only (no
-        new lookups: bugs are already linked). Deliberately does NOT try
-        to tell whether the FFe has been approved -- that would mean
-        guessing at release-team comment/tagging conventions, and a
-        wrong "yes, approved" is a much worse failure than staying
-        neutral; callers phrase around this bug existing, not around its
-        approval state. Fails safe to an empty list (treated the same as
-        "no FFe bug found") on any lookup failure."""
+        """Bug numbers among lp_obj's linked bugs that carry a Feature
+        Freeze Exception request: the title says so ("[FFe] ..." or
+        "FFe: ..."), or a comment records the release team's grant
+        ("FFe granted"). Comments are only read when the title doesn't
+        already match, so the common case stays metadata-only.
+
+        Still does NOT decide whether a pending FFe was approved (#114):
+        a grant comment is positive evidence, but its absence proves
+        nothing, and callers treat "an FFe exists" the same either way
+        (#120 -- the contributor filed it, so there's nothing to tell
+        them). Fails safe to an empty list on any lookup failure."""
+        found = []
         try:
-            return [bug.id for bug in lp_obj.bugs if _FFE_BUG_TITLE_RE.match(bug.title or "")]
+            for bug in lp_obj.bugs:
+                if _FFE_BUG_TITLE_RE.match(bug.title or ""):
+                    found.append(bug.id)
+                    continue
+                if any(_FFE_GRANTED_RE.search(m.content or "") for m in bug.messages):
+                    found.append(bug.id)
         except Exception as e:
             logger.debug("_linked_ffe_bugs: couldn't read linked bugs (%s); assuming none.", e)
             return []
+        return found
 
     def _sru_template_check_for_mp(self, lp_obj):
         """

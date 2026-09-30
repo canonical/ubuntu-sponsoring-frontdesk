@@ -2835,3 +2835,31 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   (question/verify).
 * Tests: 641 total, unchanged (the existing assertions check "no evidence"
   and the series names, both still present).
+
+## 135. FFe Detection: the "FFe:" Title Form and Grant Comments
+
+* **Trigger (live, seb128, wireplumber MP #511976):** the FF-classification
+  bullet fired although the linked bug #2167863 is an FFe request that had
+  already been granted. seb128: "do we try to figure out if the FFe is
+  approved? comment #3 has 'FFe granted'".
+* **Two findings from the real bug:**
+  1. Its title is `FFe: Please merge 0.5.17-1 into Stonking` -- the `FFe:`
+     form, while `_FFE_BUG_TITLE_RE` (#114) only matched `[FFe]`. So
+     detection failed and the neutral "please confirm there's an approved
+     FFe" branch fired; #120's silence never had a chance to apply.
+  2. Comment #3 (~skia) reads "FFe granted, please make sure to also test
+     the first live ISO that come out with this change (beta or daily)".
+* **Fix:** the title regex accepts both forms, and when the title carries
+  no marker the linked bug's comments are scanned for a grant
+  (`\\bffe\\b ... (granted|approved)`). Comments are only read when the
+  title doesn't already match, so the common case stays metadata-only.
+* **Still no approval verdict** (#114's reasoning stands): a grant comment
+  is positive evidence, but its absence proves nothing, and per #120 "an
+  FFe exists" leads to the same action either way -- stay silent, the
+  contributor filed it. Answering seb128's question directly: no, we don't
+  decide approval; we now just recognise the grant as evidence an FFe
+  exists.
+* Tests: 645 total (4 new: the `FFe:` title form, a grant comment without
+  an FFe title, an unrelated bug still getting the bullet, unreadable
+  comments failing safe to the bullet rather than crashing).
+

@@ -613,3 +613,75 @@ def test_version_bounce_skips_the_convention_advisory(tmp_path, monkeypatch):
     assert called == []
     assert "rebased" in lp.comments[0]
     assert "convention" not in lp.comments[0]
+
+
+# --- #135: FFe detection beyond the [FFe] title -------------------------------
+
+
+class _Msg:
+    def __init__(self, content):
+        self.content = content
+
+
+def _ffe_case(monkeypatch, title="", comments=()):
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+    bug = FakeBug(id=2167863, title=title)
+    bug.messages = [_Msg(c) for c in comments]
+    r = ScriptedReviewer(_reply(feature="yes"))
+    return r.triage_mp(FakeMP(bugs=[bug]), diff_text=MERGE_DIFF)
+
+
+def test_colon_style_ffe_title_is_detected(monkeypatch):
+    # Live (wireplumber MP #511976 / bug #2167863): "FFe: Please merge
+    # 0.5.17-1 into Stonking" -- the bracket-only regex missed it.
+    status, _ = _ffe_case(monkeypatch, title="FFe: Please merge 0.5.17-1 into Stonking")
+    assert status == "READY_FOR_HUMAN"
+
+
+def test_granted_comment_is_detected_without_an_ffe_title(monkeypatch):
+    status, _ = _ffe_case(
+        monkeypatch,
+        title="Please merge 0.5.17-1 into Stonking",
+        comments=[
+            "I must admit that this change is a bit scary.",
+            "FFe granted, please make sure to also test the first live ISO",
+        ],
+    )
+    assert status == "READY_FOR_HUMAN"
+
+
+def test_unrelated_bug_still_gets_the_ffe_bullet(monkeypatch):
+    status, payload = _ffe_case(
+        monkeypatch,
+        title="wireplumber crashes on resume",
+        comments=["This is unrelated to any freeze."],
+    )
+    assert status == "ADVISORY"
+    assert "Feature Freeze Exception" in payload[0][1]
+
+
+def test_unreadable_comments_do_not_crash_the_review(monkeypatch):
+    monkeypatch.setattr(
+        release_schedule,
+        "FEATURE_FREEZE",
+        datetime.date.today() - datetime.timedelta(days=1),
+    )
+
+    class _BrokenBug(FakeBug):
+        @property
+        def messages(self):
+            raise TimeoutError("simulated Launchpad timeout")
+
+        @messages.setter
+        def messages(self, value):
+            pass
+
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, payload = r.triage_mp(
+        FakeMP(bugs=[_BrokenBug(title="no marker")]), diff_text=MERGE_DIFF
+    )
+    assert status == "ADVISORY"  # fails safe to the neutral bullet

@@ -41,7 +41,9 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   Freeze date for a sync/upload that introduces a new feature, not just a bug
   fix. The freeze date lives in `release_schedule.py`. Sync-request handling
   is still backlog (#19); MP-side, `llm_reviewer._linked_ffe_bugs` (#114)
-  detects a linked bug following the standard `[FFe] ...` title convention;
+  detects a linked bug carrying an FFe request -- title `[FFe] ...` or
+  `FFe: ...`, or a comment recording the release team's grant ("FFe
+  granted", #135);
   when one is linked the FF-classification bullet is dropped entirely (#120:
   the contributor already filed it). Approval state is not checked (no
   single reliable Launchpad signal) -- that's the sponsor's call. With no
