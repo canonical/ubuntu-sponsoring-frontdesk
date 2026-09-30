@@ -617,6 +617,41 @@ _CLOSED_TASK_STATUSES = (
 )
 
 
+# Source packages the kernel team owns: `linux` itself and everything
+# derived from it (linux-signed*, linux-meta*, linux-hwe-*, linux-oem-*,
+# per-cloud and per-flavour kernels, linux-firmware, ...). They run their
+# own SRU/upload workflow, so the bot stays out of the way entirely
+# (#136, seb128: "I don't want to step on their toes").
+_KERNEL_SOURCE_RE = re.compile(r"^linux(-|$)")
+
+
+def is_kernel_item(lp_obj, source_package=None):
+    """True when the item is about a kernel-team source package, from any
+    name we can see: the queue's own `source_package`, the MP's URL, or an
+    Ubuntu bug task. Metadata only -- no lookups -- so it can gate the
+    pass before anything else runs.
+
+    Deliberately prefix-based rather than an explicit list: a new
+    per-flavour kernel (linux-<cloud>, linux-<vendor>) must be out of
+    scope the day it appears, not the day we notice. DKMS drivers
+    (backport-iwlwifi-dkms and friends) do NOT match and are triaged
+    normally -- they go through the regular sponsoring queue."""
+    names = [source_package] if source_package else []
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type == "branch_merge_proposal":
+        names.append(_source_package_from_mp(lp_obj))
+    else:
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        try:
+            for task in bug.bug_tasks:
+                match = re.match(r"(?P<pkg>\S+) \(Ubuntu", task.bug_target_name or "")
+                if match:
+                    names.append(match.group("pkg"))
+        except Exception as e:
+            logger.debug("is_kernel_item: couldn't read the bug's tasks (%s).", e)
+    return any(_KERNEL_SOURCE_RE.match(name.lower()) for name in names if name)
+
+
 def _bug_sponsoring_venue_series(mp):
     """The Ubuntu series (codename, or 'devel') an MP would land in if it is
     a git-ubuntu sponsoring MP -- None when its target branch doesn't follow

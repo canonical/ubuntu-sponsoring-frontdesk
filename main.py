@@ -206,6 +206,15 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
+    # Kernel packages are the kernel team's own workflow (#136) -- their
+    # SRUs and uploads follow rules this bot doesn't model, so it stays
+    # out entirely: no checks, no LLM, no writes. Nothing is persisted,
+    # which costs nothing since this exits before any lookup.
+    if checks.is_kernel_item(lp_obj, source_package):
+        logger.info("Kernel-team package -- not this bot's queue. Skipping (nothing persisted).")
+        report.outcome = "skipped-kernel"
+        return
+
     # New-bug grace period (#91): give the submitter time to finish the
     # report (the filing form can't set series targets, linked MPs, etc --
     # those come in an edit/follow-up comment right after). Bugs only: an

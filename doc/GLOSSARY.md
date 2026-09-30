@@ -83,6 +83,10 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   `check_no_change_rebuild_version`,
   `check_xsbc_original_maintainer`), run in a fixed order before the LLM
   phase. See `flow.dot`/`flow.svg`.
+- **Kernel packages** — `linux` and everything derived from it, matched by
+  prefix (`checks.is_kernel_item`, #136). Skipped before any check runs: the
+  kernel team runs its own SRU/upload workflow. DKMS drivers
+  (`backport-iwlwifi-dkms`) don't count and are triaged normally.
 - **Fires** — a check "fires" when it finds something to flag (returns
   truthy). Since #31/#44, only `closing`-tier outcomes short-circuit
   `triage_url` (the item is already resolved); `incomplete`-tier outcomes

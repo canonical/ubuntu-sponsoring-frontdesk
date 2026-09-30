@@ -13,6 +13,13 @@ into the "needs fixing" comment and drives a `Needs Fixing` vote.
 **question** = non-blocking; aggregates into a "please verify" or "nice
 to have" note, never changes status.
 
+Out of scope entirely: **kernel-team packages** (#136). An item whose source
+package is `linux` or anything derived from it (`linux-signed*`, `linux-hwe-*`,
+`linux-oem-*`, per-cloud/flavour kernels, `linux-firmware`, ...) is skipped
+before any check runs -- the kernel team has its own SRU/upload workflow. DKMS
+drivers such as `backport-iwlwifi-dkms` are not kernel packages here and are
+triaged normally.
+
 ## Is there still something to sponsor?
 
 These run first and can end the pass on their own — no point flagging

@@ -2863,3 +2863,26 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   an FFe title, an unrelated bug still getting the bullet, unreadable
   comments failing safe to the bullet rather than crashing).
 
+## 136. Kernel Packages Are Out of Scope
+
+* **Request (seb128):** "can we ignore 'linux' package entries? the kernel
+  team has a special workflow and I don't want to step on their toes".
+* **Where:** alongside the private-item guard in `_triage_url` -- before
+  any check, LLM call or lookup, so a kernel item costs one metadata read.
+  Nothing is persisted (same as the private-item and grace-period skips),
+  which is free here since the pass exits immediately; the per-item audit
+  row records `outcome=skipped-kernel`, so `stats.py` shows how much of
+  the queue this removes.
+* **Matching is prefix-based**, `^linux(-|$)`, over every name available
+  without a lookup: the queue JSON's `source_package`, the MP's URL, and
+  the Ubuntu bug tasks. A new per-flavour kernel (`linux-<cloud>`,
+  `linux-<vendor>`) is then out of scope the day it appears rather than
+  the day we notice. `linux-firmware` is included -- also kernel-team.
+  DKMS drivers (`backport-iwlwifi-dkms`, seen live in #112/#126) do NOT
+  match: they go through the normal sponsoring queue.
+* Unreadable bug tasks fail toward "not kernel", i.e. normal triage,
+  rather than silently dropping an item we can't classify.
+* Tests: 652 total (7 new: `linux` and derived names match, lookalikes
+  (`linuxlogo`, `util-linux`) and DKMS drivers don't, bug tasks and the
+  queue's own name are both checked, unreadable tasks don't claim kernel,
+  and an end-to-end skip writes nothing while recording the outcome).
