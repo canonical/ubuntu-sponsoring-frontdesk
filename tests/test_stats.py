@@ -139,8 +139,14 @@ def test_truncated_last_line_is_skipped(tmp_path):
 
 
 def test_since_filters_by_timestamp(tmp_path):
+    # Timestamps relative to now: a fixed "recent" date silently ages out
+    # and the test starts failing a day later.
+    import datetime
+
     old = _item("old")
     old["ts"] = "2020-01-01T00:00:00+00:00"
-    path = _write(tmp_path, [old, _item("new")])
+    recent = _item("new")
+    recent["ts"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    path = _write(tmp_path, [old, recent])
     rows = stats.load(path, stats._parse_since("1d"))
     assert [r["url"] for r in rows] == ["new"]
