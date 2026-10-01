@@ -33,8 +33,13 @@ digraph SponsoringBot {
     grace  [label="bug younger than 10 min?", shape=diamond, fillcolor="#FFF9C4"];
     graceskip [label="too new: let the reporter\nfinish attaching things,\nnothing persisted", shape=box, fillcolor="#ECEFF1"];
 
+    pkg    [label="an Ubuntu packaging MP? (#139)\n'/ubuntu/+source/<pkg>/' URL, or a\ngit-ubuntu target branch, or a bzr\ntarget under the distribution", shape=diamond, fillcolor="#FFF9C4"];
+    pkgskip [label="upstream-project MP:\nno debian/ to review,\nskip before any check\n(the report lists whatever an\nuploading team was asked\nto review)", shape=box, fillcolor="#ECEFF1"];
+
     priv -> privskip [label="yes"];
-    priv -> kern [label="no"];
+    priv -> pkg [label="no"];
+    pkg -> pkgskip [label="no"];
+    pkg -> kern [label="yes"];
     kern -> kernskip [label="yes"];
     kern -> qguard [label="no"];
     qguard -> qskip [label="no / None\n(write modes)"];
@@ -148,6 +153,9 @@ digraph SponsoringBot {
     agg  -> rfh  [label="no findings"];
 
     // ---- persist note ----
+    outcomenote [label="audit outcomes (#138): every no-op path\nnames itself -- skipped-unchanged, skipped-private,\nskipped-not-queued, skipped-not-packaging,\nskipped-too-new, skipped-kernel, load-failed,\nlookup-failed. 'inconclusive' now means only\na check's lookup returned None, and the row\nrecords which check that was", shape=note, fillcolor="#FFFDE7"];
+    skip -> outcomenote [style=dotted, arrowhead=none];
+
     persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend + queued + silent\n(retry next run);\nfacts also withheld when a write was\nnot performed (dry-run/declined -- #36)", shape=note, fillcolor="#FFFDE7"];
     done -> persist [style=dotted, arrowhead=none];
     wait -> persist [style=dotted, arrowhead=none];

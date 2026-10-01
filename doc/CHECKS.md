@@ -395,13 +395,21 @@ Silence is usually deliberate. In rough order of when it happens:
   check runs: the kernel team has its own SRU and upload workflow. DKMS
   drivers such as `backport-iwlwifi-dkms` are *not* kernel packages here and
   are triaged normally.
+- **The merge proposal isn't about an Ubuntu source package** (#139). The
+  sponsoring report lists a proposal whenever any uploading team is a
+  requested reviewer, which in September 2026 briefly pulled in two decades
+  of abandoned proposals on upstream *projects*. Those have no `debian/`
+  directory, so the bot has nothing true to say about them and skips before
+  any check runs.
 - **A brand-new bug** gets a ten-minute grace period, so a contributor can
   finish attaching things before being reviewed.
 - **Nothing changed** since the last pass. The bot remembers the facts it
   acted on and won't repeat itself.
 - **A lookup was inconclusive.** If Launchpad or the archive couldn't be
   read, the pass persists nothing and the item is retried later, rather than
-  acting on a guess.
+  acting on a guess. Since #138 the audit trail names the check whose lookup
+  failed, so `stats.py` can tell a real failure from a healthy skip -- each
+  of these reasons records its own outcome rather than one catch-all.
 - **A human reviewer is already engaged** (#94/#106). Non-blocking
   question-tier findings are dropped entirely -- a reviewer in the
   conversation doesn't need the bot's suggestions -- while real blockers are

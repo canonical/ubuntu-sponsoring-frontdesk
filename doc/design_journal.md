@@ -3109,3 +3109,16 @@ They did -- `changelog_text` was simply the one the stats happened to catch:
   because the question prompted an inventory of every urlopen call, which is
   a good argument for asking it.
 
+### 139/140 addendum: documentation caught up
+
+Applying `AGENTS.md`'s own rule rather than waiting to be asked:
+
+* `doc/CHECKS.md` gains the #139 skip under "Why the bot sometimes says
+  nothing" -- a contributor whose upstream-project MP is ignored should be
+  able to find out why -- and the inconclusive bullet now mentions that each
+  silent path records its own outcome since #138.
+* `doc/flow.dot` gains the `is_packaging_mp` gate between the private-item
+  and kernel guards, plus a note listing the audit outcomes, since
+  "inconclusive" no longer means "any path that didn't call update_status".
+  Rendered to `flow.svg`/`flow.png`.
+
