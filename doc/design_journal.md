@@ -2955,3 +2955,39 @@ with the checks themselves left to the table that now sits below it.
   (green = resolved/with a human, orange = waiting on the contributor, grey
   = quiet).
 
+## 138. Record WHY a Pass Couldn't Act
+
+* **Found by running the metrics** (#131) over 30 days of the live VM's
+  audit trail, at seb128's prompting: 205 items triaged, and **143 of them
+  (70%) ended `inconclusive`** -- posting nothing, persisting nothing,
+  retried next run. Only 28 items ever produced a finding. If that is the
+  steady state, most of the queue is being re-triaged forever without the
+  bot acting.
+* **The audit couldn't say why.** `inconclusive` was a bare bool set at 16
+  sites in `_triage_url`, and the row recorded only the outcome. Since an
+  inconclusive pass produces no finding and no write, the failing check is
+  invisible in every other section of the report -- the one case the stats
+  were least able to explain was also the most common.
+* **Fix:** `mark_inconclusive(reason)` replaces the bool, naming the check
+  whose lookup returned None (or `facts:<field>` for a fingerprint lookup),
+  carried in the audit row's `extra["inconclusive"]` and counted by
+  `stats.py` as "Inconclusive passes, per failing lookup". Also covers the
+  two silent exits after the gate -- Check 7's own None and the engagement
+  check's unreadable history -- which previously landed in the same bucket
+  with no trace at all.
+* **A wrong diagnosis I had to walk back:** `engaged: None` appeared on 140
+  of the 143, which looked like the engagement check failing. It isn't: the
+  inconclusive gate runs *before* engagement is consulted (`main.py:558` vs
+  `:588`), so those items exit earlier and the field is simply never set.
+  Worth remembering when reading these rows -- `engaged: None` on an
+  inconclusive item means "not reached", not "unreadable".
+* **The decline numbers are not a quality signal** (seb128): 83 comments
+  declined vs 50 performed, because the account in use has no permission to
+  unsubscribe `~ubuntu-sponsors`, so he has been doing that by hand pending
+  a dedicated bot account in the team. `stats.py` called that section a
+  "rough wrong-finding signal", which would have misled anyone reading it
+  later; relabelled, with a pointer to the Writes section.
+* Reasons are deduplicated and kept in the order the checks were reached,
+  so a row reads as the sequence of what failed. Rows predating this entry
+  have no `inconclusive` key; `stats.py` treats them as empty (tested).
+

@@ -41,6 +41,7 @@ class ItemReport:
         self.suppressed = []
         self.closing = None
         self.engaged = None
+        self.inconclusive = []
         self.outcome = None
         self.detail = ""
         self._entries = []
@@ -65,6 +66,7 @@ class ItemReport:
             "suppressed": self.suppressed,
             "closing": self.closing,
             "engaged": self.engaged,
+            "inconclusive": self.inconclusive,
             "llm": usage,
             "elapsed_s": round(elapsed_s, 2),
         }
@@ -141,6 +143,19 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     def add_finding(check, finding):
         findings.append(finding)
         report.add(check, finding)
+
+    def mark_inconclusive(reason):
+        """Record WHY this pass can't act (#138).
+
+        `inconclusive` used to be a bare bool, so the audit row said only
+        that the pass did nothing -- and since ~70% of a live queue pass
+        ends this way, the stats couldn't say which lookup was failing.
+        The reason is the check (or fingerprint field) whose lookup came
+        back None.
+        """
+        if reason not in inconclusive_reasons:
+            inconclusive_reasons.append(reason)
+        report.inconclusive = list(inconclusive_reasons)
 
     t_last = [t_start]
 
@@ -273,7 +288,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # completeness it doesn't have) -- persisting would make the top-level
     # facts-unchanged gate skip this URL forever, and whatever the check
     # couldn't determine this run would never get re-checked.
-    inconclusive = False
+    inconclusive_reasons = []
 
     # Lookup-backed fingerprint fields (#37 archive_version; #102 comment
     # digest and linked-bug signals) follow the same None-means-lookup-failed
@@ -282,7 +297,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # whole pass is inconclusive.
     for lookup_field in ("archive_version", "comments_digest", "linked_bugs"):
         if new_facts.get(lookup_field, "") is None:
-            inconclusive = True
+            mark_inconclusive(f"facts:{lookup_field}")
             logger.info(
                 "%s lookup failed while fingerprinting; treating this pass as inconclusive.",
                 lookup_field,
@@ -306,7 +321,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     attachments.reset_cache()
 
     def persistable_facts():
-        if inconclusive or not lp_client.all_writes_effective():
+        if inconclusive_reasons or not lp_client.all_writes_effective():
             if not lp_client.all_writes_effective():
                 logger.info(
                     "A write this run was not performed (dry-run/declined/"
@@ -323,7 +338,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_administrative_state")
     logger.debug("check_administrative_state -> %s", fired)
     if fired is None:
-        inconclusive = True
+        mark_inconclusive("check_administrative_state")
     elif fired:
         report.closing = "check_administrative_state"
         state_manager.update_status(
@@ -341,7 +356,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_nothing_to_sponsor")
     logger.debug("check_nothing_to_sponsor -> %s", outcome)
     if outcome is None:
-        inconclusive = True
+        mark_inconclusive("check_nothing_to_sponsor")
     elif outcome:
         details = {
             "mp_review": "Unsubscribed: fix under review on the linked merge proposal.",
@@ -367,7 +382,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     logger.debug("check_target_branch -> %s", result)
     wrong_target_branch = bool(result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_target_branch")
     elif result:
         add_finding("check_target_branch", result)
 
@@ -380,7 +395,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         checkpoint("check_mp_conflicts")
         logger.debug("check_mp_conflicts -> %s", result)
         if result is None:
-            inconclusive = True
+            mark_inconclusive("check_mp_conflicts")
         elif result:
             add_finding("check_mp_conflicts", result)
 
@@ -389,7 +404,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_empty_diff")
     logger.debug("check_empty_diff -> %s", fired)
     if fired is None:
-        inconclusive = True
+        mark_inconclusive("check_empty_diff")
     elif fired:
         report.closing = "check_empty_diff"
         state_manager.update_status(
@@ -405,7 +420,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_changelog_bug_reference")
     logger.debug("check_changelog_bug_reference -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_changelog_bug_reference")
     elif result:
         add_finding("check_changelog_bug_reference", result)
 
@@ -418,7 +433,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_stale_version")
     logger.debug("check_stale_version -> %s", outcome)
     if outcome is None:
-        inconclusive = True
+        mark_inconclusive("check_stale_version")
     elif outcome == "done":
         state_manager.update_status(
             url,
@@ -479,7 +494,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_direct_source_edit")
     logger.debug("check_direct_source_edit -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_direct_source_edit")
     elif result:
         add_finding("check_direct_source_edit", result)
 
@@ -489,7 +504,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_missing_changelog_stanza")
     logger.debug("check_missing_changelog_stanza -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_missing_changelog_stanza")
     elif result:
         add_finding("check_missing_changelog_stanza", result)
 
@@ -499,7 +514,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_patch_not_debdiff")
     logger.debug("check_patch_not_debdiff -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_patch_not_debdiff")
     elif result:
         add_finding("check_patch_not_debdiff", result)
 
@@ -509,7 +524,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_ppa_version_suffix")
     logger.debug("check_ppa_version_suffix -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_ppa_version_suffix")
     elif result:
         add_finding("check_ppa_version_suffix", result)
 
@@ -520,7 +535,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         checkpoint("check_sru_version_suffix_convention")
         logger.debug("check_sru_version_suffix_convention -> %s", result)
         if result is None:
-            inconclusive = True
+            mark_inconclusive("check_sru_version_suffix_convention")
         elif result:
             add_finding("check_sru_version_suffix_convention", result)
 
@@ -530,7 +545,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_sru_version_newer_series_precedence")
     logger.debug("check_sru_version_newer_series_precedence -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_sru_version_newer_series_precedence")
     elif result:
         add_finding("check_sru_version_newer_series_precedence", result)
 
@@ -541,7 +556,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_no_change_rebuild_version")
     logger.debug("check_no_change_rebuild_version -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_no_change_rebuild_version")
     elif result:
         add_finding("check_no_change_rebuild_version", result)
 
@@ -551,11 +566,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_xsbc_original_maintainer")
     logger.debug("check_xsbc_original_maintainer -> %s", result)
     if result is None:
-        inconclusive = True
+        mark_inconclusive("check_xsbc_original_maintainer")
     elif result:
         add_finding("check_xsbc_original_maintainer", result)
 
-    if inconclusive:
+    if inconclusive_reasons:
         # Design #31's addendum: the aggregated comment presents itself as
         # the complete list of what to fix this round, so posting it while
         # any check couldn't determine its result would claim a completeness
@@ -614,6 +629,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     checkpoint("check_sru_newer_series")
     logger.debug("check_sru_newer_series -> %s", result)
     if result is None:
+        mark_inconclusive("check_sru_newer_series")
         logger.info(
             "check_sru_newer_series couldn't be fully evaluated (a lookup/"
             "LLM failure). Posting nothing this run -- facts won't be "
@@ -706,6 +722,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         checkpoint("check_human_engaged")
         logger.debug("check_human_engaged -> %s", engaged)
         if engaged is None:
+            mark_inconclusive("check_human_engaged")
             logger.info(
                 "Couldn't read the comment history to tell whether a human "
                 "reviewer is engaged. Posting nothing this run; facts won't "

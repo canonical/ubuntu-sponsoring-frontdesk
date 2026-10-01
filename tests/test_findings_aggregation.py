@@ -163,6 +163,61 @@ def test_inconclusive_pass_posts_no_aggregate_and_skips_the_llm(tmp_path, monkey
     assert sm.get_facts(URL) is None
 
 
+def test_inconclusive_pass_records_which_lookup_failed(tmp_path, monkeypatch):
+    # #138: an inconclusive pass posts nothing and persists nothing, so the
+    # failing check appears in no other part of the audit -- it never
+    # produces a finding to count. Without the reason, stats.py could say
+    # only that ~70% of a live pass does nothing.
+    sm = _state(tmp_path)
+    mp = FakeMP(
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
+    lp = FakeTriageClient(objects={URL: mp})
+    monkeypatch.setattr(checks, "check_stale_version", lambda *a, **k: None)
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    row = [r for r in lp.audit.records if r["action"] == "triage"][0]
+    assert row["outcome"] == "inconclusive"
+    assert row["extra"]["inconclusive"] == ["check_stale_version"]
+
+
+def test_inconclusive_reasons_are_deduplicated_and_ordered(tmp_path, monkeypatch):
+    # Two checks failing in one pass are both named, once each, in the
+    # order they were reached.
+    sm = _state(tmp_path)
+    mp = FakeMP(
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
+    lp = FakeTriageClient(objects={URL: mp})
+    monkeypatch.setattr(checks, "check_changelog_bug_reference", lambda *a, **k: None)
+    monkeypatch.setattr(checks, "check_stale_version", lambda *a, **k: None)
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    row = [r for r in lp.audit.records if r["action"] == "triage"][0]
+    assert row["extra"]["inconclusive"] == [
+        "check_changelog_bug_reference",
+        "check_stale_version",
+    ]
+
+
+def test_conclusive_pass_records_no_inconclusive_reason(tmp_path):
+    sm = _state(tmp_path)
+    mp = FakeMP(
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
+    lp = FakeTriageClient(objects={URL: mp})
+
+    main.triage_url(URL, sm, lp, FakeLLM())
+
+    row = [r for r in lp.audit.records if r["action"] == "triage"][0]
+    assert row["extra"]["inconclusive"] == []
+
+
 # --- #131: the per-item audit record ------------------------------------------
 
 

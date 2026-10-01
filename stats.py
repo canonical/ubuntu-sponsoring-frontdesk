@@ -70,6 +70,10 @@ def summarize(rows):
     suppressed = collections.Counter()
     tiers = collections.Counter()
     clean = 0
+    # #138: why a pass couldn't act. An inconclusive pass posts nothing and
+    # persists nothing, so a check whose lookup keeps failing is invisible in
+    # every other section -- it never produces a finding to count.
+    inconclusive = collections.Counter()
     declined_checks = collections.Counter()
     declined_urls = {r["url"] for r in writes if r.get("outcome") == "declined"}
 
@@ -85,6 +89,8 @@ def summarize(rows):
                 declined_checks[finding.get("check") or "?"] += 1
         for finding in extra.get("suppressed") or []:
             suppressed[finding.get("check") or "?"] += 1
+        for reason in extra.get("inconclusive") or []:
+            inconclusive[reason] += 1
 
     tokens = sum((r.get("extra") or {}).get("llm", {}).get("tokens", 0) for r in items)
     cost = sum((r.get("extra") or {}).get("llm", {}).get("cost_usd", 0.0) for r in items)
@@ -101,6 +107,7 @@ def summarize(rows):
         "findings_by_check": findings,
         "findings_by_tier": tiers,
         "suppressed_by_check": suppressed,
+        "inconclusive_by_reason": inconclusive,
         "declined_by_check": declined_checks,
         "write_outcomes": collections.Counter((r.get("action"), r.get("outcome")) for r in writes),
         "llm": {
@@ -158,8 +165,13 @@ def report(data):
         "Suppressed by engagement, per check",
         _table(data["suppressed_by_check"]),
         "",
-        "Findings on items whose write you declined (rough wrong-finding signal)",
+        "Inconclusive passes, per failing lookup (#138)",
+        _table(data["inconclusive_by_reason"], items),
+        "",
+        "Findings on items whose write didn't go through",
         _table(data["declined_by_check"]),
+        "  (a decline can simply mean the account lacks the permission --",
+        "   check the Writes section before reading this as a bad finding)",
         "",
         "Writes",
         _table(

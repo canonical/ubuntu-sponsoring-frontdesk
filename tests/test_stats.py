@@ -16,7 +16,14 @@ def _write(tmp_path, rows):
     return str(path)
 
 
-def _item(url, outcome="WAITING_ON_CONTRIBUTOR", findings=(), suppressed=(), llm=None):
+def _item(
+    url,
+    outcome="WAITING_ON_CONTRIBUTOR",
+    findings=(),
+    suppressed=(),
+    llm=None,
+    inconclusive=(),
+):
     return {
         "ts": "2026-09-25T12:00:00+00:00",
         "url": url,
@@ -31,6 +38,7 @@ def _item(url, outcome="WAITING_ON_CONTRIBUTOR", findings=(), suppressed=(), llm
             "closing": None,
             "engaged": False,
             "llm": llm or {},
+            "inconclusive": list(inconclusive),
             "elapsed_s": 1.0,
         },
     }
@@ -150,3 +158,36 @@ def test_since_filters_by_timestamp(tmp_path):
     path = _write(tmp_path, [old, recent])
     rows = stats.load(path, stats._parse_since("1d"))
     assert [r["url"] for r in rows] == ["new"]
+
+
+def test_inconclusive_reasons_are_counted(tmp_path):
+    # #138: the failing lookup is the only trace an inconclusive pass
+    # leaves, since it produces no findings and no writes.
+    path = _write(
+        tmp_path,
+        [
+            _item("u1", outcome="inconclusive", inconclusive=["check_stale_version"]),
+            _item("u2", outcome="inconclusive", inconclusive=["check_stale_version"]),
+            _item(
+                "u3",
+                outcome="inconclusive",
+                inconclusive=["facts:archive_version", "check_target_branch"],
+            ),
+            _item("u4", findings=[_finding("check_mp_conflicts")]),
+        ],
+    )
+    data = stats.summarize(stats.load(path))
+    assert data["inconclusive_by_reason"]["check_stale_version"] == 2
+    assert data["inconclusive_by_reason"]["facts:archive_version"] == 1
+    assert data["inconclusive_by_reason"]["check_target_branch"] == 1
+    assert "check_mp_conflicts" not in data["inconclusive_by_reason"]
+    assert "Inconclusive passes" in stats.report(data)
+
+
+def test_rows_predating_the_inconclusive_reason_still_report(tmp_path):
+    # Rows written before #138 have no "inconclusive" key at all.
+    row = _item("u1", outcome="inconclusive")
+    del row["extra"]["inconclusive"]
+    data = stats.summarize(stats.load(_write(tmp_path, [row])))
+    assert data["inconclusive_by_reason"] == {}
+    assert data["outcomes"]["inconclusive"] == 1

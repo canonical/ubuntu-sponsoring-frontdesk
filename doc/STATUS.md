@@ -1305,6 +1305,15 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 
 ## Backlog: metrics/stats follow-ups (#131)
 
+- **70% of live passes end inconclusive** (#138, measured over 30 days /
+  205 items). The reason is now recorded per item, but nothing has been
+  diagnosed yet: the next `--all` runs will show which lookup is failing.
+  This is the top open question about whether the bot is actually working.
+- **The bot account can't unsubscribe `~ubuntu-sponsors`**, so those writes
+  are declined and seb128 has been doing them by hand. Needs a dedicated
+  account that is a member of the team (his note, 2026-10-01). Until then
+  the "declined writes" numbers say nothing about finding quality.
+
 - `audit.jsonl` grows unboundedly (231 KB for ~2 months of runs). Small by
   current standards -- watch it rather than build rotation now.
 - Feedback mechanism (was explicitly out of scope): `stats.py` already
