@@ -464,19 +464,20 @@ def changelog_text(pub):
         logger.debug("changelog_text: reusing the already-fetched changelog for %s", url)
         return _changelog_cache[url]
     # #140: this endpoint's latency is wildly variable -- the same URL
-    # measured 39.5s then 1.0s, and another 0.4s then 59.7s. A single 15s
-    # attempt made four checks inconclusive in one live pass, each of which
-    # then re-ran the whole item next time. One retry on a longer budget,
-    # since the second attempt is usually fast.
-    for attempt, timeout in enumerate((_CHANGELOG_TIMEOUT, _CHANGELOG_TIMEOUT), start=1):
-        try:
-            with urllib.request.urlopen(url, timeout=timeout) as resp:
-                text = resp.read().decode(errors="replace")
-            _remember_changelog(url, text)
-            return text
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            logger.warning("could not fetch changelog at %s (attempt %d/2): %s", url, attempt, e)
-    return None
+    # measured 39.5s then 1.0s, and another 0.4s then 59.7s. A 15s budget
+    # made four checks inconclusive in one live pass, so just wait longer.
+    # Deliberately no retry loop: an inconclusive pass already re-triages
+    # the item next run, and Launchpad's current response times are a
+    # temporary state of their infrastructure (scraper load) rather than
+    # something worth complicating this code to work around (seb128).
+    try:
+        with urllib.request.urlopen(url, timeout=_CHANGELOG_TIMEOUT) as resp:
+            text = resp.read().decode(errors="replace")
+        _remember_changelog(url, text)
+        return text
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        logger.warning("could not fetch changelog at %s: %s", url, e)
+        return None
 
 
 def changes_file_vcs_keys(pub):

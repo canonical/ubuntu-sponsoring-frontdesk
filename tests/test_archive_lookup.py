@@ -412,23 +412,22 @@ def test_queue_changes_text_none_without_url():
     assert archive_lookup.queue_changes_text(NoUrl()) is None
 
 
-def test_changelog_text_retries_once_before_giving_up(monkeypatch):
-    # #140: the endpoint's latency is wildly variable (the same URL measured
-    # 39.5s then 1.0s live), so a single timeout shouldn't cost the item.
+def test_changelog_text_waits_long_enough_for_a_slow_librarian(monkeypatch):
+    # #140: measured live at 39.5s for a URL that took 1.0s moments later,
+    # so the budget has to be generous. One attempt only -- an inconclusive
+    # pass already re-triages the item next run.
     import urllib.request
 
     attempts = []
 
-    def flaky(url, timeout=None):
+    def record(url, timeout=None):
         attempts.append(timeout)
-        if len(attempts) == 1:
-            raise TimeoutError("The read operation timed out")
         return _Response(b"changelog text")
 
-    monkeypatch.setattr(urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(urllib.request, "urlopen", record)
     pub = _FakePub(url="https://launchpadlibrarian.net/2/foo_1.0-1.changelog")
     assert archive_lookup.changelog_text(pub) == "changelog text"
-    assert len(attempts) == 2
+    assert attempts == [archive_lookup._CHANGELOG_TIMEOUT]
 
 
 def test_changelog_text_is_fetched_once_per_url(monkeypatch):
@@ -453,7 +452,7 @@ def test_changelog_text_does_not_cache_failures(monkeypatch):
     # whole pass of inconclusive items.
     import urllib.request
 
-    outcomes = [TimeoutError("timed out"), TimeoutError("timed out"), b"changelog text"]
+    outcomes = [TimeoutError("timed out"), b"changelog text"]
 
     def flaky(url, timeout=None):
         result = outcomes.pop(0)

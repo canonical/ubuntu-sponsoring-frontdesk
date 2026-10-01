@@ -3073,11 +3073,17 @@ unreadable; the distinction starts with the next run.
   another took 0.4s then 59.7s. A 15s budget with no retry is simply too
   tight, and an inconclusive pass persists nothing, so each failure costs
   a full re-triage of the item next run.
-* **Fix:** one retry on a 45s budget, plus memoizing successful fetches by
-  URL. The memo matters on its own -- the log showed the *same* changelog
-  fetched twice within one item (check_stale_version and the version-suffix
-  check both need it), so a slow moment was being paid for twice. Same
-  reasoning as the diff_text memo (#33/#37).
+* **Fix:** raise the budget to 45s, and memoize successful fetches by URL.
+  The memo matters on its own -- the log showed the *same* changelog fetched
+  twice within one item (check_stale_version and the version-suffix check
+  both need it), so a slow moment was being paid for twice. Same reasoning
+  as the diff_text memo (#33/#37).
+* **No retry loop, on seb128's call.** I had written one; he pushed back:
+  an inconclusive pass already re-triages the item next run, so a second
+  retry layer is duplication, and Launchpad's response times are a
+  temporary state of their infrastructure (scraper load) that they will
+  have to fix -- not something to complicate this code around. Waiting
+  longer is the honest fix; the cron loop remains the fallback.
 * **Only successes are cached.** Caching a failure would turn one slow
   moment into a whole pass of inconclusive items, which is precisely the
   failure mode being fixed. The cache is capped at 64 entries so a long
