@@ -19,6 +19,22 @@ is behind the code -- fix the doc, don't relax the test.
 Check numbers are assigned in the `checks.py` docstring and referenced by
 `main.py`'s comments and `doc/CHECKS.md`. Keep the three in agreement.
 
+## Keep the flow chart current
+
+`doc/flow.dot` is the developer view of `triage_url`: the gates, the check
+order, what short-circuits what, and the terminal states. A change to any of
+those updates the chart in the same commit, and the committed renders are
+regenerated from it:
+
+    dot -Tsvg doc/flow.dot -o doc/flow.svg
+    dot -Tpng doc/flow.dot -o doc/flow.png
+
+(`doc/write_gate.dot` and `doc/sync_triage.dot` cover the write gate and the
+sync sub-flow, same rule.) No test can catch a stale diagram, which is
+exactly how it previously drifted: it stopped at Check 12, missing three
+checks and a terminal state, while nothing failed. So the rule is the only
+guard -- adding a check means adding its node.
+
 ## Explain why, in the journal
 
 Every behavioural change gets a numbered entry in `doc/design_journal.md`

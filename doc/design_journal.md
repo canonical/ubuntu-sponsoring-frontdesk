@@ -2903,3 +2903,30 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
   in `doc/STATUS.md` for a contributor-facing diagram -- and a note that
   `flow.dot` is itself stale, stopping at Check 12 with no nodes for Checks
   13-15 or `PENDING_UPLOAD_QUEUE`.
+
+### 137 addendum: the flow chart caught up
+
+Brought `doc/flow.dot` back in line with the code and regenerated
+`flow.svg`/`flow.png` (seb128 asked for this once the table existed):
+
+* **Added the three missing checks** -- 13 (version-suffix convention),
+  14 (version precedence), 15 (no-change rebuild) -- wired in `main.py`'s
+  real order, between Check 11 and Check 12, with Check 13's "skipped when
+  Check 6 already bounced the version" (#122) on the node.
+* **Added the missing terminal state** `PENDING_UPLOAD_QUEUE` (#55) as a
+  Check 6 verdict, and included it in the "facts are not persisted" note
+  alongside `PENDING_ARCHIVE_IMPORT` and the silent path.
+* **Added two gates that were never drawn**: the kernel-package skip (#136,
+  with the DKMS exception spelled out) and the ten-minute new-bug grace.
+* **Corrected two stale labels**: Check 2 still claimed an SRU-shaped MP
+  *must* target `ubuntu/<series>-devel`, which #128 changed to an advisory
+  unless the release-pocket branch is actually behind; Check 7 was labelled
+  advisory, but it is question/verify tier and #134 reworded it.
+* **Added the upkeep rule to `AGENTS.md`**, with the `dot -Tsvg`/`-Tpng`
+  commands. Worth stating explicitly because no test can detect a stale
+  diagram -- that is precisely how this one drifted three checks behind
+  while the suite stayed green.
+
+The numbering fix itself (`main.py`'s duplicate "Check 12") shipped with
+the main #137 commit.
+

@@ -28,10 +28,19 @@ digraph SponsoringBot {
     triage -> load;
     load -> loaderr [label="error"];
     load -> priv [label="ok"];
+    kern   [label="kernel-team package? (#136)\nlinux / linux-signed* / linux-hwe-*\n/ linux-oem-* / flavour + cloud\nkernels / linux-firmware", shape=diamond, fillcolor="#FFF9C4"];
+    kernskip [label="skip before any check:\nthe kernel team has its own\nSRU/upload workflow\n(DKMS drivers are NOT kernels\nhere -- triaged normally)", shape=box, fillcolor="#ECEFF1"];
+    grace  [label="bug younger than 10 min?", shape=diamond, fillcolor="#FFF9C4"];
+    graceskip [label="too new: let the reporter\nfinish attaching things,\nnothing persisted", shape=box, fillcolor="#ECEFF1"];
+
     priv -> privskip [label="yes"];
-    priv -> qguard [label="no"];
+    priv -> kern [label="no"];
+    kern -> kernskip [label="yes"];
+    kern -> qguard [label="no"];
     qguard -> qskip [label="no / None\n(write modes)"];
-    qguard -> facts [label="yes /\ndry-run"];
+    qguard -> grace [label="yes /\ndry-run"];
+    grace -> graceskip [label="yes"];
+    grace -> facts [label="no"];
     facts -> gate;
     gate -> skip [label="unchanged"];
 
@@ -42,7 +51,7 @@ digraph SponsoringBot {
     c1b -> c1bnote [style=dotted, arrowhead=none];
 
     // ---- finding-collecting checks (keep evaluating -- #31/#44) ----
-    c2 [label="Check 2: target_branch (#20)\nmerge MP -> should target debian/*\n(#104: overridden to \"not a merge\"\nif changelog base is an ubuntuN\nupload, not Debian); non-merge ->\nSRU-shaped (changelog series != devel)\nmust target ubuntu/<series>-devel\n(#105) → incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c2 [label="Check 2: target_branch (#20)\nmerge MP -> should target debian/*\n(#104: overridden to \"not a merge\"\nif changelog base is an ubuntuN\nupload, not Debian); non-merge ->\nSRU-shaped (changelog series != devel)\nmust target the series being fixed\n(#105); ubuntu/<series> is the release\npocket, so -devel is only advised --\nblocking only when that branch is\nactually behind (#128)\n→ incomplete / advisory Finding", shape=box, fillcolor="#FFFFFF"];
     c3 [label="Check 3: mp_conflicts\n→ incomplete Finding\n(#105: skipped for the pass if\nCheck 2 already fired -- conflicts\nare a symptom of the wrong branch)", shape=box, fillcolor="#FFFFFF"];
     c4 [label="Check 4: empty_diff\n(closing)", shape=box, fillcolor="#FFFFFF"];
     c5 [label="Check 5: changelog_bug_reference (#25/#63)\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
@@ -66,7 +75,13 @@ digraph SponsoringBot {
     c8 -> c9;
     c9 -> c10;
     c10 -> c11;
-    c11 -> c12;
+    c13 [label="Check 13: sru_version_suffix_convention\n(#109/#129) via ubuntu-lint\nMPs + debdiff attachments on bugs\nskipped if Check 6 already bounced\nthe version (#122); silent if\npython3-ubuntu-lint is absent\n→ question/advisory Finding", shape=box, fillcolor="#FFFFFF"];
+    c14 [label="Check 14: sru_version_newer_series_\nprecedence (#110/#124)\n1) newer series publishes a LOWER\nversion -> fix hasn't landed there\n2) proposed version already used\nanywhere in archive history\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c15 [label="Check 15: no_change_rebuild_version\n(#132) only debian/changelog changed\n(+ update-maintainer's control lines)\nbut an ubuntuN revision, not buildN\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c11 -> c13;
+    c13 -> c14;
+    c14 -> c15;
+    c15 -> c12;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];
@@ -86,7 +101,7 @@ digraph SponsoringBot {
     llm -> notifnote [style=dotted, arrowhead=none];
     c6  -> notifnote [style=dotted, arrowhead=none];
 
-    c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches; series without the\npackage exempt (#69); LLM escape hatch\n(bug text says fixed -> skip, #68)\n→ advisory Finding", shape=box, fillcolor="#FFFFFF"];
+    c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches; series without the\npackage exempt (#69); LLM escape hatch\n(bug text says fixed -> skip, #68)\nwording says the newer series must be\nfixed first (#134)\n→ question/verify Finding", shape=box, fillcolor="#FFFFFF"];
     engearly [label="human engaged already? (#73)\n(memoized; skips the\ntoken-spending phases)", shape=diamond, fillcolor="#FFF9C4"];
     incgate -> engearly [label="no"];
     engearly -> c7 [label="no / None /\nsync-shaped (SYNCED\nmust stay reachable)"];
@@ -119,25 +134,28 @@ digraph SponsoringBot {
     wait [label="WAITING_ON_CONTRIBUTOR", shape=box, fillcolor="#FFE0B2"];
     rfh  [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
     pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- #27)", shape=box, fillcolor="#D1C4E9"];
+    queued [label="PENDING_UPLOAD_QUEUE\nsame version already waiting\nin the target series' queue:\nno comment, no writes, retry\nnext run (#55)", shape=box, fillcolor="#D1C4E9"];
 
     c1  -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged\nFix Released: silent, the report\ndrops it (#75); any Fix Committed:\ncomment + unsubscribe, the report\nkeeps listing those (#81)"];
     c1b -> done [label="review on linked MP /\nno patch to sponsor"];
     c4  -> done [label="empty diff (landed)\n(drops earlier findings)"];
     c6  -> done [label="already uploaded, old enough"];
     c6  -> pend [label="already uploaded, <24h\n(drops earlier findings)"];
+    c6  -> queued [label="matching upload waiting\nin the queue (drops\nearlier findings)"];
     verd -> done [label="SYNCED: close as\nFix Released"];
     post -> wait [label="blocking (incomplete) findings"];
     post -> rfh  [label="question-tier only\n(advisory comment, no vote)"];
     agg  -> rfh  [label="no findings"];
 
     // ---- persist note ----
-    persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend + silent (retry next run);\nfacts also withheld when a write was\nnot performed (dry-run/declined -- #36)", shape=note, fillcolor="#FFFDE7"];
+    persist [label="every conclusive path:\nupdate_status(url, …, facts=new_facts)\nEXCEPT pend + queued + silent\n(retry next run);\nfacts also withheld when a write was\nnot performed (dry-run/declined -- #36)", shape=note, fillcolor="#FFFDE7"];
     done -> persist [style=dotted, arrowhead=none];
     wait -> persist [style=dotted, arrowhead=none];
     rfh  -> persist [style=dotted, arrowhead=none];
     pend -> persist [style=dotted, arrowhead=none];
+    queued -> persist [style=dotted, arrowhead=none];
 
-    { rank=same; done; wait; rfh; pend; }
+    { rank=same; done; wait; rfh; pend; queued; }
 
     sweepnote [label="After the queue pass: Rule B sweep (#66)\nbugs in WAITING_ON_CONTRIBUTOR, clock = date_incomplete:\nnew usable diff OR response addresses bounce_reason (LLM)\n-> tasks back to New; 30d silence -> final comment\n+ unsubscribe ~ubuntu-sponsors -> DONE", shape=note, fillcolor="#FFFDE7"];
     wait -> sweepnote [style=dotted, arrowhead=none];
