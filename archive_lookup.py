@@ -396,7 +396,7 @@ def is_native_source(lp, package, series_name):
     fmt = None
     if dsc_url:
         try:
-            with urllib.request.urlopen(dsc_url, timeout=15) as resp:
+            with urllib.request.urlopen(dsc_url, timeout=_LIBRARIAN_TIMEOUT) as resp:
                 match = _DSC_FORMAT_RE.search(resp.read().decode(errors="replace"))
                 fmt = match.group("format").strip() if match else None
         except (urllib.error.URLError, OSError, TimeoutError) as e:
@@ -427,7 +427,12 @@ def is_native_source(lp, package, series_name):
 # publication across items. Only successes are cached -- a failure is
 # retriable, and caching it would turn one slow moment into a whole pass of
 # inconclusive items. Bounded so a long run can't grow it without limit.
-_CHANGELOG_TIMEOUT = 45
+# Launchpad's librarian is currently slow and wildly inconsistent -- the
+# same changelog URL measured 39.5s then 1.0s, another 0.4s then 59.7s
+# (#140). Every plain fetch of a librarian file shares this budget: a
+# timeout costs the whole item, which is then re-triaged from scratch next
+# run. Deliberately generous rather than retried; see changelog_text().
+_LIBRARIAN_TIMEOUT = 45
 _CHANGELOG_CACHE_MAX = 64
 _changelog_cache = {}
 
@@ -471,7 +476,7 @@ def changelog_text(pub):
     # temporary state of their infrastructure (scraper load) rather than
     # something worth complicating this code to work around (seb128).
     try:
-        with urllib.request.urlopen(url, timeout=_CHANGELOG_TIMEOUT) as resp:
+        with urllib.request.urlopen(url, timeout=_LIBRARIAN_TIMEOUT) as resp:
             text = resp.read().decode(errors="replace")
         _remember_changelog(url, text)
         return text
@@ -508,7 +513,7 @@ def changes_file_vcs_keys(pub):
     if not url:
         return None
     try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
+        with urllib.request.urlopen(url, timeout=_LIBRARIAN_TIMEOUT) as resp:
             text = resp.read().decode(errors="replace")
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         logger.warning("could not fetch .changes at %s: %s", url, e)
@@ -539,7 +544,7 @@ def queue_changes_text(upload):
         logger.warning("queued upload has no changes_file_url")
         return None
     try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
+        with urllib.request.urlopen(url, timeout=_LIBRARIAN_TIMEOUT) as resp:
             text = resp.read().decode(errors="replace")
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         logger.warning("could not fetch queue .changes at %s: %s", url, e)

@@ -856,11 +856,18 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     )
 
 
+_QUEUE_FETCH_TIMEOUT = 60
+
+
 def process_queue(state_manager, lp_client, llm_reviewer, force=False):
     logger.info("Fetching sponsoring queue JSON...")
     url = "https://sponsoring-reports.ubuntu.com/jsons/sponsoring.json"
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req) as response:
+    # #140: with no timeout at all, a stalled report server would hang an
+    # --all run indefinitely -- no items triaged, no error, nothing in the
+    # audit trail. Generous, since this is one fetch per run and the whole
+    # pass depends on it.
+    with urllib.request.urlopen(req, timeout=_QUEUE_FETCH_TIMEOUT) as response:
         data = json.loads(response.read().decode())
 
     logger.info("Found %d items in the queue.", len(data))

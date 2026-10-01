@@ -3091,3 +3091,21 @@ unreadable; the distinction starts with the next run.
   cases (it is process-lifetime state, which is what a run wants and what
   leaks between tests).
 
+### 140 addendum: the same budget for every librarian fetch
+
+seb128 asked whether the other librarian reads needed the same treatment.
+They did -- `changelog_text` was simply the one the stats happened to catch:
+
+* `_LIBRARIAN_TIMEOUT` (45s) now covers all four plain, unauthenticated
+  fetches of a librarian file: the changelog, the `.dsc` (nativeness
+  detection, #60), a publication's `.changes` (rich-history diagnosis, #49)
+  and a queue upload's `.changes` (#56). All four hit the same
+  infrastructure, and a timeout in any of them costs the whole item.
+* Debian's madison query keeps its 15s: different service, no measured
+  problem. Raising it "to match" would have been cargo-culting.
+* **`process_queue`'s fetch of sponsoring.json had no timeout at all**, so a
+  stalled report server would hang an `--all` run indefinitely -- no items
+  triaged, no error, nothing in the audit trail. It now has 60s. Found only
+  because the question prompted an inventory of every urlopen call, which is
+  a good argument for asking it.
+

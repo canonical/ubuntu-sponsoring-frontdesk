@@ -427,7 +427,7 @@ def test_changelog_text_waits_long_enough_for_a_slow_librarian(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", record)
     pub = _FakePub(url="https://launchpadlibrarian.net/2/foo_1.0-1.changelog")
     assert archive_lookup.changelog_text(pub) == "changelog text"
-    assert attempts == [archive_lookup._CHANGELOG_TIMEOUT]
+    assert attempts == [archive_lookup._LIBRARIAN_TIMEOUT]
 
 
 def test_changelog_text_is_fetched_once_per_url(monkeypatch):
