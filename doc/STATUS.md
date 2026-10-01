@@ -1292,12 +1292,12 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 ## Backlog: ubuntu-lint follow-ups
 
 - **Drop the dotted-Debian-revision workaround** in
-  `_sru_version_convention_verdict` (#129) once a fixed `python3-ubuntu-lint`
-  is installed on the VM. The bug (expected SRU version computed from only
+  `_sru_version_convention_verdict` (#129) once `python3-ubuntu-lint`
+  >= 0.2.4 is installed. The bug (expected SRU version computed from only
   the leading digits of the revision, so `0.10.1-4.1` -> expects
-  `0.10.1-4ubuntu0.1`) is unfixed upstream as of HEAD `6c0dad0` / release
-  0.2.3; the VM runs 0.2.1. A fix + reproducer is prepared and handed over
-  for a session with `gh` access to file.
+  `0.10.1-4ubuntu0.1`) is **fixed upstream**: it landed just after 0.2.3, so
+  it ships in 0.2.4 (seb128, 2026-10-01). Nothing to file -- this is now
+  waiting on a release reaching the PPA. The hosts run 0.2.1.
 - **Nothing pins or logs the installed `ubuntu_lint` version** (#129), so its
   verdicts can change under us on package upgrade -- same class of problem as
   #108's unpinned ruff. Consider logging it at startup, or asserting a

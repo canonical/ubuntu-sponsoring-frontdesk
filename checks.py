@@ -3871,10 +3871,10 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
         # `.1` as an Ubuntu revision, then expects `0.10.1-4ubuntu0.1`
         # instead of `0.10.1-4.1ubuntu0.1`. Its verdict is unusable there,
         # so say nothing rather than advise a wrong version.
-        # DROP THIS once a fixed ubuntu-lint is installed on the VM: the fix
-        # (match the whole dotted revision) is prepared for upstream, still
-        # unfixed as of HEAD 6c0dad0 / release 0.2.3, and the VM runs 0.2.1.
-        # See STATUS.md's backlog note.
+        # DROP THIS once ubuntu-lint >= 0.2.4 is installed: the fix (match
+        # the whole dotted revision) landed upstream just after 0.2.3, so it
+        # ships in 0.2.4 (seb128, 2026-10-01). This host runs 0.2.1 from the
+        # PPA. See STATUS.md's backlog note.
         previous = parsed[1].version if len(parsed) > 1 else None
         revision = getattr(previous, "debian_revision", None) or ""
         if "." in revision:
