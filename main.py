@@ -231,6 +231,15 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
+    # Not an Ubuntu packaging merge proposal at all (#139): the sponsoring
+    # report lists whatever any uploading team was asked to review, which on
+    # 2026-09-30 started including two decades of abandoned upstream-project
+    # proposals. They have no debian/ directory, so the checks have nothing
+    # true to say about them.
+    if not checks.is_packaging_mp(lp_obj):
+        report.outcome = "skipped-not-packaging"
+        return
+
     # Kernel packages are the kernel team's own workflow (#136) -- their
     # SRUs and uploads follow rules this bot doesn't model, so it stays
     # out entirely: no checks, no LLM, no writes. Nothing is persisted,

@@ -3010,3 +3010,51 @@ returned None and `extra["inconclusive"]` names it.
 Rows written before this keep the old label, so historical percentages stay
 unreadable; the distinction starts with the next run.
 
+## 139. Only Triage Ubuntu Packaging Merge Proposals
+
+* **Found by the first live `--all --dry-run` pass** (#138's data): 26 items
+  would have been bounced, and **24 of them were abandoned merge proposals
+  on upstream projects** -- ufc, jockey, backintime, click-webapps,
+  ubuntu-system-image, ubuntu-nl-artwork -- created between 2009 and 2016.
+  Only 2 of the 26 were genuine packaging items. Check 9 fired on every one
+  of them, because an upstream project branch has no `debian/changelog`, so
+  a write-mode run would have asked long-departed contributors to add one.
+* **Root cause, traced end to end with seb128** (his checkout of the report
+  generator, `edit-acl`, and the production log at
+  sponsoring-reports.ubuntu.com/log): `sponsors_page.py` runs
+  `get_branches()` for *every* team holding Archive Upload Rights and files
+  the results onto the general page -- the team needn't be a sponsoring one.
+  On 2026-09-30 the DMB retired the Ubuntu GNOME team, and Launchpad handed
+  the defunct `ubuntugnome` package-set permissions to Registry
+  Administrators. `registry` thereby entered the report's uploader set for
+  the first time, and the ~30 stale review requests it has accumulated since
+  2009 went straight onto the sponsoring queue. The production log shows
+  them plainly: `INFO: Added weblive: ... for registry`.
+* **Theories I had to discard along the way**, each killed by evidence
+  rather than argument: that `~ubuntu-sponsors` was still their requested
+  reviewer (it isn't -- `registry` is, and ubuntu-sponsors' 37 requested
+  reviews are all git, 2020-2026); that landing the git-skip fix had
+  unmasked them (no `AttributeError` anywhere in the production log -- the
+  only crashes are HTTP 502/503 from `lp_scrape_mps`); and that obsolete
+  series were the signal (seb128: an SRU can target any supported series, so
+  the series a permission sits in says nothing).
+* **Our fix is a guard, not a workaround for the report.**
+  `is_packaging_mp()` skips a merge proposal that isn't about an Ubuntu
+  source package -- metadata only, no lookups, so it gates the pass beside
+  `is_kernel_item` (#136), with outcome `skipped-not-packaging`. A proposal
+  counts as packaging when its URL carries `/ubuntu/+source/<pkg>/`, when
+  its target follows the git-ubuntu branch convention (team forks, #71), or,
+  for bzr, when the target branch lives under the distribution. Bugs are
+  never skipped: they reach the queue through a sponsoring team's
+  subscription, which `check_sponsoring_team_subscribed` already filters.
+* **The report is being fixed too** (seb128 reported it; a patch sits in his
+  checkout adding `BLACKLISTED_UPLOADER_TEAMS = ("registry",)`), but the
+  guard stays regardless: the next flavour team to be retired would do the
+  same thing, and the bot shouldn't depend on the queue being right.
+* **Polluted records removed** at seb128's request: 33 audit rows for those
+  24 proposals, all from the dry-run pass (no production rows, no writes),
+  plus their 24 `state.db` entries. $0.0826 of LLM spend went with them.
+  Backups in the session scratchpad. `check_missing_changelog_stanza` --
+  23 of 33 findings in that window -- disappears from the stats entirely
+  once they're gone, which is the measure of how badly they skewed it.
+

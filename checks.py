@@ -652,6 +652,49 @@ def is_kernel_item(lp_obj, source_package=None):
     return any(_KERNEL_SOURCE_RE.match(name.lower()) for name in names if name)
 
 
+def is_packaging_mp(lp_obj):
+    """False when a merge proposal isn't about an Ubuntu source package at
+    all, so the pass can stop before any check runs (#139).
+
+    The sponsoring report lists a merge proposal when any uploading team is
+    a requested reviewer, and the team doesn't have to be a sponsoring one:
+    24 abandoned proposals from 2009-2016 on upstream *projects* (ufc,
+    jockey, backintime, click-webapps, ...) reached the queue the day
+    Launchpad handed the defunct `ubuntugnome` package-set permissions to
+    Registry Administrators, which put `registry` into the report's uploader
+    set. Those have no `debian/` directory, so Check 9 fired on all of them
+    and would have asked long-departed contributors for a changelog entry.
+
+    Anything that isn't a merge proposal is left alone: a bug reaches the
+    queue by a sponsoring team's subscription and is already filtered by
+    check_sponsoring_team_subscribed.
+
+    Metadata only, no lookups, so it can gate the pass like is_kernel_item.
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type != "branch_merge_proposal":
+        return True
+    # A git-ubuntu proposal: '.../ubuntu/+source/<pkg>/+git/<pkg>/+merge/N'.
+    if _source_package_from_mp(lp_obj) is not None:
+        return True
+    # A proposal whose target follows the git-ubuntu branch convention,
+    # even if the repository path doesn't say '+source' (team forks).
+    target = getattr(lp_obj, "target_git_path", "") or ""
+    if re.match(r"(refs/heads/)?(ubuntu|debian)/", target.split("://")[-1].lstrip("/")):
+        return True
+    # bzr: a packaging branch lives under the distribution, e.g.
+    # '~owner/ubuntu/<series>/<pkg>/<branch>'. An upstream project branch
+    # ('~fenics-core/ufc/main') does not.
+    branch = getattr(lp_obj, "target_branch_link", "") or ""
+    if "/ubuntu/" in branch:
+        return True
+    logger.info(
+        "Not an Ubuntu packaging merge proposal (target %r); skipping.",
+        target or branch or "?",
+    )
+    return False
+
+
 def _bug_sponsoring_venue_series(mp):
     """The Ubuntu series (codename, or 'devel') an MP would land in if it is
     a git-ubuntu sponsoring MP -- None when its target branch doesn't follow
