@@ -6,6 +6,7 @@ made. Parsing is pure and tested directly."""
 import io
 
 import apt_pkg
+import pytest
 
 import archive_lookup
 
@@ -293,6 +294,15 @@ def test_published_source_status_none_prefers_non_deleted():
 # --- changelog_text ----------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _clear_changelog_cache():
+    """#140 memoizes successful fetches for the process's lifetime, which is
+    what an --all run wants but would leak between tests."""
+    archive_lookup._changelog_cache.clear()
+    yield
+    archive_lookup._changelog_cache.clear()
+
+
 class _FakePub:
     def __init__(self, url=None, raises=None):
         self._url = url
@@ -400,3 +410,58 @@ def test_queue_changes_text_none_without_url():
         changes_file_url = None
 
     assert archive_lookup.queue_changes_text(NoUrl()) is None
+
+
+def test_changelog_text_retries_once_before_giving_up(monkeypatch):
+    # #140: the endpoint's latency is wildly variable (the same URL measured
+    # 39.5s then 1.0s live), so a single timeout shouldn't cost the item.
+    import urllib.request
+
+    attempts = []
+
+    def flaky(url, timeout=None):
+        attempts.append(timeout)
+        if len(attempts) == 1:
+            raise TimeoutError("The read operation timed out")
+        return _Response(b"changelog text")
+
+    monkeypatch.setattr(urllib.request, "urlopen", flaky)
+    pub = _FakePub(url="https://launchpadlibrarian.net/2/foo_1.0-1.changelog")
+    assert archive_lookup.changelog_text(pub) == "changelog text"
+    assert len(attempts) == 2
+
+
+def test_changelog_text_is_fetched_once_per_url(monkeypatch):
+    # Two checks need the same publication's changelog within one item.
+    import urllib.request
+
+    calls = []
+
+    def counting(url, timeout=None):
+        calls.append(url)
+        return _Response(b"changelog text")
+
+    monkeypatch.setattr(urllib.request, "urlopen", counting)
+    pub = _FakePub(url="https://launchpadlibrarian.net/3/foo_1.0-1.changelog")
+    assert archive_lookup.changelog_text(pub) == "changelog text"
+    assert archive_lookup.changelog_text(pub) == "changelog text"
+    assert len(calls) == 1
+
+
+def test_changelog_text_does_not_cache_failures(monkeypatch):
+    # A failure is retriable: caching it would turn one slow moment into a
+    # whole pass of inconclusive items.
+    import urllib.request
+
+    outcomes = [TimeoutError("timed out"), TimeoutError("timed out"), b"changelog text"]
+
+    def flaky(url, timeout=None):
+        result = outcomes.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return _Response(result)
+
+    monkeypatch.setattr(urllib.request, "urlopen", flaky)
+    pub = _FakePub(url="https://launchpadlibrarian.net/4/foo_1.0-1.changelog")
+    assert archive_lookup.changelog_text(pub) is None
+    assert archive_lookup.changelog_text(pub) == "changelog text"

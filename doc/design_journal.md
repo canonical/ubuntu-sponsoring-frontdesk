@@ -3058,3 +3058,30 @@ unreadable; the distinction starts with the next run.
   23 of 33 findings in that window -- disappears from the stats entirely
   once they're gone, which is the measure of how badly they skewed it.
 
+## 140. The Archive Changelog Fetch Needed a Retry
+
+* **Found by #138's new record**, on the first clean pass after the queue
+  was fixed: 3 of 55 items came back inconclusive, and the reason field
+  named them -- `check_sru_version_suffix_convention` three times,
+  `check_stale_version` once. That is exactly what #138 was built to show;
+  before it, these were indistinguishable from the 43 healthy
+  `skipped-unchanged` items.
+* **Cause:** every one was `could not fetch changelog at ...: The read
+  operation timed out` -- a single 15s attempt at
+  `pub.changelogUrl()`. Measured live, that endpoint's latency is wildly
+  variable: the same URL took 39.5s then 1.0s on consecutive tries, and
+  another took 0.4s then 59.7s. A 15s budget with no retry is simply too
+  tight, and an inconclusive pass persists nothing, so each failure costs
+  a full re-triage of the item next run.
+* **Fix:** one retry on a 45s budget, plus memoizing successful fetches by
+  URL. The memo matters on its own -- the log showed the *same* changelog
+  fetched twice within one item (check_stale_version and the version-suffix
+  check both need it), so a slow moment was being paid for twice. Same
+  reasoning as the diff_text memo (#33/#37).
+* **Only successes are cached.** Caching a failure would turn one slow
+  moment into a whole pass of inconclusive items, which is precisely the
+  failure mode being fixed. The cache is capped at 64 entries so a long
+  `--all` run can't grow it without bound, and the tests reset it between
+  cases (it is process-lifetime state, which is what a run wants and what
+  leaks between tests).
+

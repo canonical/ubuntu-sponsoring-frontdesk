@@ -421,6 +421,23 @@ def is_native_source(lp, package, series_name):
     )
 
 
+# Successful changelog fetches, keyed by URL: two checks need the same
+# publication's changelog within one item (check_stale_version and the SRU
+# version-suffix check), and an --all pass revisits the same archive
+# publication across items. Only successes are cached -- a failure is
+# retriable, and caching it would turn one slow moment into a whole pass of
+# inconclusive items. Bounded so a long run can't grow it without limit.
+_CHANGELOG_TIMEOUT = 45
+_CHANGELOG_CACHE_MAX = 64
+_changelog_cache = {}
+
+
+def _remember_changelog(url, text):
+    if len(_changelog_cache) >= _CHANGELOG_CACHE_MAX:
+        _changelog_cache.pop(next(iter(_changelog_cache)))
+    _changelog_cache[url] = text
+
+
 def changelog_text(pub):
     """Plain-text contents of a SourcePackagePublishingHistory's changelog
     file (`pub.changelogUrl()`), or None if it can't be resolved or fetched.
@@ -443,12 +460,23 @@ def changelog_text(pub):
         return None
     if not url:
         return None
-    try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            return resp.read().decode(errors="replace")
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
-        logger.warning("could not fetch changelog at %s: %s", url, e)
-        return None
+    if url in _changelog_cache:
+        logger.debug("changelog_text: reusing the already-fetched changelog for %s", url)
+        return _changelog_cache[url]
+    # #140: this endpoint's latency is wildly variable -- the same URL
+    # measured 39.5s then 1.0s, and another 0.4s then 59.7s. A single 15s
+    # attempt made four checks inconclusive in one live pass, each of which
+    # then re-ran the whole item next time. One retry on a longer budget,
+    # since the second attempt is usually fast.
+    for attempt, timeout in enumerate((_CHANGELOG_TIMEOUT, _CHANGELOG_TIMEOUT), start=1):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                text = resp.read().decode(errors="replace")
+            _remember_changelog(url, text)
+            return text
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            logger.warning("could not fetch changelog at %s (attempt %d/2): %s", url, attempt, e)
+    return None
 
 
 def changes_file_vcs_keys(pub):
