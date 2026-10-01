@@ -9,11 +9,59 @@ It is also where the wording itself gets reviewed, so if a comment reads
 badly, this page is the place to propose better words -- the text here is
 the text that gets posted.
 
-For the control flow (what runs when, and what short-circuits what) see
-`doc/flow.dot` and the rendered `doc/flow.svg`, which are written for people
-hacking on the bot. `doc/GLOSSARY.md` defines the vocabulary and
-`doc/design_journal.md` carries the rationale behind each check (the design
-entry numbers below).
+`doc/GLOSSARY.md` defines the vocabulary and `doc/design_journal.md` carries
+the rationale behind each check (the design entry numbers below).
+
+## What happens to your submission
+
+```mermaid
+flowchart TD
+    start["You attach a debdiff to a bug, or propose a merge,<br/>and subscribe ~ubuntu-sponsors"]
+    something{"Is there still<br/>something to review?"}
+    closed["The bot comments and unsubscribes.<br/>Already uploaded, already merged,<br/>or nothing attached yet"]
+    review["Automated review runs<br/>- the checks below"]
+    found{"What did it find?"}
+    blockers["ONE comment: 'needs fixing'<br/>Merge proposal: voted Needs Fixing<br/>Bug: set to Incomplete"]
+    back["You address the points.<br/>On a bug, set it back to New<br/>to re-enter the queue"]
+    stale["No reply for 30 days:<br/>unsubscribed from the queue"]
+    suggest["ONE comment: 'please verify'<br/>and 'nice to have'.<br/>Nothing is blocked, no status change"]
+    human["Nothing posted.<br/>Waiting for a human sponsor"]
+    retry["Nothing posted.<br/>Something could not be read,<br/>so it is retried next pass"]
+
+    start --> something
+    something -->|no| closed
+    something -->|yes| review
+    review --> found
+    found -->|"blockers"| blockers
+    found -->|"suggestions only"| suggest
+    found -->|"nothing to say"| human
+    found -->|"could not tell"| retry
+    blockers --> back
+    back --> review
+    blockers -.->|"no response"| stale
+    suggest --> human
+
+    classDef ok fill:#C8E6C9,stroke:#333;
+    classDef warn fill:#FFE0B2,stroke:#333;
+    classDef quiet fill:#ECEFF1,stroke:#333;
+    class closed,human ok;
+    class blockers,back warn;
+    class retry,stale,suggest quiet;
+```
+
+Three things that surprise people:
+
+- **A bot comment is not a rejection.** Even a blocking one is a request for
+  a change, and the item comes straight back into the queue once addressed.
+- **An Incomplete bug needs setting back to New.** That is what re-enters it
+  into the sponsoring queue; the bot says so in its comment.
+- **Silence usually means it is queued for a human.** The bot only comments
+  when it has something to say, and it deliberately stays quiet once a human
+  reviewer is involved.
+
+This is the contributor's view. For the bot's own control flow -- the order
+checks run in, what short-circuits what -- see `doc/flow.dot` and the
+rendered `doc/flow.svg`.
 
 ## How a pass ends
 

@@ -2930,3 +2930,28 @@ Brought `doc/flow.dot` back in line with the code and regenerated
 The numbering fix itself (`main.py`'s duplicate "Check 12") shipped with
 the main #137 commit.
 
+### 137 addendum 2: a contributor's-eye diagram
+
+seb128 asked whether the flow chart could "easily" be made user
+understandable. Not by editing `doc/flow.dot`: that answers *what does
+`triage_url` do*, while a contributor is asking *what happens to my
+submission*. One diagram can't do both without serving neither, so this is a
+second, much smaller one -- about ten nodes, the journey and its outcomes,
+with the checks themselves left to the table that now sits below it.
+
+* **Mermaid, inside `doc/CHECKS.md`**, not a fourth `.dot` file. GitHub
+  renders Mermaid inline, so the diagram sits directly above the table it
+  introduces, there is no committed `.svg`/`.png`, and no regeneration step
+  -- removing the exact failure mode the `flow.dot` drift just demonstrated.
+  Trade-off accepted: it can't be rendered locally without the npm
+  `mermaid-cli`, but GitHub shows an explicit error box for bad syntax
+  rather than failing silently.
+* **Built around the three things contributors get wrong**, stated under the
+  diagram: a bot comment is not a rejection; an Incomplete bug must be set
+  back to New to re-enter the queue; silence usually means it is queued for
+  a human. The loop back from "needs fixing" through "set it back to New" is
+  drawn explicitly, and the 30-day sweep hangs off it as a dotted edge.
+* The four outcomes are colour-coded on the same convention as `flow.dot`
+  (green = resolved/with a human, orange = waiting on the contributor, grey
+  = quiet).
+

@@ -1311,16 +1311,19 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   approximates it via findings on items whose write was declined.
 - A "current queue" view would need `state.db` as well; v1 is audit-only.
 
-## Backlog: contributor-facing documentation (#137)
+## Contributor-facing documentation (#137) -- DONE
 
-- A **user-friendly flow diagram**, to sit next to `doc/CHECKS.md`: what the
-  bot checks from a contributor's point of view, not internal control flow.
-  `doc/flow.dot` stays as the developer view, but node names like
-  `extract_verdict` say nothing to a contributor (seb128's point when
-  reviewing the checks table).
-- `doc/flow.dot` is also **stale**: it stops at Check 12, with no nodes for
-  Checks 13-15 or the `PENDING_UPLOAD_QUEUE` terminal state. Worth fixing
-  whether or not the friendly version happens.
+- `doc/CHECKS.md` rewritten as the contributor-facing reference: the checks
+  table, the posted wording quoted per check, and the gates as prose.
+- **User-friendly flow diagram: DONE.** A Mermaid diagram at the top of
+  `doc/CHECKS.md` showing a submission's journey and its four outcomes, not
+  the control flow. Written as Mermaid rather than a fourth `.dot` because
+  GitHub renders it inline from the repo, so there is no committed
+  `.svg`/`.png` to regenerate and nothing that can go stale unnoticed.
+- **`doc/flow.dot` caught up: DONE.** It had stopped at Check 12, missing
+  Checks 13-15, `PENDING_UPLOAD_QUEUE`, the kernel skip and the new-bug
+  grace, with two labels predating #128/#134. `AGENTS.md` now carries the
+  upkeep rule.
 
 ## Known residual edges (documented in code)
 
