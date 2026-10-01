@@ -3176,3 +3176,34 @@ with its stored detail line.
   contributor bounces are 89 days old. That 64% is worth a look on its own:
   it is the bot's view of what human sponsors have yet to pick up.
 
+## 143. A Starting Point for the Charm
+
+seb128 intends to charm the bot next, in a sandbox with a juju controller so
+the charm can actually be deployed and iterated on -- a different environment
+from this one. That makes the handover the work: whatever lives only in a
+conversation is lost when the session moves.
+
+`doc/CHARM.md` captures what wasn't already written down:
+
+* **What the workload is.** A batch job, not a daemon: no socket, nothing to
+  scale, and a second concurrent pass would only duplicate Launchpad calls.
+  `--all` runs the sweep itself, so one timer suffices.
+* **The runtime, as facts rather than preferences:** system Python because
+  `apt_pkg` is tied to it, the distro packages, `python3-ubuntu-lint` from
+  the PPA (optional -- the check degrades to silence), and opencode with the
+  tool-less agent, which is a security control (#99), not a nicety.
+* **Every state and config path with its env override**, since those are
+  what make a charm layout straightforward. Called out that losing
+  `state.db` costs a full re-triage -- LLM spend, not wrong behaviour.
+* **How it runs today: `--interactive`, with a human approving each write**,
+  because the account cannot unsubscribe `~ubuntu-sponsors`. A charm that
+  defaults to `--yes` would ship a configuration nobody has run; the write
+  mode should be config defaulting to dry-run.
+* **Six open questions** the charm forces, each one seb128's call rather
+  than something to guess at: credentials, timer vs service, write mode,
+  storage, the PPA, and whether `stats.py` becomes an action.
+
+Deliberately not a design: no charm layout, no config schema, no opinion on
+ops vs reactive. The point is that the next session starts on the plan
+rather than on archaeology.
+

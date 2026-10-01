@@ -1340,6 +1340,17 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   grace, with two labels predating #128/#134. `AGENTS.md` now carries the
   upkeep rule.
 
+## Next: charm the bot (machine charm)
+
+Starting point written up in `doc/CHARM.md` (#143): what the workload is,
+the runtime requirements, every state/config path and its env override, how
+it runs today (interactive, because of the unsubscribe permission gap), and
+the questions a charm forces -- credentials, timer vs service, write mode as
+config, storage for `state.db`, the ubuntu-lint PPA, observability.
+
+Intended to be picked up in a sandbox with a juju controller, where a charm
+can actually be deployed and iterated on.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
