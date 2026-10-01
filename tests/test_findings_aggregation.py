@@ -204,6 +204,27 @@ def test_inconclusive_reasons_are_deduplicated_and_ordered(tmp_path, monkeypatch
     ]
 
 
+def test_unchanged_pass_is_recorded_as_skipped_not_inconclusive(tmp_path):
+    # #138: a pass that stops at the facts-unchanged gate is the bot working
+    # correctly. Recording it as "inconclusive" (the old default for any path
+    # that didn't call update_status) made ~70% of a live queue pass look like
+    # failed lookups.
+    sm = _state(tmp_path)
+    mp = FakeMP(
+        target=".../ubuntu/devel",
+        diff=FakeDiff("/d/1", 50, diff_text=CLEAN_DIFF_TEXT),
+    )
+    lp = FakeTriageClient(objects={URL: mp})
+
+    main.triage_url(URL, sm, lp, FakeLLM())  # first pass: persists facts
+    lp.audit.records.clear()
+    main.triage_url(URL, sm, lp, FakeLLM())  # second pass: nothing changed
+
+    row = [r for r in lp.audit.records if r["action"] == "triage"][0]
+    assert row["outcome"] == "skipped-unchanged"
+    assert row["extra"]["inconclusive"] == []
+
+
 def test_conclusive_pass_records_no_inconclusive_reason(tmp_path):
     sm = _state(tmp_path)
     mp = FakeMP(

@@ -129,6 +129,12 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
                 action="triage",
                 target=report.target or "unknown",
                 mode=getattr(lp_client, "mode", "?"),
+                # #138: every no-op path now names itself (skipped-unchanged,
+                # skipped-private, load-failed, ...), so the "inconclusive"
+                # default means what it says -- a check's lookup came back
+                # None and report.inconclusive lists which. Before, a healthy
+                # "nothing changed" skip was recorded as inconclusive too,
+                # which made 70% of a live pass look like failures.
                 outcome=report.outcome or "inconclusive",
                 detail=report.detail,
                 extra=report.extra(llm_reviewer, time.monotonic() - t_start),
@@ -172,6 +178,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         lp_obj = lp_client.load_url(url)
     except Exception as e:
         logger.warning("Failed to load URL from Launchpad: %s", e)
+        report.outcome = "load-failed"
         return
     checkpoint("load_url")
 
@@ -186,6 +193,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         logger.info(
             "Could not determine queue membership; skipping (nothing persisted, retried next run)."
         )
+        report.outcome = "lookup-failed"
         return
     if subscribed is False:
         if lp_client.mode == "dry-run":
@@ -200,6 +208,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 "~ubuntu-security-sponsors) is subscribed to this bug -- not "
                 "a queue item. Skipping (nothing persisted)."
             )
+            report.outcome = "skipped-not-queued"
             return
 
     resource_type = lp_obj.resource_type_link.split("#")[-1]
@@ -215,6 +224,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # triage the moment it becomes public.
     private_obj = lp_obj.bug if resource_type == "bug_task" else lp_obj
     if getattr(private_obj, "private", False):
+        report.outcome = "skipped-private"
         logger.info(
             "Private item -- leaving for a human, content never sent to "
             "the LLM. Skipping (nothing persisted)."
@@ -241,6 +251,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         try:
             created = bug.date_created
         except Exception as e:
+            report.outcome = "lookup-failed"
             logger.warning(
                 "Could not read the bug's creation date (%s); skipping "
                 "(nothing persisted, retried next run).",
@@ -257,6 +268,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                     _NEW_BUG_GRACE,
                 )
             else:
+                report.outcome = "skipped-too-new"
                 logger.info(
                     "Bug filed %s ago (< %s grace period) -- may still be "
                     "edited. Skipping (nothing persisted, retried next run).",
@@ -275,6 +287,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         checkpoint("get_facts")
         if stored_facts is not None and stored_facts == new_facts:
             logger.info("Facts unchanged since last triage. Skipping (nothing to do).")
+            report.outcome = "skipped-unchanged"
             return
 
     # New, changed, or forced: run the full pipeline from scratch. Every

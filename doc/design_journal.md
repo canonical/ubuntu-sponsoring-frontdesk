@@ -2991,3 +2991,22 @@ with the checks themselves left to the table that now sits below it.
   so a row reads as the sequence of what failed. Rows predating this entry
   have no `inconclusive` key; `stats.py` treats them as empty (tested).
 
+### 138 addendum: every no-op path names itself
+
+The first live run after #138 showed the record was still misleading: 46 of
+81 items came back `inconclusive` but only ONE carried a reason. The other
+45 were the facts-unchanged gate -- the bot correctly doing nothing on items
+it had already triaged. The audit row defaulted to `"inconclusive"` for any
+path that never called `update_status`, which lumped healthy skips together
+with failed lookups. That is what made the 30-day figure look alarming, and
+it is what sent me chasing a non-existent lookup failure.
+
+Each silent exit now sets its own outcome -- `skipped-unchanged`,
+`skipped-private`, `skipped-not-queued`, `skipped-too-new`, `load-failed`,
+`lookup-failed` -- next to the existing `skipped-kernel`. `"inconclusive"`
+is left as the default only for the genuine case, where a check's lookup
+returned None and `extra["inconclusive"]` names it.
+
+Rows written before this keep the old label, so historical percentages stay
+unreadable; the distinction starts with the next run.
+
