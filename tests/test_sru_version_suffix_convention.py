@@ -239,3 +239,31 @@ def test_dotted_debian_revision_skipped_even_when_the_version_is_odd(monkeypatch
     _patch_archive(monkeypatch, versions={"noble": "1.2-4.1"}, changelog=_DOTTED_ARCHIVE_CHANGELOG)
     mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu99"))
     assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
+
+
+# --- the dotted-revision probe (#129 follow-up) -------------------------------
+
+
+def test_probe_detects_whether_dotted_revisions_are_handled(monkeypatch):
+    # A behaviour probe, not a version check: this host's deb is 0.2.1 while
+    # the Python metadata it installs claims 0.1.0, so the version string
+    # can't answer "has the fix landed?". The fix ships in 0.2.4.
+    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", None)
+    result = checks.lint_handles_dotted_revisions()
+    assert result in (True, False)
+
+
+def test_probe_is_none_without_the_library(monkeypatch):
+    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", None)
+    monkeypatch.setattr(checks, "ubuntu_lint", None)
+    assert checks.lint_handles_dotted_revisions() is None
+
+
+def test_probe_result_is_memoized(monkeypatch):
+    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", True)
+
+    def _explode(*a, **k):
+        raise AssertionError("probe re-ran instead of using the memo")
+
+    monkeypatch.setattr(checks, "debian_changelog", _explode)
+    assert checks.lint_handles_dotted_revisions() is True

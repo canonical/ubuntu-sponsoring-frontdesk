@@ -1298,8 +1298,13 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   `0.10.1-4ubuntu0.1`) is **fixed upstream**: it landed just after 0.2.3, so
   it ships in 0.2.4 (seb128, 2026-10-01). Nothing to file -- this is now
   waiting on a release reaching the PPA. The hosts run 0.2.1.
-- **Nothing pins or logs the installed `ubuntu_lint` version** (#129), so its
-  verdicts can change under us on package upgrade -- same class of problem as
+- ~~**Nothing pins or logs the installed `ubuntu_lint` version**~~ -- partly
+  addressed (#141): `checks.lint_handles_dotted_revisions()` probes the
+  installed library's *behaviour* on the #129 case and logs a warning once
+  the fix is present, so the workaround's removal doesn't depend on anyone
+  remembering to check. A version string would not have worked: this host's
+  deb is 0.2.1 while the Python metadata it installs says 0.1.0. Still open:
+  its verdicts can change under us on package upgrade -- same class of problem as
   #108's unpinned ruff. Consider logging it at startup, or asserting a
   minimum version.
 

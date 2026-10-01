@@ -3781,6 +3781,61 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
     return _ppa_version_finding(url, proposed_version)
 
 
+# Whether the installed ubuntu-lint computes the expected SRU version
+# correctly for a dotted (NMU-style) Debian revision. None until probed.
+_LINT_DOTTED_REVISION_OK = None
+
+# A minimal two-entry changelog exercising exactly the #129 bug: a previous
+# version with a dotted revision, and the correct SRU version derived from
+# it. A fixed ubuntu-lint accepts this; 0.2.3 and older expect
+# `0.10.1-4ubuntu0.1` instead and raise FAIL.
+_DOTTED_REVISION_PROBE = """\
+probe (0.10.1-4.1ubuntu0.1) noble; urgency=medium
+
+  * Probe entry.
+
+ -- Probe <probe@example.com>  Mon, 01 Sep 2025 00:00:00 +0000
+
+probe (0.10.1-4.1) unstable; urgency=medium
+
+  * Previous entry with a dotted Debian revision.
+
+ -- Probe <probe@example.com>  Sun, 31 Aug 2025 00:00:00 +0000
+"""
+
+
+def lint_handles_dotted_revisions():
+    """True when the installed ubuntu-lint gets dotted Debian revisions
+    right, False when it still has the #129 bug, None when it or
+    python-debian isn't installed at all.
+
+    A behaviour probe rather than a version check, because the version is
+    not trustworthy: this host's deb is 0.2.1 while the Python metadata it
+    installs says 0.1.0. The answer decides nothing at runtime today -- the
+    workaround skips dotted revisions either way -- but it is what tells us
+    the fix (landed upstream after 0.2.3, so shipping in 0.2.4) has arrived
+    and the workaround can be deleted. Memoized: the probe is pure and the
+    installed library can't change mid-run.
+    """
+    global _LINT_DOTTED_REVISION_OK
+    if _LINT_DOTTED_REVISION_OK is not None:
+        return _LINT_DOTTED_REVISION_OK
+    if ubuntu_lint is None or debian_changelog is None:
+        return None
+    try:
+        context = ubuntu_lint.Context(
+            debian_changelog=debian_changelog.Changelog(_DOTTED_REVISION_PROBE)
+        )
+        ubuntu_lint.check_sru_version_string_convention(context)
+        _LINT_DOTTED_REVISION_OK = True
+    except ubuntu_lint.LintException as e:
+        _LINT_DOTTED_REVISION_OK = e.result != ubuntu_lint.LintResult.FAIL
+    except Exception as e:
+        logger.debug("lint_handles_dotted_revisions: probe failed (%s).", e)
+        return None
+    return _LINT_DOTTED_REVISION_OK
+
+
 def _sru_version_convention_finding(url, reason):
     logger.info(
         "[%s] proposed version doesn't follow the SRU version-string "
@@ -3878,6 +3933,15 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
         previous = parsed[1].version if len(parsed) > 1 else None
         revision = getattr(previous, "debian_revision", None) or ""
         if "." in revision:
+            if lint_handles_dotted_revisions():
+                # The reason for this skip is gone: say so loudly once per
+                # run rather than leaving dead caution in place for years.
+                logger.warning(
+                    "The installed ubuntu-lint handles dotted Debian "
+                    "revisions correctly now -- the #129 workaround in "
+                    "_sru_version_convention_verdict can be removed, and "
+                    "Check 13 will start covering NMU'd packages again."
+                )
             logger.debug(
                 "_sru_version_convention_verdict: previous version %s has a "
                 "dotted Debian revision; ubuntu-lint miscomputes the expected "

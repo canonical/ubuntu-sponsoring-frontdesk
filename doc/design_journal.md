@@ -3122,3 +3122,28 @@ Applying `AGENTS.md`'s own rule rather than waiting to be asked:
   "inconclusive" no longer means "any path that didn't call update_status".
   Rendered to `flow.svg`/`flow.png`.
 
+## 141. Probe ubuntu-lint's Behaviour, Not Its Version
+
+The #129 workaround (skip the advisory when the previous version has a
+dotted Debian revision) has to be deleted once a fixed ubuntu-lint is
+installed, and nothing would have told us that day had come. The backlog
+asked for the installed version to be logged.
+
+* **A version string can't answer it.** This host's deb is
+  `0.2.1ubuntu~26.04.1~ppa1`, while the Python metadata that deb installs
+  reports `0.1.0` -- upstream never bumped it. Logging either number would
+  have been worse than nothing, since both look authoritative.
+* **So probe the behaviour instead.** `lint_handles_dotted_revisions()`
+  runs the installed library against a two-entry changelog that is exactly
+  the #129 case -- previous `0.10.1-4.1`, proposed `0.10.1-4.1ubuntu0.1` --
+  and reports True when it is accepted, False when the library still
+  expects `0.10.1-4ubuntu0.1`, None when the library isn't installed.
+  Verified on this host: False, as expected for 0.2.1.
+* **Deliberately changes no behaviour.** The workaround still skips dotted
+  revisions either way; the probe only logs, at warning level, that it can
+  now be removed. Making the skip conditional on the probe would be the
+  tidier end state, but that is a change to what a check posts, which the
+  conventions say gets reviewed rather than slipped in.
+* Memoized: the probe is pure and the installed library can't change
+  mid-run.
+
