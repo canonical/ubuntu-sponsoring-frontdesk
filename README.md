@@ -37,8 +37,17 @@ python3 stats.py [--since 30d] [--json]
 ```
 
 It reports what the checks actually caught (per check and tier), what a
-human's engagement suppressed, which findings sat on items whose write you
-declined, LLM tokens/cost per item, and errors.
+human's engagement suppressed, which lookups left a pass inconclusive, which
+findings sat on items whose write didn't go through, LLM tokens/cost per
+item, and errors.
+
+For where things stand *now* rather than what happened, `--queue` reads
+`state.db` instead: counts by status, what is waiting on a contributor and
+what is ready for a human, oldest first.
+
+```
+python3 stats.py --queue [--json]
+```
 
 Items are re-triaged only when their contributor-controlled state
 changes (see "facts" in the [glossary](doc/GLOSSARY.md)); runs are

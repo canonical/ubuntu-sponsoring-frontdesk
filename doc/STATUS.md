@@ -1323,7 +1323,8 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   current standards -- watch it rather than build rotation now.
 - Feedback mechanism (was explicitly out of scope): `stats.py` already
   approximates it via findings on items whose write was declined.
-- A "current queue" view would need `state.db` as well; v1 is audit-only.
+- ~~A "current queue" view would need `state.db` as well; v1 is audit-only.~~
+  DONE 2026-10-01 (#142): `stats.py --queue`.
 
 ## Contributor-facing documentation (#137) -- DONE
 

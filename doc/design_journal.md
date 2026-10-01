@@ -3147,3 +3147,32 @@ asked for the installed version to be logged.
 * Memoized: the probe is pure and the installed library can't change
   mid-run.
 
+## 142. A Current-Queue View in stats.py
+
+`stats.py --queue`, the last of #131's noted follow-ups. The audit trail is
+a history -- it says what happened to an item on the pass that touched it --
+so "what is the queue waiting on right now" previously meant reconstructing
+state from months of rows. This reads `state.db` instead, the same rows the
+facts-unchanged gate and the sweep consult: counts by status, the items
+waiting on a contributor and those ready for a human, oldest first, each
+with its stored detail line.
+
+* **Opened read-only** (`file:...?mode=ro`), so a report can never touch the
+  state the bot acts on, and it can be run while a pass is in flight.
+* **Honest about the sweep.** The last section lists bounced bugs the bot
+  hasn't touched for 30+ days, and says in the output that this is *not* the
+  sweep's verdict: `sweep.py` measures Launchpad's `bug_task.date_incomplete`
+  while this measures our own last write, and the two diverge whenever a
+  human changes the status in between. I nearly shipped it labelled "past
+  the sweep horizon", which would have implied a verdict it can't make.
+  `STALE_BOUNCE_AGE` is imported from `sweep` rather than restated.
+* MPs are excluded from that section because the sweep only ever acts on
+  bugs (#66).
+* Tolerates an unreadable or missing `last_checked` (prints `?d`) -- same
+  posture as the rest of stats.py, which has to run against whatever the VM
+  has.
+* **First run, over 375 tracked items:** 241 READY_FOR_HUMAN (64%), 79 DONE,
+  44 WAITING_ON_CONTRIBUTOR, 11 pending archive/queue. The oldest
+  contributor bounces are 89 days old. That 64% is worth a look on its own:
+  it is the bot's view of what human sponsors have yet to pick up.
+

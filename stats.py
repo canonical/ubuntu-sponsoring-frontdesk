@@ -5,17 +5,24 @@ Answers the questions the audit log alone couldn't: what does the bot
 actually catch, how often is it wrong, what does it cost. Reads
 ``audit.jsonl`` (see audit.default_path) and writes nothing.
 
+The audit trail says what the bot DID; `--queue` says where every item it
+tracks stands right now, read from state.db (#142).
+
 Usage:
     python3 stats.py [--since 30d] [--json] [--audit PATH]
+    python3 stats.py --queue [--json] [--state PATH]
 """
 
 import argparse
 import collections
 import datetime
 import json
+import sqlite3
 import sys
 
 import audit
+import state
+import sweep
 
 
 def _parse_since(value):
@@ -208,12 +215,117 @@ def _jsonable(data):
     return out
 
 
+def queue(db_path):
+    """Where every tracked item stands now, from state.db.
+
+    The audit trail is a history: it says what happened to an item on the
+    pass that touched it, not what is outstanding today. This reads the
+    state the bot acts on -- the same rows the facts-unchanged gate and the
+    sweep consult -- so "what is the queue waiting on" doesn't have to be
+    reconstructed from months of rows.
+    """
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        rows = conn.execute("SELECT url, status, last_checked, details FROM requests").fetchall()
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    by_status = collections.Counter()
+    waiting, humans = [], []
+    for url, status, last_checked, details in rows:
+        by_status[status or "?"] += 1
+        age = _age(last_checked, now)
+        if status == "WAITING_ON_CONTRIBUTOR":
+            waiting.append((age, url, details or ""))
+        elif status == "READY_FOR_HUMAN":
+            humans.append((age, url, details or ""))
+    waiting.sort(key=lambda item: (item[0] is None, -(item[0] or 0)))
+    humans.sort(key=lambda item: (item[0] is None, -(item[0] or 0)))
+    sweep_days = sweep.STALE_BOUNCE_AGE.days
+    return {
+        "tracked": len(rows),
+        "by_status": by_status,
+        "waiting_on_contributor": waiting,
+        "ready_for_human": humans,
+        "sweep_days": sweep_days,
+        # Bugs only, because the sweep deliberately leaves MPs alone (#66).
+        # NOT the sweep's own verdict: the sweep measures Launchpad's
+        # bug_task.date_incomplete, while this is the age of OUR last write.
+        # The two differ whenever a human changed the status in between, so
+        # this is a prompt to look, not a list of things the sweep will act
+        # on.
+        "quiet_bounced_bugs": [
+            (age, url)
+            for age, url, _ in waiting
+            if age is not None and age >= sweep_days and "+merge/" not in url
+        ],
+    }
+
+
+def _age(last_checked, now):
+    """Whole days since `last_checked`, or None if it can't be read."""
+    if not last_checked:
+        return None
+    try:
+        when = datetime.datetime.fromisoformat(str(last_checked))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    return (now - when).days
+
+
+def queue_report(data):
+    out = [
+        f"Tracked items: {data['tracked']}",
+        "",
+        "Status",
+        _table(data["by_status"], data["tracked"]),
+    ]
+    for key, title in (
+        ("waiting_on_contributor", "Waiting on the contributor (oldest first)"),
+        ("ready_for_human", "Ready for a human sponsor (oldest first)"),
+    ):
+        out += ["", title]
+        if not data[key]:
+            out.append("  (none)")
+        for age, url, details in data[key][:15]:
+            age_text = f"{age:>4}d" if age is not None else "   ?d"
+            out.append(f"  {age_text}  {url}")
+            if details:
+                out.append(f"         {details}")
+        if len(data[key]) > 15:
+            out.append(f"  ... and {len(data[key]) - 15} more")
+    quiet = data["quiet_bounced_bugs"]
+    out += [
+        "",
+        f"Bounced bugs untouched by the bot for {data['sweep_days']}+ days (bugs only)",
+        "  (indicative: the sweep's own clock is Launchpad's date_incomplete,",
+        "   not our last write, so it may already have handled these)",
+    ]
+    out += [f"  {age:>4}d  {url}" for age, url in quiet[:10]] or ["  (none)"]
+    return "\n".join(out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--since", help="e.g. 30d, 12h, or an ISO date")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--audit", default=audit.default_path(), help="audit trail path")
+    parser.add_argument(
+        "--queue",
+        action="store_true",
+        help="where tracked items stand now, from state.db, instead of the audit retrospective",
+    )
+    parser.add_argument("--state", default=state.default_db_path(), help="state.db path")
     args = parser.parse_args()
+
+    if args.queue:
+        try:
+            data = queue(args.state)
+        except sqlite3.OperationalError:
+            print(f"No state database at {args.state}", file=sys.stderr)
+            return 1
+        print(json.dumps(_jsonable(data), indent=2) if args.json else queue_report(data))
+        return 0
 
     try:
         rows = load(args.audit, _parse_since(args.since))

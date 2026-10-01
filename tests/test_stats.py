@@ -191,3 +191,78 @@ def test_rows_predating_the_inconclusive_reason_still_report(tmp_path):
     data = stats.summarize(stats.load(_write(tmp_path, [row])))
     assert data["inconclusive_by_reason"] == {}
     assert data["outcomes"]["inconclusive"] == 1
+
+
+# --- #142: the current-queue view, from state.db ------------------------------
+
+
+def _queue_db(tmp_path, rows):
+    """A state.db with (url, status, last_checked, details) rows."""
+    import sqlite3
+
+    from state import StateManager
+
+    path = str(tmp_path / "state.db")
+    StateManager(db_path=path)  # creates the schema
+    with sqlite3.connect(path) as conn:
+        conn.executemany(
+            "INSERT INTO requests (url, status, last_checked, details) VALUES (?, ?, ?, ?)",
+            rows,
+        )
+    return path
+
+
+def _days_ago(days):
+    import datetime
+
+    when = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+    return when.isoformat()
+
+
+def test_queue_groups_by_status_and_sorts_oldest_first(tmp_path):
+    path = _queue_db(
+        tmp_path,
+        [
+            ("https://launchpad.net/bugs/1", "WAITING_ON_CONTRIBUTOR", _days_ago(5), "Bounced"),
+            ("https://launchpad.net/bugs/2", "WAITING_ON_CONTRIBUTOR", _days_ago(40), "Bounced"),
+            ("https://code.launchpad.net/x/+merge/3", "READY_FOR_HUMAN", _days_ago(2), "Ready"),
+            ("https://launchpad.net/bugs/4", "DONE", _days_ago(1), "Done"),
+        ],
+    )
+    data = stats.queue(path)
+    assert data["tracked"] == 4
+    assert data["by_status"]["WAITING_ON_CONTRIBUTOR"] == 2
+    assert [url for _age, url, _d in data["waiting_on_contributor"]] == [
+        "https://launchpad.net/bugs/2",
+        "https://launchpad.net/bugs/1",
+    ]
+    assert "Waiting on the contributor" in stats.queue_report(data)
+
+
+def test_queue_quiet_bugs_exclude_merge_proposals(tmp_path):
+    # The sweep only ever acts on bugs (#66), so an old MP isn't listed.
+    path = _queue_db(
+        tmp_path,
+        [
+            ("https://launchpad.net/bugs/1", "WAITING_ON_CONTRIBUTOR", _days_ago(40), ""),
+            ("https://code.launchpad.net/x/+merge/2", "WAITING_ON_CONTRIBUTOR", _days_ago(90), ""),
+        ],
+    )
+    data = stats.queue(path)
+    assert [url for _age, url in data["quiet_bounced_bugs"]] == ["https://launchpad.net/bugs/1"]
+
+
+def test_queue_tolerates_unreadable_timestamps(tmp_path):
+    # last_checked is written by the bot, but an older or hand-edited row
+    # shouldn't crash a read-only report.
+    path = _queue_db(
+        tmp_path,
+        [
+            ("https://launchpad.net/bugs/1", "WAITING_ON_CONTRIBUTOR", "not a date", ""),
+            ("https://launchpad.net/bugs/2", "WAITING_ON_CONTRIBUTOR", None, ""),
+        ],
+    )
+    data = stats.queue(path)
+    assert [age for age, _u, _d in data["waiting_on_contributor"]] == [None, None]
+    assert data["quiet_bounced_bugs"] == []
+    assert "   ?d" in stats.queue_report(data)
