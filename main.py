@@ -513,7 +513,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif result:
         add_finding("check_ppa_version_suffix", result)
 
-    # Check 12: SRU version-suffix convention (#109), via ubuntu-lint --
+    # Check 13: SRU version-suffix convention (#109), via ubuntu-lint --
     # skipped when Check 6 already bounced the version itself (#122).
     if not version_bounced:
         result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)

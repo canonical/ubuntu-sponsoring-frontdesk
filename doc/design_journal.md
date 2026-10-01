@@ -2854,3 +2854,52 @@ files; regenerate with `dot -Tpng flow.dot -o flow.png`, likewise `-Tsvg`):
 * Docs: new CONTRIBUTING.md (beginner overview, first-run, credentials,
   the refresh caveat), README "Hacking" section, `.workshop.lock`
   gitignored.
+
+## 137. A Contributor-Facing Checks Reference
+
+* **Request (seb128):** the flow chart "is not really user readable, it has
+  implementation detail". Wanted instead a table of every check, "to make
+  easy for people to understand and allow me and contributors to review the
+  wording and choices" -- one line per check, with the name, what it does,
+  the text of the comment, and the resulting action (status change,
+  unsubscribe, Mattermost, ...). Markdown rather than HTML, so GitHub
+  renders it straight from the repo.
+* **Rewrote `doc/CHECKS.md`** for that audience. It was a developer index:
+  five categorised tables keyed by function name, no check numbers, no
+  posted wording, no action column -- so it couldn't answer either of
+  seb128's two questions (what will the bot say to me, and what will it do).
+* **The wording lives below the table, not inside it** (seb128 chose this
+  over inlining it). Findings run to several sentences with a doc URL; in a
+  table cell both the rendered page and the raw Markdown become unreadable,
+  and a wording change would diff as one enormous line. The table links to
+  a short subsection per check that quotes the text verbatim, placeholders
+  left visible, since the placeholders are part of what's being reviewed.
+* **Gates and skips are prose, not rows** (seb128: "maybe not in the same
+  table/section though"): "Why the bot sometimes says nothing" collects the
+  sponsors-subscription gate, private items, kernel packages, the new-bug
+  grace, unchanged facts, inconclusive lookups, reviewer engagement and
+  reviewer-covered findings. They explain silence rather than producing it.
+* **Operator notifications get their own short section**, because they are
+  the one output no contributor ever sees.
+* **`tests/test_checks_doc.py` guards the drift** (seb128 picked the
+  test-enforced option): every `def check_*` must be named in the doc, and
+  every blockquote in the doc must still match a literal in `checks.py` or
+  `llm_reviewer.py`. It compares whitespace-normalised text with
+  `{placeholder}` spans as wildcards, so reflowing a source string is fine
+  but changing the words fails. Verified it bites both ways by breaking each
+  half on purpose. Deliberately source-text based: findings are built from
+  live data, so introspecting templates would mean reshaping every check.
+* **Found while writing it:** `main.py` had two "Check 12" comments and no
+  Check 13 -- the SRU version-suffix convention check is Check 13 in its
+  `checks.py` docstring (#109) but was labelled 12 at its call site. Fixed
+  the comment; the doc's number column now has one meaning.
+* **`AGENTS.md` (new)**, at seb128's suggestion: the repo had no
+  agent/contributor instructions file at all, so the conventions lived only
+  in this journal. States the new one (a wording/tier/action change updates
+  `doc/CHECKS.md` in the same commit) alongside the ones already in force:
+  journal entry per behavioural change, the `False`/finding/`None` contract,
+  the tool-less LLM agent, `make all` read in full, 72-column commits.
+* **The flow charts stay** (seb128: "keep it for now"), with a backlog item
+  in `doc/STATUS.md` for a contributor-facing diagram -- and a note that
+  `flow.dot` is itself stale, stopping at Check 12 with no nodes for Checks
+  13-15 or `PENDING_UPLOAD_QUEUE`.
