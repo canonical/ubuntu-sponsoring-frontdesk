@@ -57,7 +57,7 @@ Arguments go after the action: `workshop run dev triage --url <url>`.
 For anything narrower, use the tools directly:
 
 ```
-workshop exec dev -- python3 -m pytest tests/ -k rebuild
+workshop exec dev -- python3 -m pytest usf/tests/ -k rebuild
 workshop shell dev                  # interactive shell inside
 ```
 
@@ -70,7 +70,7 @@ LLM needs setting up by hand the first time, inside the container:
 workshop shell dev
 ```
 
-- **Launchpad**: run `python3 main.py --url <bug-or-mp-url>` (dry-run by
+- **Launchpad**: run `python3 usf/main.py --url <bug-or-mp-url>` (dry-run by
   default). launchpadlib prints an authorisation URL on first use; approve
   it and the token is cached in
   `~/.cache/ubuntu-sponsoring-frontdesk/`.

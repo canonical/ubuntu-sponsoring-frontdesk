@@ -36,9 +36,9 @@ Current pipeline: `flow.svg`.
 ```bash
 make test                       # unit suite (needs pytest, launchpadlib, pyyaml, python3-apt; runtime also needs distro-info -- #83)
 make smoke URL=<lp-url>          # read-only attribute check against real Launchpad
-python3 main.py --url <url> [--dry-run|--interactive|--yes] [--verbose]
-python3 main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
-python3 main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#66); --all already includes it
+python3 usf/main.py --url <url> [--dry-run|--interactive|--yes] [--verbose]
+python3 usf/main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
+python3 usf/main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#66); --all already includes it
 ```
 
 Write modes: **`--dry-run`** (default; logs intended writes, does nothing),

@@ -11,17 +11,17 @@ wording is reviewed. Any change to a check's wording, tier, or resulting
 action updates it in the same commit. A new check is added to its table with
 its wording quoted.
 
-`tests/test_checks_doc.py` enforces the mechanical half: every
+`usf/tests/test_checks_doc.py` enforces the mechanical half: every
 finding-producing check must be named in the doc, and every quote in the doc
-must still exist in `checks.py` or `llm_reviewer.py`. If it fails, the doc
+must still exist in `usf/checks.py` or `usf/llm_reviewer.py`. If it fails, the doc
 is behind the code -- fix the doc, don't relax the test.
 
-Check numbers are assigned in the `checks.py` docstring and referenced by
-`main.py`'s comments and `doc/CHECKS.md`. Keep the three in agreement.
+Check numbers are assigned in the `usf/checks.py` docstring and referenced
+by `usf/main.py`'s comments and `doc/CHECKS.md`. Keep the three in agreement.
 
 ## Keep the flow chart current
 
-`doc/flow.dot` is the developer view of `triage_url`: the gates, the check
+`doc/flow.dot` is the developer view of `usf/main.py`'s `triage_url`: the gates, the check
 order, what short-circuits what, and the terminal states. A change to any of
 those updates the chart in the same commit, and the committed renders are
 regenerated from it:

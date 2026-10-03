@@ -3207,3 +3207,37 @@ Deliberately not a design: no charm layout, no config schema, no opinion on
 ops vs reactive. The point is that the next session starts on the plan
 rather than on archaeology.
 
+## 144. Move the Bot into usf/, Making Room for the Charm
+
+Preparation for the charm, done before it starts so that session designs
+rather than restructures. seb128 chose the layout and the name.
+
+* **One repo, not two.** A separate charm repo is the common Canonical
+  pattern, but seb128 called it an anti-pattern here: "it then requires
+  logic in the charm to clone/pull etc the other repo... It makes sense when
+  you charm an independent software but if the only purpose of your service
+  is to be charmed to run our infra, no point." The bot isn't packaged as a
+  deb or snap, so a separate repo would mean vendoring it from git anyway.
+* **`usf/` at the top level, beside the eventual `src/`**, not under it.
+  `canonical/ubuntu-autosync-operator` (the house example) keeps its
+  workload inside `src/script/`, but that is three scripts; ours is a
+  project with its own tests, docs and CI, and burying it would invert the
+  relationship. The cost is one explicit `prime` entry when the charm is
+  packed -- visible rather than magic.
+* **The flat imports are load-bearing.** Every module does `import checks`,
+  not `from usf import checks`. Moving the directory wholesale preserves
+  that, so this was a move rather than a rewrite; the charm must keep the
+  directory intact and set the service's `WorkingDirectory` to it.
+* **Three config files knew the old paths:** `Makefile` (test and smoke
+  targets), `pyproject.toml` (the per-file ruff ignore) and
+  `usf/tests/test_checks_doc.py` (which walks up to `doc/`, now one level
+  further). CI needed nothing -- it calls `make lint` / `make test`.
+* **One ruff subtlety:** with the modules moved, isort stopped seeing them
+  as first-party and wanted all 37 test files reorganized. Fixed with
+  `src = ["usf"]` rather than 37 edits. `usf/tests` is deliberately NOT in
+  that list: the helpers (`from fakes import ...`) have always sorted as
+  their own block, and listing it would merge them into the first-party
+  block everywhere for no benefit.
+* The Workshop actions and every doc path were updated in the same commit;
+  `doc/` stays at the repo root, shared with the charm.
+

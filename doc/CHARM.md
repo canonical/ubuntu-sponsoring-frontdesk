@@ -8,14 +8,41 @@ workload.
 Nothing here is a design decision -- it is what the bot needs today, and the
 questions a charm forces that only seb128 can answer.
 
+## Repository layout
+
+Decided before the charm work started (#144), so the charm session doesn't
+have to restructure and design at the same time:
+
+```
+usf/            the bot ("ubuntu-sponsoring-frontdesk"), tests in usf/tests/
+src/            the charm -- charm.py, plus the service/timer units
+doc/            shared: design journal, checks reference, these notes
+```
+
+One repo, deliberately: the bot exists only to be deployed on our
+infrastructure, so a separate charm repo would just add clone/pull logic to
+the charm for no gain (seb128). The house example to follow is
+`canonical/ubuntu-autosync-operator`, which ships its workload inside the
+charm (`src/script/`, `src/systemd/`) and copies it into place from
+`install`.
+
+Two things to get right when packing:
+
+- `usf/` is **not** included automatically. Charmcraft's charm part primes
+  `src/` and `lib/`; the workload directory needs an explicit entry.
+- The bot's modules import each other flat (`import checks`), so keep the
+  directory intact and run from it -- give the systemd unit a
+  `WorkingDirectory` of wherever `usf/` is installed. No import refactor is
+  needed, and a flattening one would be a mistake.
+
 ## What the workload actually is
 
 One Python program, run as a batch job rather than a daemon:
 
 ```
-python3 main.py --all --dry-run|--interactive|--yes   # the queue pass
-python3 main.py --sweep                               # the Rule B sweep alone
-python3 main.py --url <bug-or-mp-url>                 # one item
+python3 usf/main.py --all --dry-run|--interactive|--yes   # the queue pass
+python3 usf/main.py --sweep                               # the Rule B sweep alone
+python3 usf/main.py --url <bug-or-mp-url>                 # one item
 ```
 
 `--all` ends by running the sweep itself, so a deployment normally needs

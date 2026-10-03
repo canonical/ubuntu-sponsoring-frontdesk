@@ -12,11 +12,11 @@ fmt:
 	ruff format .
 
 test:
-	python3 -m pytest tests/ -q
+	python3 -m pytest usf/tests/ -q
 
 # Read-only attribute check against real Launchpad. Usage: make smoke URL=<lp-url>
 smoke:
-	python3 smoke_test.py "$(URL)"
+	python3 usf/smoke_test.py "$(URL)"
 
 clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

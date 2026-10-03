@@ -14,10 +14,24 @@ only when the deterministic phase didn't already decide. Every write is
 gated, deduplicated, and recorded in an audit trail, and the bot backs
 off whenever a human reviewer is already engaged.
 
+## Layout
+
+```
+usf/          the bot itself, with its tests in usf/tests/
+doc/          design journal, checks reference, flow charts, charm notes
+.workshop/    the Workshop dev environment (see CONTRIBUTING.md)
+```
+
+`usf/` is short for ubuntu-sponsoring-frontdesk. It sits beside the charm
+that will deploy it (`src/`, when that lands) rather than under it: the bot
+is what this repo is for, and the charm is how it gets run. Its modules
+import each other flat -- `import checks` -- so they stay in one directory
+and are run from it.
+
 ## Usage
 
 ```
-python3 main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--verbose]
+python3 usf/main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--verbose]
 ```
 
 - `--url` triages one Launchpad bug or merge proposal; `--all` processes
@@ -33,7 +47,7 @@ python3 main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--ve
 Retrospective over the audit trail (read-only, writes nothing):
 
 ```
-python3 stats.py [--since 30d] [--json]
+python3 usf/stats.py [--since 30d] [--json]
 ```
 
 It reports what the checks actually caught (per check and tier), what a
@@ -46,7 +60,7 @@ For where things stand *now* rather than what happened, `--queue` reads
 what is ready for a human, oldest first.
 
 ```
-python3 stats.py --queue [--json]
+python3 usf/stats.py --queue [--json]
 ```
 
 Items are re-triaged only when their contributor-controlled state

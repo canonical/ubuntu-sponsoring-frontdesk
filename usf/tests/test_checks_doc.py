@@ -8,8 +8,10 @@ template to introspect without reshaping every check first.
 import pathlib
 import re
 
+# usf/tests/ -> usf/ (the modules) -> the repo root (doc/, shared with the
+# charm since the #144 move).
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_DOC = _ROOT / "doc" / "CHECKS.md"
+_DOC = _ROOT.parent / "doc" / "CHECKS.md"
 
 # Checks that produce neither a finding nor a comment: they only gate the
 # pass, and doc/CHECKS.md explains them in prose ("Why the bot sometimes
