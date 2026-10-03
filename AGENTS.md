@@ -39,7 +39,9 @@ guard -- adding a check means adding its node.
 
 Every behavioural change gets a numbered entry in `doc/design_journal.md`
 saying what prompted it and why the chosen behaviour is right -- not what
-the diff does. Live-found fixes name the bug or merge proposal that
+the diff does. Entries are numbered sequentially across the whole project,
+charm included: continue from the last one in the file rather than starting
+a new scheme. Live-found fixes name the bug or merge proposal that
 triggered them, so the case can be re-checked later.
 
 Changes to tiers or wording are design decisions: propose the wording for

@@ -1351,6 +1351,21 @@ config, storage for `state.db`, the ubuntu-lint PPA, observability.
 Intended to be picked up in a sandbox with a juju controller, where a charm
 can actually be deployed and iterated on.
 
+## Watch list (no work, just things to notice)
+
+- **Check 15 (no-change rebuild, #132) has never fired live.** It is the
+  only check in the suite without a real case behind it -- the merge
+  proposal that prompted it was deleted before we could test against it. The
+  first no-change rebuild in the queue is worth running in `--interactive`
+  and reading carefully.
+- **`python3-ubuntu-lint` 0.2.4.** When it reaches the PPA,
+  `checks.lint_handles_dotted_revisions()` (#141) starts logging, once per
+  run, that the #129 workaround can be deleted and Check 13 can cover NMU'd
+  packages again.
+- **Inconclusive rate after #140.** The last measured pass had 3 of 55 items
+  inconclusive, all of them archive-changelog timeouts. With the 45s budget
+  that should be at or near zero; `stats.py` names the failing check if not.
+
 ## Known residual edges (documented in code)
 
 - LLM-authored comments could be reworded on a from-scratch re-run and slip past
