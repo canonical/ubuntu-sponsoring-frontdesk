@@ -326,7 +326,7 @@ class LLMReviewer:
             self._run_usage_totals["cost"],
         )
 
-    def _query_llm(self, prompt, model="high-complexity"):
+    def _query_llm(self, prompt):
         """
         Invokes the opencode CLI to query the LLM.
 
@@ -381,7 +381,9 @@ class LLMReviewer:
         logger.debug("[llm] prompt sent to opencode:\n%s", prompt)
         cmd = ["opencode", "run", "--format", "json", "--agent", _OPENCODE_AGENT]
 
-        # We can add model selection here if needed, e.g. cmd.extend(["--model", "gpt-4o"])
+        # No --model: whichever model the operator configured in opencode is
+        # what runs. _query_llm used to take a `model` argument that was
+        # never passed on, which read like a working cost knob (#145).
         # The prompt goes over stdin, not argv: prompts embedding a large MP
         # diff can exceed the kernel's argument-size limit (seen live on a
         # rust-sequoia-sqv MP vendoring 4600+ files -> E2BIG).
@@ -619,7 +621,7 @@ reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
 ```
 """
 
-        response = self._query_llm(prompt, model="high-complexity")
+        response = self._query_llm(prompt)
         return self._extract_verdict(response)
 
     def review_fixed_in_newer_series(self, bug_text, series_names):
@@ -1479,7 +1481,7 @@ mismatches:     # question 2 only: stanza/diff mismatches -- would matter if rea
 ```
 """
 
-        response = self._query_llm(prompt, model="high-complexity")
+        response = self._query_llm(prompt)
         bullets, feature = self._extract_mp_review(response)
 
         if feature:

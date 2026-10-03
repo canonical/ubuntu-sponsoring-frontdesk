@@ -99,6 +99,17 @@ def test_attachment_text_over_the_cap_is_unusable():
     assert attachments.attachment_text(att) is False
 
 
+def test_oversized_attachment_is_not_fetched_in_full():
+    # #145: the cap used to be applied after reading everything, so a 400MB
+    # upload with a patch-shaped name was downloaded in full just to be
+    # rejected -- slow enough to time out, which fails the item rather than
+    # skipping the attachment.
+    big = "--- a/x\n+++ b/x\n" + "+x\n" * (attachments.MAX_ATTACHMENT_BYTES // 3 + 1)
+    att = FakeAttachment("big.debdiff", content=big)
+    assert attachments.attachment_text(att) is False
+    assert att.data.last_read_size == attachments.MAX_ATTACHMENT_BYTES + 1
+
+
 def test_gzip_bomb_is_capped_not_inflated():
     bomb = gzip.compress(b"--- a/x\n+++ b/x\n" + b"0" * (64 * 1024 * 1024))
     att = FakeAttachment("bomb.diff.gz", content=bomb)

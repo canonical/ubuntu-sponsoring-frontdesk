@@ -26,6 +26,11 @@ class FakeHostedFile:
         self._content = content.encode() if isinstance(content, str) else content
         self.fail = fail
         self.opens = 0  # fetch counter, for the diff-memoization tests (#39)
+        # The size last asked for, so a test can assert that a bounded read
+        # really was bounded (#145). Real HostedFile.read() takes a size;
+        # this fake ignoring it would have made the bound untestable -- the
+        # recurring theme of fakes drifting from the API (#16, #20, #26).
+        self.last_read_size = None
 
     def open(self):
         if self.fail:
@@ -33,8 +38,11 @@ class FakeHostedFile:
         self.opens += 1
         return self
 
-    def read(self):
-        return self._content
+    def read(self, size=-1):
+        self.last_read_size = size
+        if size is None or size < 0:
+            return self._content
+        return self._content[:size]
 
 
 # A readable diff touching no debian/changelog: checks 5/6 conclusively find

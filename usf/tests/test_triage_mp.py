@@ -76,7 +76,7 @@ class ScriptedReviewer(llm_reviewer.LLMReviewer):
         self.reply = reply
         self.prompts = []
 
-    def _query_llm(self, prompt, model="high-complexity"):
+    def _query_llm(self, prompt):
         self.prompts.append(prompt)
         return self.reply
 
@@ -464,7 +464,7 @@ class QueuedReviewer(llm_reviewer.LLMReviewer):
         self.replies = list(replies)
         self.prompts = []
 
-    def _query_llm(self, prompt, model="high-complexity"):
+    def _query_llm(self, prompt):
         self.prompts.append(prompt)
         return self.replies.pop(0)
 

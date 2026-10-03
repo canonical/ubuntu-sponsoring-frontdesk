@@ -3241,3 +3241,40 @@ rather than restructures. seb128 chose the layout and the name.
 * The Workshop actions and every doc path were updated in the same commit;
   `doc/` stays at the repo root, shared with the charm.
 
+## 145. Two Live Findings from a Pair of External Reviews
+
+Two reviews had been sitting untracked in the tree. Most of what they found
+is long since fixed (#99's tool-less agent, #100's budgets and input caps,
+#140's timeouts, facts.py, stats.py), and their headline -- untrusted
+content reaching a tool-capable agent -- is a closed hole. Two findings were
+still live.
+
+* **`_query_llm` took a `model` argument that never reached opencode.** The
+  only trace of it in the command line was a comment saying where selection
+  *would* go, while both call sites passed `model="high-complexity"`.
+  Removing it isn't cosmetic: it read like a working cost knob, so the next
+  person tuning LLM spend would have set it and changed nothing. Whichever
+  model the operator has configured in opencode is what runs, and the
+  comment now says so.
+* **`attachment_text` applied `MAX_ATTACHMENT_BYTES` only after reading the
+  whole attachment.** A 400MB upload with a patch-shaped name was therefore
+  fetched in full just to be rejected -- slow enough to time out, which
+  fails the item rather than skipping the attachment. The gzip path was
+  already bounded on its decompressed output (#62); the plain path now reads
+  `cap + 1`, which is all the existing size check needs.
+* **The fake would have hidden it.** `FakeHostedFile.read()` took no size
+  argument, so it ignored any bound and the new test would have passed
+  against the old code too -- the recurring theme of a double drifting from
+  the API it stands in for (#16, #20, #26). It now honours `size` and
+  records the last one requested, and the test asserts how much was read
+  rather than only the verdict. Confirmed failing against the unbounded
+  version before being committed. The two `_query_llm` doubles in
+  `test_triage_mp.py` were updated to the real signature for the same
+  reason.
+
+**Deliberately left alone:** the reviews' remaining items are either already
+closed, or judgement calls this project has made on purpose -- `C901` on the
+decision-tree checks (a documented backlog note, not a smell), the size of
+`checks.py`, and the breadth of `except Exception` in the check paths, which
+is the fail-safe contract rather than sloppiness.
+

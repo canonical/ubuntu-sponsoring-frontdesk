@@ -68,7 +68,13 @@ def attachment_text(attachment):
     retriable), or False (unusable: over MAX_ATTACHMENT_BYTES once
     decompressed, or not diff-shaped -- a stable fact)."""
     try:
-        raw = attachment.data.open().read()
+        # cap + 1, not the whole file (#145): the size check below only needs
+        # to know whether the cap was exceeded, and a 400MB upload with a
+        # patch-shaped name would otherwise be fetched in full just to be
+        # rejected -- slow enough to time out, which fails the item instead
+        # of skipping the attachment. The gzip path below is already bounded
+        # the same way, on its decompressed output (#62).
+        raw = attachment.data.open().read(MAX_ATTACHMENT_BYTES + 1)
     except Exception as e:
         logger.debug(
             "attachment_text: could not fetch %r (%s).",
