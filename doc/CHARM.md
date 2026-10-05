@@ -181,19 +181,82 @@ juju deploy ./ubuntu-sponsoring-frontdesk_amd64.charm frontdesk
 ```
 
 It comes up Blocked on `lp-triager-credentials`. Each secret is created
-from a file -- one outside a dot-directory, which the juju snap can't read
--- granted to the application and set on its option:
+from a file, granted to the application, and set on its option.
+
+The Launchpad tokens come from `tools/lp-credentials.py <account>`, which
+prints a URL to approve: open it in a browser logged in as **that account**
+(a private window, not your own session) -- the script refuses a token
+approved as anyone else, and won't overwrite an existing file.
+
+The juju snap can't read files under a dot-directory (or `/tmp`), so work
+from a plain directory, and delete the files once the secrets exist.
+`juju add-secret` prints the new secret's ID, which each block keeps in
+`$id` for its `juju config` line. Once per shell:
 
 ```
-juju add-secret frontdesk-triager credentials#file=lp-ubuntu-sponsoring-bot.oauth
-juju grant-secret frontdesk-triager frontdesk
-juju config frontdesk lp-triager-credentials=secret:<id>
+FRONTDESK=~/ubuntu-sponsoring-frontdesk     # your checkout of this repo
+mkdir -p ~/frontdesk-secrets && cd ~/frontdesk-secrets
+```
 
-# optional, same three steps each:
-#   lp-sponsor-credentials  key credentials  (the helper's launchpadlib file)
-#   opencode-auth           key auth-json    (~/.local/share/opencode/auth.json)
-#   mattermost-webhook      key webhook-url  (the incoming-webhook URL)
-juju config frontdesk llm-model=github-copilot/<model>   # optional
+Then each block is self-contained:
+
+**Bot account** (`lp-triager-credentials`, required):
+
+```
+"$FRONTDESK"/tools/lp-credentials.py ubuntu-sponsoring-bot
+id=$(juju add-secret frontdesk-triager credentials#file=ubuntu-sponsoring-bot.credentials)
+juju grant-secret frontdesk-triager frontdesk
+juju config frontdesk lp-triager-credentials="$id"
+```
+
+**Privileged helper** (`lp-sponsor-credentials`, optional -- without it the
+`~ubuntu-sponsors` unsubscribe fails, #78):
+
+```
+"$FRONTDESK"/tools/lp-credentials.py ubuntu-sponsoring-helper
+id=$(juju add-secret frontdesk-sponsor credentials#file=ubuntu-sponsoring-helper.credentials)
+juju grant-secret frontdesk-sponsor frontdesk
+juju config frontdesk lp-sponsor-credentials="$id"
+```
+
+**opencode login** (`opencode-auth`, optional -- without it the LLM phases
+fail safe). Copied from a machine already logged in; don't log in on the
+unit, the charm deletes an `auth.json` that no secret backs:
+
+```
+cp ~/.local/share/opencode/auth.json opencode-auth.json
+id=$(juju add-secret frontdesk-opencode auth-json#file=opencode-auth.json)
+juju grant-secret frontdesk-opencode frontdesk
+juju config frontdesk opencode-auth="$id"
+```
+
+**Mattermost webhook** (`mattermost-webhook`, optional -- without it
+operator notifications are only logged):
+
+```
+echo -n 'https://chat.example.com/hooks/<key>' > mattermost-webhook.url
+id=$(juju add-secret frontdesk-webhook webhook-url#file=mattermost-webhook.url)
+juju grant-secret frontdesk-webhook frontdesk
+juju config frontdesk mattermost-webhook="$id"
+```
+
+**LLM model** (`llm-model`, optional -- empty uses opencode's default):
+
+```
+juju config frontdesk llm-model=github-copilot/<model>
+```
+
+To replace a secret's content later (a new token), update it in place; the
+charm picks the change up by itself:
+
+```
+juju update-secret frontdesk-triager credentials#file=ubuntu-sponsoring-bot.credentials
+```
+
+When everything is set:
+
+```
+cd ~ && rm -r ~/frontdesk-secrets
 ```
 
 It is then Active with `mode=off`: nothing runs on its own. The status line

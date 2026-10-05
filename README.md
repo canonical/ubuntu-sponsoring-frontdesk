@@ -19,6 +19,7 @@ off whenever a human reviewer is already engaged.
 ```
 usf/          the bot itself, with its tests in usf/tests/
 src/          the machine charm that deploys it, with its tests in tests/
+tools/        operator helpers, e.g. creating the Launchpad tokens
 doc/          design journal, checks reference, flow charts, charm notes
 .workshop/    the Workshop dev environment (see CONTRIBUTING.md)
 ```

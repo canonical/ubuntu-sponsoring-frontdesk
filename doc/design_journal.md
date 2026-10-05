@@ -3423,3 +3423,28 @@ each action reaching Launchpad.
   suite now expects the `triage` action to fail at the identity check and a
   timer pass to leave the unit Blocked. Live-verified with the dummy token
   only; a real token's success path is unit-tested, not yet seen live.
+
+## 148. A Tool for the Launchpad Tokens
+
+* **Request (seb128):** the charm's Launchpad secrets need a credentials
+  file each, and the only recipe was a personal hack script. It is now
+  `tools/lp-credentials.py <account>`, writing `<account>.credentials`.
+* **The account is an argument because it is the thing that goes wrong.**
+  The token belongs to whoever is logged in to the browser that approves
+  it, not to whoever runs the script -- approve it in your own session and
+  you get a token for yourself, which the bot would run as, treating its
+  own comments as a human reviewer's. The script checks `lp.me.name`
+  against the argument and deletes a mismatched token rather than leave it
+  to be uploaded. Named after the account, the file also can't be mixed up
+  with the other one.
+* **It refuses to run over an existing file.** `login_with()` only asks for
+  authorisation when the file is missing: the original script, re-run
+  where its output already existed, would have printed "Success!" over the
+  old token -- the sponsoring-reports one, in the directory it lived in.
+* **Its own consumer name** (`ubuntu-sponsoring-frontdesk`), so Launchpad's
+  authorised-applications page tells it apart from other services' tokens
+  and it can be revoked alone. The bot doesn't care which name a token was
+  made under.
+* Tests stub `login_with` (no network): the kept, mismatched and
+  pre-existing cases. Not yet run against real Launchpad -- the first real
+  use is seb128 creating the charm's secrets.

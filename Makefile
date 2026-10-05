@@ -28,8 +28,8 @@ clean:
 usf-check: usf-lint usf-test
 
 usf-lint:
-	ruff check usf
-	ruff format --check --diff usf
+	ruff check usf tools
+	ruff format --check --diff usf tools
 
 usf-test:
 	python3 -m pytest usf/tests/ -q
