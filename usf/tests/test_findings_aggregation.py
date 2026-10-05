@@ -19,6 +19,31 @@ def _state(tmp_path):
 # --- render_findings_comment (pure) ------------------------------------------
 
 
+def test_one_finding_reads_singular():
+    """#152: seen live on the templ MP -- "the following points" over a
+    single bullet."""
+    out = checks.render_findings_comment([checks.Finding("incomplete", "Fix it.")])
+
+    assert "spotted the following point:" in out
+    assert "Once the point above is addressed, please let us know!" in out
+    assert "points" not in out
+
+
+def test_one_finding_on_a_bug_reads_singular():
+    out = checks.render_findings_comment([checks.Finding("incomplete", "Fix it.")], for_bug=True)
+
+    assert "Once the point above is addressed, please set it back to New" in out
+
+
+def test_several_findings_across_sections_read_plural():
+    out = checks.render_findings_comment(
+        [checks.Finding("incomplete", "Fix it."), checks.Finding("question", "Maybe this.")]
+    )
+
+    assert "spotted the following points:" in out
+    assert "Once the points above are addressed" in out
+
+
 def test_render_incomplete_findings_one_comment_with_bullets():
     out = checks.render_findings_comment(
         [

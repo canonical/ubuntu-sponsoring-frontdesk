@@ -77,7 +77,10 @@ def render_findings_comment(findings, for_bug=False):
         # visually attached to its bullet in Launchpad's plain-text renderer.
         return "\n".join("* " + f.message.replace("\n", "\n  ") for f in items)
 
-    parts = ["Thanks for your contribution! The automated review spotted the following points:"]
+    # #152: one bullet reads "the following point" / "the point above is".
+    one = len(incomplete) + len(verify) + len(advisory) == 1
+    points = "point" if one else "points"
+    parts = [f"Thanks for your contribution! The automated review spotted the following {points}:"]
     if incomplete:
         parts.append("Needs fixing before this can be sponsored:\n\n" + bullets(incomplete))
     if verify:
@@ -96,11 +99,13 @@ def render_findings_comment(findings, for_bug=False):
         if for_bug:
             parts.append(
                 "The bug status is being set to Incomplete while waiting. "
-                "Once the points above are addressed, please set it back "
-                "to New so the request re-enters the review queue!"
+                f"Once the {points} above {'is' if one else 'are'} addressed, please "
+                "set it back to New so the request re-enters the review queue!"
             )
         else:
-            parts.append("Once the points above are addressed, please let us know!")
+            parts.append(
+                f"Once the {points} above {'is' if one else 'are'} addressed, please let us know!"
+            )
     return "\n\n".join(parts)
 
 

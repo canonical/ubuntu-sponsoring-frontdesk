@@ -3579,3 +3579,22 @@ each action reaching Launchpad.
   one finding, modified patches and non-patch files ignored, merges
   skipped, an unreadable diff inconclusive, and the bug-side debdiff path.
   Dry-run verified on the trigger MP; not yet posted live.
+
+## 152. One Finding Reads "Point", Not "Points"
+
+* **Found by seb128** on the first live Check 16 comment (templ MP
+  #512397): a single bullet under "spotted the following points:" and
+  "Once the points above are addressed". The template in
+  `render_findings_comment` only ever had the plural.
+* The intro and closing line now agree with the total number of bullets,
+  across all sections. The section headers ("if any of these are real",
+  "none of these block") are left alone: they introduce a category and
+  read fine over one item.
+* **Accepted side effect:** dedup is exact-match, so an item that already
+  carries a one-finding comment in the old wording, and is re-triaged with
+  that same single finding, gets the corrected comment once more -- the
+  same trade as the #57 footer. Only the templ MP is known to be in that
+  position; seb128 will handle any such case by hand, and production
+  starts from a clean state anyway.
+* Tests: singular for one finding (MP and bug closing lines), plural when
+  findings span sections.
