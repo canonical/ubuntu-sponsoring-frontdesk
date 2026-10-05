@@ -110,14 +110,24 @@ def test_a_manual_run_and_a_pass_never_overlap(juju: jubilant.Juju):
     assert "\ninactive" in task.stdout
 
 
-def test_triage_reaches_launchpad_with_the_dummy_token(juju: jubilant.Juju):
+def test_triage_stops_at_launchpad_refusing_the_dummy_token(juju: jubilant.Juju):
     url = "https://bugs.launchpad.net/ubuntu/+bug/1"
-    task = juju.run(UNIT, "triage", {"url": url})
+    with pytest.raises(jubilant.TaskError) as e:
+        juju.run(UNIT, "triage", {"url": url})
     # The whole chain ran -- wrapper, environment, the bot's imports -- up to
-    # Launchpad refusing the dummy token on the item's first load.
-    output = task.results["output"]
+    # the identity check (#147) refusing the dummy token, once, before any
+    # item is loaded.
+    output = e.value.task.results["output"]
     assert "write mode: dry-run, audit: /var/lib/frontdesk/audit.jsonl" in output
-    assert "401: Unauthorized" in output
+    assert "Failed to authenticate to Launchpad: HTTP Error 401: Unauthorized" in output
+    assert "Starting triage" not in output
+
+
+def test_a_refused_token_fails_the_pass_visibly(juju: jubilant.Juju):
+    juju.exec("systemctl start frontdesk.service || true", unit=UNIT)
+
+    juju.wait(lambda s: jubilant.all_blocked(s, APP), timeout=600)
+    assert _status_message(juju) == "last pass failed, see journalctl -u frontdesk"
 
 
 def test_mode_off_disables_the_timer_again(juju: jubilant.Juju):

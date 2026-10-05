@@ -193,7 +193,9 @@ class FrontdeskCharm(ops.CharmBase):
         if self._configure_error:
             event.add_status(ops.BlockedStatus("configuration failed, see juju debug-log"))
         try:
-            if self.workload.last_pass_failed:
+            # Only while passes are scheduled: with mode=off no later pass
+            # will clear it, and nothing is waiting on the scheduler.
+            if s.mode != "off" and self.workload.last_pass_failed:
                 event.add_status(
                     ops.BlockedStatus("last pass failed, see journalctl -u frontdesk")
                 )

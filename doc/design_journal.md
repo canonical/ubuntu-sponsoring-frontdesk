@@ -3386,3 +3386,40 @@ suite (`make charm-integration`, jubilant, dummy secrets) checks the wiring:
 statuses, files and permissions, the timer following `mode`, the lock, and
 each action reaching Launchpad.
 
+## 147. Check the Launchpad Token Before a Pass
+
+* **Found deploying the charm (#146)** with a dummy token: the pass "logged
+  in", fetched the queue, failed all 67 items on their own `401
+  Unauthorized`, and exited 0. Under the charm that's an Active unit doing
+  nothing useful, retrying every hour, visible only to someone reading the
+  journal.
+* **Why login succeeded** (traced in launchpadlib, then confirmed on the
+  unit by logging every request): `login_with()` with a stored credentials
+  file only builds the client, and building it fetches the public API
+  description (`/devel/`, twice: WADL and JSON). Both came back 200 for the
+  dummy token. Nothing on that path needs an identity, so "logged in" only
+  ever meant "file read, API reachable". The first identity-bearing call,
+  `people/+me`, is the first refusal.
+* **Fix:** `main()` reads `lp.me.name` right after building the client,
+  inside the existing authentication `try`, so a refused token logs one
+  line and exits 1 before the queue is fetched. The log line is cut to the
+  error's first line -- launchpadlib's `HTTPError` text goes on to dump
+  every response header. The authenticated account is now logged at
+  startup.
+* **What it changes under the charm:** the service fails, the unit goes
+  Blocked "last pass failed", and it clears by itself at the first pass
+  after the secret is fixed. The per-item fail-safe is unchanged -- items
+  were already retried, never acted on; what was wrong was that nothing
+  said so. With `mode=off` a failed last pass is no longer reported, since
+  no later pass would ever clear it.
+* **Trade-off accepted:** a transient failure of that one call now fails
+  the whole pass rather than one item. That pass could not have done
+  anything anyway without a session, and the next one is the retry.
+* **Deliberately not done** (seb128): checking that `lp.me.name` matches
+  `SPONSORING_BOT_LP_USERNAME`. A valid token for the wrong account still
+  starts a pass.
+* Tests: `test_launchpad_identity.py` (both fail without the change);
+  `FakePerson` gained the `name` real Persons have. Charm: the integration
+  suite now expects the `triage` action to fail at the identity check and a
+  timer pass to leave the unit Blocked. Live-verified with the dummy token
+  only; a real token's success path is unit-tested, not yet seen live.

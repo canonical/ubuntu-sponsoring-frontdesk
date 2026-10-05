@@ -15,6 +15,8 @@ OLD_ENOUGH = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
 class FakePerson:
     def __init__(self, link):
         self.self_link = link
+        # As on a real Person: the account name is the link's last segment.
+        self.name = link.rsplit("~", 1)[-1]
 
 
 class FakeHostedFile:

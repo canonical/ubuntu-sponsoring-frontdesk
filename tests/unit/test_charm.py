@@ -213,6 +213,14 @@ def test_failed_last_pass_blocks(ctx, workload):
     assert out.unit_status == BlockedStatus("last pass failed, see journalctl -u frontdesk")
 
 
+def test_failed_last_pass_is_not_reported_with_mode_off(ctx, workload):
+    workload.last_pass_failed = True
+
+    out = ctx.run(ctx.on.update_status(), _configured("off"))
+
+    assert isinstance(out.unit_status, ActiveStatus)
+
+
 def test_running_pass_and_missing_ubuntu_lint_are_reported(ctx, workload):
     workload.pass_running = True
     workload.ubuntu_lint_installed = False

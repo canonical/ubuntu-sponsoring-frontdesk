@@ -956,6 +956,13 @@ def main():
     logger.info("Authenticating to Launchpad... (write mode: %s, audit: %s)", mode, audit.path)
     try:
         lp_client = LPClient(mode=mode, audit=audit)
+        # #147: login_with() with a stored token never asks Launchpad whether
+        # the token is valid -- its only requests fetch the public API
+        # description. A revoked or bogus token therefore "logged in" fine
+        # and then failed every item on its own 401, while the pass exited
+        # 0. people/+me is the cheapest call that needs a real identity:
+        # refuse to start when it fails, so the run fails once, visibly.
+        me = lp_client.lp.me.name
     except Exception as e:
         # Unlike a per-item failure inside triage_url (caught there, see
         # design_journal.md #33), there is no session to fall back to here --
@@ -964,8 +971,12 @@ def main():
         # forced 1s timeout crashed here with a 60-line TimeoutError
         # traceback, not the clean [timing]/logging output the rest of a
         # run now produces).
-        logger.error("Failed to authenticate to Launchpad: %s", e)
+        # First line only: launchpadlib's HTTPError strings go on to dump
+        # every response header, which buries the one line that matters.
+        reason = (str(e).splitlines() or [type(e).__name__])[0]
+        logger.error("Failed to authenticate to Launchpad: %s", reason)
         sys.exit(1)
+    logger.info("Authenticated to Launchpad as ~%s.", me)
     # #100: the shared audit trail also receives per-LLM-call usage records.
     llm_reviewer = LLMReviewer(lp=lp_client.lp, audit=lp_client.audit)
 
