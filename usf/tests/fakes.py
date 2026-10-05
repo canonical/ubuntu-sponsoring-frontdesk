@@ -165,9 +165,15 @@ class FakeAttachment:
         content=None,
         fail_fetch=False,
         date_created=None,
+        url=None,
+        vulnerability_patches=None,
     ):
         self.title = title
         self.type = type  # Launchpad's patch flag: "Patch" when ticked
+        # Set only for an external-link attachment, which has no file (#150).
+        self.url = url
+        # A UCT vulnerability-patches attachment: also no file (#150).
+        self.vulnerability_patches = vulnerability_patches
         self.self_link = f"https://api.launchpad.net/devel/bug/1/+attachment/{title}"
         self.data = FakeHostedFile(_DEFAULT_PATCH if content is None else content, fail=fail_fetch)
         # Real attachments have no date of their own; their upload

@@ -575,3 +575,59 @@ def test_plain_patch_has_no_version_to_compare(monkeypatch):
     lp = FakeTriageClient(objects={})
     bug = FakeBug(attachments=[FakeAttachment("fix.patch", content=PLAIN_PATCH)])
     assert checks.check_stale_version(URL, bug, lp) is False
+
+
+# --- external-link attachments (#150) ----------------------------------------
+# Bug #2156932: a Gerrit review URL attached as a link and flagged as a
+# patch. Launchpad sets `url` only for such links; its data 404s.
+
+_GERRIT = "https://review.opendev.org/c/openstack/nova/+/987815"
+
+
+def _link():
+    # fail_fetch: opening it would fail, as the real one does -- so a
+    # passing test also proves it was never fetched.
+    return FakeAttachment(_GERRIT, type="Patch", url=_GERRIT, fail_fetch=True)
+
+
+def test_link_attachment_is_unusable_not_a_failed_fetch():
+    assert attachments.attachment_text(_link()) is False
+
+
+def test_vulnerability_patches_attachment_is_unusable():
+    """Not on production Launchpad yet (#150): shape from the qastaging API
+    docs -- a list of {name, value (patch URL), comment} mappings."""
+    uct = FakeAttachment(
+        "CVE-2026-0001 patches",
+        type="Patch",
+        vulnerability_patches=[{"name": "upstream", "value": _GERRIT}],
+        fail_fetch=True,
+    )
+    assert attachments.attachment_text(uct) is False
+
+
+def test_uploaded_file_with_the_new_attributes_unset_is_read():
+    debdiff = FakeAttachment("fix.debdiff", content=DEBDIFF, url=None, vulnerability_patches=None)
+    assert attachments.attachment_text(debdiff) == DEBDIFF
+
+
+def test_link_attachment_alone_leaves_no_review_target():
+    assert attachments.review_target(_bug([_link()])) is False
+
+
+def test_review_target_skips_a_newer_link_for_the_real_debdiff():
+    debdiff = FakeAttachment("fix.debdiff", type="Patch", content=DEBDIFF)
+
+    attachment, _text = attachments.review_target(_bug([debdiff, _link()]))
+
+    assert attachment is debdiff
+
+
+def test_link_attachment_still_counts_as_something_to_sponsor():
+    """Deliberately unchanged: a link flagged as a patch is still a
+    contribution for a human to look at, so no 'nothing to sponsor' close."""
+    bug = FakeBug(
+        tasks=[FakeTask("nova (Ubuntu)", "New")],
+        attachments=[_link()],
+    )
+    assert checks.check_nothing_to_sponsor(URL, bug, _LP()) is False

@@ -67,6 +67,23 @@ def attachment_text(attachment):
     """The attachment's content as text: str, None (fetch failed --
     retriable), or False (unusable: over MAX_ATTACHMENT_BYTES once
     decompressed, or not diff-shaped -- a stable fact)."""
+    # #150: an attachment can be an external link rather than an uploaded
+    # file (Launchpad sets `url` only then). There is nothing to read: its
+    # `data` 404s, which looked like a failed fetch and kept the item
+    # inconclusive on every pass (bug #2156932, a Gerrit review linked and
+    # flagged as a patch). It isn't a diff we can review -- a stable fact.
+    # Same for the UCT vulnerability-patches attachments Launchpad is adding
+    # (a list of named patch URLs, not a file); the attribute doesn't exist
+    # on production yet, hence getattr.
+    link = getattr(attachment, "url", None)
+    vulnerability_patches = getattr(attachment, "vulnerability_patches", None)
+    if link or vulnerability_patches:
+        logger.debug(
+            "attachment_text: %r is a %s, not an uploaded file; skipping.",
+            getattr(attachment, "title", "?"),
+            f"link ({link})" if link else "vulnerability-patches list",
+        )
+        return False
     try:
         # cap + 1, not the whole file (#145): the size check below only needs
         # to know whether the cap was exceeded, and a 400MB upload with a

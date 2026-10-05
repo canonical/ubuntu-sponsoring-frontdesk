@@ -3487,3 +3487,48 @@ each action reaching Launchpad.
 * Tests: the own-bug note's exact text, the no-Ubuntu-task phrasing, and
   the mixed case still blocking on the other number only -- all three fail
   against the previous code. Not yet seen live.
+
+## 150. Link Attachments Aren't Failed Fetches
+
+* **Found in the first full dry-run under the charm:** nova MP #509270 ended
+  inconclusive, and would on every pass. Its linked bug #2156932 carries an
+  attachment titled `https://review.opendev.org/c/openstack/nova/+/987815`,
+  flagged as a patch, whose `data` returns 404. `attachment_text` maps any
+  fetch error to `None` ("retry"), so Check 7's series scan could never
+  finish: the MP was never reviewed, and each pass re-spent its LLM calls.
+* **It's a real kind of attachment** (seb128, confirmed with the Launchpad
+  team): an attachment is either a librarian file or an external URL, and
+  Launchpad sets `url` only for the latter. Checked on both: `url` is the
+  Gerrit link on #2156932's and `None` on an uploaded debdiff (#2160089).
+* **Fix:** `attachment_text` returns `False` (not a usable diff -- a stable
+  fact) for an attachment with `url` set, without fetching it. That covers
+  every content reader at once: the review target, Check 7's series scan,
+  the sweep. Keyed on `url` rather than on the 404, as suggested by
+  seb128: a 404 on an uploaded file could be Launchpad having a bad moment
+  and stays a retry, as the fail-safe rule wants.
+* **A third kind is coming** (the Launchpad team, via seb128): the next
+  Launchpad deployment adds UCT vulnerability-patches attachments,
+  `vulnerability_patches` on `bug_attachment` -- per the qastaging API docs
+  a list of `{name, value (patch URL), comment}` mappings, not a file.
+  Their advice: a user upload is one with both `url` and
+  `vulnerability_patches` unset. The check covers both now; until
+  production has the attribute, `getattr` reads `None` and nothing
+  changes. **Not testable live yet** -- re-check against a real one once
+  deployed, in particular that its `data` isn't also a readable file we'd
+  want, and that the empty value is `None` (an empty list is treated the
+  same way).
+* **Deliberately unchanged:** `check_nothing_to_sponsor` reads only the
+  Patch flag, so a link flagged as a patch still counts as a contribution
+  and the bug is left for a human rather than closed as "no patch" -- a
+  linked review is something a sponsor may want to look at. A test pins it.
+* **Also seen, not ours:** the 404 printed "Exception ignored ...
+  'HostedFileBuffer' object has no attribute 'mode'" at the end of the
+  pass. lazr.restfulclient 0.14.6's `HostedFileBuffer.__init__` makes the
+  request before setting `mode`, so a failed `open()` leaves an object whose
+  `close()` raises at finalization. Python 3.14 (26.04) reports it, 3.12
+  doesn't. Reproducer handed to seb128; with this fix the bot no longer
+  opens link attachments, so it no longer triggers it here.
+* Tests: a link is unusable and never fetched (its fake fails if opened),
+  alone it leaves no review target, a newer link doesn't hide an older real
+  debdiff -- all three fail without the fix -- and the nothing-to-sponsor
+  behaviour above. To verify live on MP #509270.
