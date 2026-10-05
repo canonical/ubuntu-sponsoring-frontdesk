@@ -7,6 +7,7 @@ import json
 import re
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -359,15 +360,50 @@ def test_invalid_mode_is_refused(fd):
 def test_run_goes_through_the_wrapper_as_ubuntu(fd, monkeypatch):
     seen = {}
 
-    def fake_run(cmd, **kwargs):
-        seen["cmd"] = cmd
+    def fake_run_group(cmd, timeout=None):
+        seen["cmd"], seen["timeout"] = cmd, timeout
         return subprocess.CompletedProcess(cmd, 0, "out", "")
 
-    monkeypatch.setattr(frontdesk.subprocess, "run", fake_run)
+    monkeypatch.setattr(frontdesk, "_run_group", fake_run_group)
 
-    fd.run(["stats", "--queue"])
+    fd.run(["stats", "--queue"], timeout=60)
 
     assert seen["cmd"] == ["runuser", "-u", "ubuntu", "--", str(fd.wrapper), "stats", "--queue"]
+    assert seen["timeout"] == 60
+
+
+def test_run_group_returns_the_output():
+    proc = frontdesk._run_group(["sh", "-c", "echo out; echo err >&2; exit 3"])
+
+    assert (proc.returncode, proc.stdout, proc.stderr) == (3, "out\n", "err\n")
+
+
+def test_run_group_timeout_kills_the_whole_tree(tmp_path):
+    """A timeout used to kill only runuser: flock and the bot under it kept
+    the lock and the output pipe, so the action didn't return (#146)."""
+    pidfile = tmp_path / "child.pid"
+    # The grandchild stands in for the bot under runuser/flock.
+    script = f"sleep 60 & echo $! > {pidfile}; wait"
+    start = time.monotonic()
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        frontdesk._run_group(["sh", "-c", script], timeout=1)
+
+    assert time.monotonic() - start < 10
+    child = int(pidfile.read_text())
+    for _ in range(50):
+        if not _alive(child):
+            break
+        time.sleep(0.1)
+    assert not _alive(child)
+
+
+def _alive(pid):
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split()[2]
+    except FileNotFoundError:
+        return False
+    return state != "Z"
 
 
 @pytest.mark.parametrize(

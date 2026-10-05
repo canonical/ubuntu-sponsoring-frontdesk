@@ -3532,3 +3532,18 @@ each action reaching Launchpad.
   alone it leaves no review target, a newer link doesn't hide an older real
   debdiff -- all three fail without the fix -- and the nothing-to-sponsor
   behaviour above. To verify live on MP #509270.
+
+### 146 addendum: an action timeout that didn't stop anything
+
+* The `triage` action's 30-minute limit was `subprocess.run(timeout=)`,
+  which kills only the process it started -- `runuser`. `flock` and the bot
+  under it kept running, holding the pass lock and the output pipe, so the
+  action wouldn't return until the bot finished on its own, and a timer
+  pass meanwhile was skipped. Noticed while reading why a triage "hung" for
+  an hour; that one turned out to be the laptop running the LXD model
+  suspending mid-run (both journals show the same gap), not this.
+* The wrapper now starts in its own session, and a timeout kills the whole
+  process group. Tested with a real process tree (a shell whose background
+  child stands in for the bot), confirmed failing with the old call.
+  Deployed; the timeout path itself not exercised live (it takes a
+  30-minute item).

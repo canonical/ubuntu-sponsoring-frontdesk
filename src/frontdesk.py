@@ -27,6 +27,7 @@ import logging
 import os
 import pwd
 import shutil
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,6 +84,33 @@ def _active_state(name):
         text=True,
     )
     return proc.stdout.strip()
+
+
+def _run_group(cmd, timeout=None):
+    """subprocess.run(capture_output=True), but a timeout kills the whole
+    process tree, not just ``cmd``.
+
+    subprocess.run's timeout kills only the process it started -- here
+    runuser -- while flock and the bot under it keep running, holding the
+    pass lock and the output pipe, so the call doesn't return until the
+    bot finishes on its own (#146 follow-up). Started in its own session,
+    the tree shares one process group that can be killed at once.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
 class InstallError(Exception):
@@ -472,13 +500,7 @@ class Frontdesk:
         Actions run as root, and a root-run bot would leave a root-owned
         state.db behind that the timer can no longer write.
         """
-        return subprocess.run(
-            ["runuser", "-u", USER, "--", str(self.wrapper), *args],
-            capture_output=True,
-            text=True,
-            stdin=subprocess.DEVNULL,
-            timeout=timeout,
-        )
+        return _run_group(["runuser", "-u", USER, "--", str(self.wrapper), *args], timeout)
 
     def stop(self):
         """Stop scheduling passes (bad config, unit removal). A running pass
