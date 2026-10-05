@@ -399,9 +399,10 @@ def test_run_group_timeout_kills_the_whole_tree(tmp_path):
 
 
 def _alive(pid):
+    # The process can vanish mid-read: ENOENT or ESRCH both mean it's gone.
     try:
         state = Path(f"/proc/{pid}/stat").read_text().split()[2]
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return False
     return state != "Z"
 
