@@ -5,8 +5,9 @@ Notes for the session that writes the charm. This is a **machine** charm
 Python process on an Ubuntu host that talks to Launchpad, not a container
 workload.
 
-Nothing here is a design decision -- it is what the bot needs today, and the
-questions a charm forces that only seb128 can answer.
+Written before the charm (#143) as what the bot needs and the questions a
+charm forces. The charm now exists (#146): the answers are at the end, under
+"Decisions", and "Deploying" says how to use it.
 
 ## Repository layout
 
@@ -76,15 +77,18 @@ concurrent pass would just duplicate work and double the Launchpad calls.
 | `~/.cache/ubuntu-sponsoring-frontdesk/audit.jsonl` | audit trail | append-only, grows ~100KB/month; `stats.py` reads it |
 | `~/.cache/ubuntu-sponsoring-frontdesk/state.db` | sqlite: per-item status, facts fingerprint, bounce reason | **losing it re-triages the whole queue once**, re-posting nothing but re-spending LLM calls |
 | `~/.cache/ubuntu-sponsoring-frontdesk/credentials` | Launchpad OAuth token | created by an interactive browser authorisation on first use |
+| `~/.cache/ubuntu-sponsoring-frontdesk-helper/credentials` | the privileged helper's token (#78) | a `~ubuntu-sponsors` member account, used only to unsubscribe the team; the bot delegates to it when the file exists |
 | `~/.cache/ubuntu-sponsoring-frontdesk/launchpadlib/` | launchpadlib's own cache | disposable |
-| `~/.config/ubuntu-sponsoring-frontdesk/config.ini` | `[notify] webhook_url` for Mattermost | secret; absent means notifications are simply skipped |
+| `~/.config/ubuntu-sponsoring-frontdesk/config.ini` | `[notifications] webhook_url` for Mattermost | secret; absent means notifications are simply skipped |
 
 Every one of those is relocatable by environment variable, which is what
 makes a charm layout straightforward:
 
 ```
-SPONSORING_BOT_AUDIT       SPONSORING_BOT_STATE      SPONSORING_BOT_CONFIG
-SPONSORING_BOT_LP_CACHE    SPONSORING_BOT_LP_USERNAME
+SPONSORING_BOT_AUDIT                   SPONSORING_BOT_STATE
+SPONSORING_BOT_CONFIG                  SPONSORING_BOT_LP_USERNAME
+SPONSORING_BOT_LP_CREDENTIALS          SPONSORING_BOT_LP_CACHE
+SPONSORING_BOT_HELPER_LP_CREDENTIALS   SPONSORING_BOT_HELPER_LP_CACHE
 ```
 
 `SPONSORING_BOT_LP_USERNAME` defaults to `ubuntu-sponsoring-bot` and is used
@@ -138,3 +142,83 @@ minutes for ~55 items.
 - `doc/design_journal.md` #133 (Workshop) and #130 (why state moved to the
   cache dir) are the entries most relevant to packaging this up.
 - `doc/STATUS.md` -- current backlog, including the account question.
+
+## Decisions (#146)
+
+seb128's answers to the questions above; the reasoning is in the design
+journal.
+
+1. **Credentials: Juju secrets**, one config option each:
+   `lp-triager-credentials` (the bot account, required),
+   `lp-sponsor-credentials` (the #78 helper, optional), `opencode-auth`
+   (opencode's `auth.json`), `mattermost-webhook`. The browser
+   authorisation happens once, off the unit; the resulting file goes into
+   the secret.
+2. **A systemd timer**, `OnUnitInactiveSec=run-interval` (default 60
+   minutes): counted from the end of the previous pass, so passes can't
+   stack. A `flock` keeps a manual run and a timer pass apart.
+3. **`mode` = `off` | `dry-run` | `yes`, default `off`.** `--interactive`
+   needs a terminal, so it stays a manual run over `juju ssh` with the
+   `frontdesk` wrapper.
+4. **State on the rootfs** (`/var/lib/frontdesk`) for now; seb128 handles
+   backups. Juju storage vs. an off-host copy is in the STATUS.md backlog.
+5. **The charm adds `ppa:enr0n/ubuntu-lint`**, hard-coded and best effort,
+   until the package is SRUed to 26.04 -- then the PPA goes.
+6. **Actions:** `stats`, `run-now`, `triage url=` (always dry-run).
+
+Not exposed, deliberately: `SPONSORING_BOT_LP_USERNAME` (it must match the
+token's account, and the default does) and the LLM call budgets (fine
+hard-coded).
+
+## Deploying
+
+Not in Charmhub yet: pack locally. `.github/workflows/promote.yml` is ready
+for when it is (manual trigger only).
+
+```
+charmcraft pack
+juju deploy ./ubuntu-sponsoring-frontdesk_amd64.charm frontdesk
+```
+
+It comes up Blocked on `lp-triager-credentials`. Each secret is created
+from a file -- one outside a dot-directory, which the juju snap can't read
+-- granted to the application and set on its option:
+
+```
+juju add-secret frontdesk-triager credentials#file=lp-ubuntu-sponsoring-bot.oauth
+juju grant-secret frontdesk-triager frontdesk
+juju config frontdesk lp-triager-credentials=secret:<id>
+
+# optional, same three steps each:
+#   lp-sponsor-credentials  key credentials  (the helper's launchpadlib file)
+#   opencode-auth           key auth-json    (~/.local/share/opencode/auth.json)
+#   mattermost-webhook      key webhook-url  (the incoming-webhook URL)
+juju config frontdesk llm-model=github-copilot/<model>   # optional
+```
+
+It is then Active with `mode=off`: nothing runs on its own. The status line
+names what is missing (no LLM review, no helper, no ubuntu-lint).
+
+```
+juju run frontdesk/0 triage url=<bug-or-mp-url>   # one item, dry-run
+juju config frontdesk mode=dry-run                # first pass at once, then every run-interval
+juju run frontdesk/0 run-now                      # a pass now, in the configured mode
+juju run frontdesk/0 stats [queue=true] [since=30d]
+juju ssh frontdesk/0 -- sudo -u ubuntu frontdesk --url <url> --interactive
+juju ssh frontdesk/0 -- journalctl -u frontdesk -f
+```
+
+On the unit:
+
+| path | what |
+|---|---|
+| `/srv/frontdesk/usf/` | the bot, replaced wholesale on upgrade |
+| `/usr/local/bin/frontdesk` | runs it with the timer's environment and lock; `frontdesk stats ...` runs stats.py |
+| `/etc/frontdesk/` | `environment` and the secrets (root:ubuntu, read-only to the bot) |
+| `/var/lib/frontdesk/` | `state.db`, `audit.jsonl`, `pass.lock` -- **what a backup must keep** |
+| `/var/cache/frontdesk/` | launchpadlib caches, disposable |
+| `~ubuntu/.config/opencode/opencode.jsonc` | the tool-less agent, rewritten by the charm |
+
+Moving an existing deployment: copy `state.db` and `audit.jsonl` into
+`/var/lib/frontdesk/` (owned by ubuntu) while `mode=off`, before the first
+pass -- otherwise the whole queue is re-triaged once (#130).

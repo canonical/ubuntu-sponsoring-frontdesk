@@ -1,0 +1,16 @@
+# Installed by the ubuntu-sponsoring-frontdesk charm; edits are overwritten.
+[Unit]
+Description=Ubuntu Sponsoring Frontdesk - scheduled queue passes
+
+[Timer]
+# A pass __INTERVAL__ minutes after the previous one FINISHED, so a slow
+# pass delays the next one instead of overlapping it.
+OnUnitInactiveSec=__INTERVAL__min
+# That needs a first pass to count from: 5 minutes after boot, or at once
+# when the timer is started later than that (mode switched on). Not
+# OnActiveSec: a daemon-reload re-arms it, and every apt run or reconcile
+# that reloads would push the first pass back again (#146, seen live).
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target

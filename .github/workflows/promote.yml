@@ -1,0 +1,34 @@
+# Promote the ubuntu-sponsoring-frontdesk charm between Charmhub channels.
+# Manual only (workflow_dispatch): nothing runs until someone triggers it
+# from the Actions tab. It moves a revision that is ALREADY in the origin
+# channel -- uploading to latest/edge is a separate step (#146).
+#
+# The reusable workflow is pinned by commit, like the actions in ci.yml: a
+# branch or tag can move under us, a commit can't.
+name: Promote charm
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin-channel:
+        type: choice
+        description: 'Origin Channel'
+        options:
+        - latest/edge
+      destination-channel:
+        type: choice
+        description: 'Destination Channel'
+        options:
+        - latest/stable
+        - latest/beta
+    secrets:
+      CHARMHUB_TOKEN:
+        required: true
+
+jobs:
+  promote-charm:
+    uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@efdd72c768efaca41f992322fa51a830e90f4990 # main, 2026-10-05
+    with:
+      origin-channel: ${{ github.event.inputs.origin-channel }}
+      destination-channel: ${{ github.event.inputs.destination-channel }}
+    secrets: inherit

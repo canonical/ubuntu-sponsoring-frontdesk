@@ -5,10 +5,12 @@ on:
   pull_request:
 
 jobs:
-  check:
+  # The bot (usf/): system python3, see the Makefile for why the two halves
+  # are separate targets.
+  usf:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # archive_lookup.py imports apt_pkg (python3-apt), a compiled extension
       # tied to the system Python -- it isn't pip-installable, so this uses
@@ -29,7 +31,21 @@ jobs:
           pip install --break-system-packages ruff==0.15.21 pytest pyyaml launchpadlib
 
       - name: Lint
-        run: make lint
+        run: make usf-lint
 
       - name: Test
-        run: make test
+        run: make usf-test
+
+  # The charm (src/, tests/): a uv venv with ops, like the house charms.
+  charm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      - name: Lint
+        run: make charm-lint
+
+      - name: Unit tests
+        run: make charm-unit

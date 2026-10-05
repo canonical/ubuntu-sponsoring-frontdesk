@@ -8,5 +8,9 @@ state.db
 audit.jsonl
 .claude/settings.local.json
 
+# Charm build artefacts and the charm's uv venv
+*.charm
+.venv/
+
 # Workshop
 .workshop.lock

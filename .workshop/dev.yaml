@@ -32,12 +32,14 @@ sdks:
   - name: project-frontdesk-dev  # .workshop/frontdesk-dev/sdk.yaml
 
 actions:
-  # What CI runs: ruff check, ruff format --check, then the unit suite.
+  # What CI runs for the bot: ruff check, ruff format --check, then the
+  # unit suite. The charm's half (`make charm-check`) needs uv and isn't
+  # provisioned here -- the workshop is the bot's dev environment.
   #   workshop run dev check
   # For a subset, use the underlying tools directly, e.g.
   #   workshop exec dev -- python3 -m pytest usf/tests/ -k rebuild
   check: |
-    make all
+    make usf-check
 
   # Retrospective over the audit trail (audit.jsonl). Empty in a fresh
   # workshop until a triage has run here.

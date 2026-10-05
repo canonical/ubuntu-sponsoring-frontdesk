@@ -3278,3 +3278,111 @@ decision-tree checks (a documented backlog note, not a smell), the size of
 `checks.py`, and the breadth of `except Exception` in the check paths, which
 is the fail-safe contract rather than sloppiness.
 
+
+## 146. The Charm
+
+A machine charm in `src/`, deploying the bot from `usf/` in the same
+repository (#144). seb128 answered `doc/CHARM.md`'s six questions before
+anything was written; the answers are recorded there, the reasons here.
+
+* **Packing.** charmcraft's uv plugin only takes `src/` and `lib/`, so a
+  second `dump` part primes `usf/` (minus its tests), the way
+  `ubuntu-merges-operator` ships `app/`. On the unit the directory is
+  replaced wholesale on every upgrade -- built beside the live copy and
+  swapped in -- so a module deleted from the repo can't linger and be
+  imported. `.pyc` writing is disabled there (the tree is root-owned).
+* **Two halves, two interpreters, prefixed make targets** (seb128's
+  suggestion). The bot needs system `python3` for `apt_pkg`; the charm
+  needs a venv for `ops`. A shared `make test` would be wrong for one of
+  them, so it's `usf-*` and `charm-*`, with `make all` running both and
+  still being the AGENTS.md gate. One ruff config and one pinned version for
+  both (#108). The Workshop stays the bot's environment (`usf-check`).
+* **Base 26.04**: `python3-ubuntu-lint` (Check 13) has no 24.04 build. The
+  charm adds `ppa:enr0n/ubuntu-lint` itself, best effort -- without it the
+  check is silent and the status says so. Hard-coded rather than a config
+  option because it is temporary: it goes once the package is SRUed to
+  26.04 (STATUS.md backlog).
+* **Runs as `ubuntu`** (seb128: the VM is the bot's alone, a dedicated user
+  is complication without a threat it answers). What does separate is the
+  file layout: secrets in `/etc/frontdesk` (root-owned, group-readable by
+  ubuntu -- the bot reads its tokens but nothing it runs can rewrite them),
+  history in `/var/lib/frontdesk`, caches in `/var/cache/frontdesk`. A
+  backup of the state carries no tokens. Every `SPONSORING_BOT_*` path is
+  set by the charm; a unit test fails if the bot grows an override the
+  charm doesn't set, so nothing new lands silently in ubuntu's home.
+* **Credentials are Juju secrets** (house pattern), named for what the
+  account does: `lp-triager-credentials` (the bot account, required) and
+  `lp-sponsor-credentials` (the #78 helper, optional), plus
+  `opencode-auth` and `mattermost-webhook`. `secret_changed` is observed,
+  unlike the house charms, so a rotation takes effect without a config
+  poke. opencode refreshes short-lived tokens inside `auth.json`, so that
+  file is rewritten only when the *secret* changes (tracked by hash), not
+  whenever it differs -- otherwise every update-status would roll back a
+  refreshed token.
+* **The tool-less agent (#99) is charm-owned** and rewritten on every
+  reconcile, so a hand edit can't re-enable tools. That is why the model pin
+  is a config option (`llm-model`): it can't survive as an edit. The LLM
+  budgets stay hard-coded (seb128).
+* **`mode` = `off` | `dry-run` | `yes`, default `off`.** A fresh deploy
+  spends no LLM calls until someone decides it should, and `yes` -- which
+  nobody has run yet, for want of an account able to unsubscribe the team
+  -- is a deliberate act. `--interactive` needs a terminal, so it can't be
+  a mode: `/usr/local/bin/frontdesk` runs the bot with the timer's exact
+  environment for `juju ssh ... sudo -u ubuntu frontdesk --url X
+  --interactive`, today's way of working.
+* **One pass at a time**, by `flock` in that wrapper: a manual run while a
+  pass holds the lock says so and stops; a timer pass that finds a manual
+  run is skipped with exit 75, which the service counts as success.
+* **Actions:** `run-now` (refused when `mode=off` or a pass is running),
+  `triage url=` (always `--dry-run`, and `--force` since `--url` honours the
+  facts-unchanged gate -- it shares `state.db`, which seb128 accepted:
+  findings-free dry runs persist facts as a manual one does today), and
+  `stats`. Actions run as root, so they drop to ubuntu: a root-run bot
+  would leave a root-owned `state.db` the timer can no longer write.
+* **State on the rootfs for now.** seb128 will handle backups; Juju storage
+  vs. pushing to S3 is a backlog discussion, not a decision taken here.
+* **CI and Charmhub.** CI gains a `charm` job (`make charm-check`). Its
+  actions are pinned by commit, not tag (seb128: a tag can be deleted and
+  recreated). `promote.yml` (house workflow, also pinned) promotes between
+  Charmhub channels as `ubuntu-sponsoring-frontdesk`; it is
+  `workflow_dispatch` only, so it does nothing until the charm is in the
+  store and someone triggers it. No publish-on-push workflow yet.
+* **AGENTS.md: deploy charm changes, but ask first.** The bugs below argue
+  for always deploying; seb128 drew the line at an agent running a slow
+  deployment against someone's controller unprompted -- a contributor may
+  not have one, or want one. So the rule is to suggest the integration run
+  and wait for a yes.
+
+**Found by deploying it** (`testing` model, 26.04 LXD), each now covered by
+a test:
+
+* **The first pass never came.** The timer started with `OnActiveSec=5min`,
+  and every update-status ran `systemctl enable --now` on the already
+  enabled timer. That is not a no-op: `enable` reloads the daemon, and a
+  reload re-arms `OnActiveSec` -- so the first pass was pushed back five
+  minutes every five minutes. Checked on the unit with a scratch timer
+  rather than from the man page: `OnBootSec` (fires at once when started
+  after boot+5min, i.e. when the mode is switched on) and
+  `OnUnitInactiveSec` both survive a reload, and a reload alone applies a
+  new interval, so the timer is never restarted. A reconcile that changes
+  nothing now changes nothing in systemd either.
+* **`pass_running` was never true.** A oneshot service is `activating` for
+  its whole run, never `active`, and `systemctl is-active` (what
+  `charmlibs.systemd.service_running` asks) is false in that state. So the
+  status never said "pass running" and `run-now` didn't refuse a second
+  start (systemd merged it into the running job, but the action claimed to
+  have started one). It now reads `ActiveState`.
+* **The lock was in `/run/lock`**, sticky and world-writable, where
+  `fs.protected_regular=2` stops *any* user, root included, from opening
+  someone else's file there with `O_CREAT`. A lock file left by another
+  user would have failed every pass. It now lives in `/var/lib/frontdesk`,
+  with the state it protects.
+
+**Not live-verified:** everything was exercised with a dummy Launchpad
+token, so no pass has yet triaged a real item under the charm, and opencode
+has not run there with a real login. That needs the real secrets and a
+`dry-run` pass read by a human before `yes` is considered. The integration
+suite (`make charm-integration`, jubilant, dummy secrets) checks the wiring:
+statuses, files and permissions, the timer following `mode`, the lock, and
+each action reaching Launchpad.
+

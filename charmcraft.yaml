@@ -1,0 +1,133 @@
+name: ubuntu-sponsoring-frontdesk
+type: charm
+title: Ubuntu Sponsoring Frontdesk
+summary: Triage bot for the Ubuntu sponsoring queue
+description: |
+  Runs Frontdesk, the triage bot for the Ubuntu sponsoring queue
+  (https://ubuntu-sponsoring.ubuntu.com/), as a batch job on a systemd
+  timer. Each pass reviews the bugs and merge proposals waiting for a
+  sponsor and gives contributors early, actionable feedback.
+
+  The bot itself lives in usf/ in the same repository and is shipped inside
+  the charm; see doc/CHARM.md for the deployment decisions.
+
+links:
+  website:
+    - https://github.com/canonical/ubuntu-sponsoring-frontdesk
+  issues:
+    - https://github.com/canonical/ubuntu-sponsoring-frontdesk/issues
+  source:
+    - https://github.com/canonical/ubuntu-sponsoring-frontdesk
+
+# 26.04: python3-ubuntu-lint (Check 13) has no 24.04 build.
+base: ubuntu@26.04
+platforms:
+  amd64:
+
+parts:
+  frontdesk-charm:
+    source: .
+    plugin: uv
+    build-packages: [git]
+    build-snaps: [astral-uv]
+    override-build: |
+      craftctl default  # Run the default build steps.
+      git describe --always --dirty > $CRAFT_PART_INSTALL/version
+  # The bot is not under src/, so the charm part doesn't pick it up: ship
+  # usf/ as-is (its modules import each other flat, so the directory must
+  # stay intact) minus what only development needs.
+  frontdesk-usf:
+    plugin: dump
+    source: .
+    prime:
+      - usf/
+      - -usf/tests
+      - -usf/conftest.py
+      - -usf/__pycache__
+
+config:
+  options:
+    mode:
+      type: string
+      default: "off"
+      description: |
+        What the scheduled pass does: "off" (no scheduled passes),
+        "dry-run" (triage and log intended writes, perform none) or "yes"
+        (perform writes unattended). Promoting to "yes" is meant to be a
+        deliberate act. --interactive needs a terminal, so it is not a mode
+        here: run `frontdesk ... --interactive` over `juju ssh` instead.
+    run-interval:
+      type: int
+      default: 60
+      description: |
+        Minutes between the end of one pass and the start of the next.
+        Counted from when the previous pass finished, so passes never stack.
+    llm-model:
+      type: string
+      default: ""
+      description: |
+        Model for the tool-less sponsoring-reviewer opencode agent, as
+        opencode's provider/model (e.g. "github-copilot/claude-sonnet-4.5").
+        Empty uses opencode's default.
+    lp-triager-credentials:
+      type: secret
+      description: |
+        Required. Juju secret holding the launchpadlib credentials file of
+        the bot account (~ubuntu-sponsoring-bot), under the key
+        "credentials". This is the account that comments and votes.
+    lp-sponsor-credentials:
+      type: secret
+      description: |
+        Optional. Juju secret holding the launchpadlib credentials file of
+        the privileged helper account (a ~ubuntu-sponsors member, used only
+        to unsubscribe the team from bugs), under the key "credentials".
+    opencode-auth:
+      type: secret
+      description: |
+        Optional. Juju secret holding opencode's auth.json, under the key
+        "auth-json". Without it the LLM phases fail safe: the item is left
+        for a human and the deterministic checks still run.
+    mattermost-webhook:
+      type: secret
+      description: |
+        Optional. Juju secret holding the Mattermost incoming-webhook URL for
+        operator notifications, under the key "webhook-url".
+
+actions:
+  run-now:
+    description: |
+      Start a queue pass now, in the configured mode, without waiting for it
+      to finish (follow it with `journalctl -u frontdesk`). Refused when mode
+      is "off" or a pass is already running.
+  triage:
+    description: |
+      Triage one bug or merge proposal in dry-run mode (always: nothing is
+      written to Launchpad) and return the log. Ignores the
+      "facts unchanged" gate, so an item already seen is triaged anyway.
+    params:
+      url:
+        type: string
+        description: Launchpad bug or merge proposal URL.
+      verbose:
+        type: boolean
+        default: false
+        description: Log every decision step, including LLM prompts and replies.
+    required: [url]
+    additionalProperties: false
+  stats:
+    description: |
+      Report from stats.py: the audit-trail retrospective, or with
+      queue=true where the tracked items stand now.
+    params:
+      since:
+        type: string
+        description: Only count audit records since, e.g. "30d", "12h" or an ISO date.
+      queue:
+        type: boolean
+        default: false
+        description: Report the current queue from state.db instead.
+      json:
+        type: boolean
+        default: false
+        description: Machine-readable output.
+    additionalProperties: false

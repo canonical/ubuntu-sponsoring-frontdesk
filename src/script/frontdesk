@@ -1,0 +1,49 @@
+#!/bin/sh
+# Installed by the ubuntu-sponsoring-frontdesk charm; edits are overwritten.
+#
+# Runs the bot exactly as the timer does -- same state, credentials, proxy
+# and lock -- so a manual run over `juju ssh` sees what the scheduled passes
+# see:
+#
+#   frontdesk --url <bug-or-mp-url> --interactive   main.py, any arguments
+#   frontdesk --all --dry-run --verbose
+#   frontdesk stats [--queue] [--since 30d] [--json] stats.py
+#
+# It must run as the ubuntu user: the state, the tokens and opencode's login
+# all belong to it, and a root-owned state.db would break the timer.
+set -eu
+
+if [ "$(id -un)" != ubuntu ]; then
+    echo "frontdesk: run this as the ubuntu user (sudo -u ubuntu frontdesk ...)" >&2
+    exit 1
+fi
+HOME=$(getent passwd ubuntu | cut -d: -f6)
+export HOME
+
+set -a
+. /etc/frontdesk/environment
+set +a
+
+# The bot's modules import each other flat (`import checks`): run from
+# inside the directory.
+cd /srv/frontdesk/usf
+
+if [ "${1:-}" = stats ]; then
+    shift
+    exec python3 stats.py "$@"
+fi
+
+# One pass at a time: a second concurrent one would only duplicate the work
+# and the Launchpad calls, and race on state.db. Don't wait for the lock --
+# a manual run should say why it can't start, and a timer pass should just
+# be skipped (75 is a success exit status for the service). The lock lives
+# with the state it protects, not in the shared sticky /run/lock, where
+# fs.protected_regular makes a file created by one user unopenable by
+# another (#146).
+lock=/var/lib/frontdesk/pass.lock
+rc=0
+flock --nonblock --conflict-exit-code 75 "$lock" python3 main.py "$@" || rc=$?
+if [ "$rc" -eq 75 ]; then
+    echo "frontdesk: a pass is already running (it holds $lock); try again once it finishes" >&2
+fi
+exit "$rc"

@@ -18,13 +18,14 @@ off whenever a human reviewer is already engaged.
 
 ```
 usf/          the bot itself, with its tests in usf/tests/
+src/          the machine charm that deploys it, with its tests in tests/
 doc/          design journal, checks reference, flow charts, charm notes
 .workshop/    the Workshop dev environment (see CONTRIBUTING.md)
 ```
 
 `usf/` is short for ubuntu-sponsoring-frontdesk. It sits beside the charm
-that will deploy it (`src/`, when that lands) rather than under it: the bot
-is what this repo is for, and the charm is how it gets run. Its modules
+that deploys it (`src/`) rather than under it: the bot is what this repo is
+for, and the charm is how it gets run. Its modules
 import each other flat -- `import checks` -- so they stay in one directory
 and are run from it.
 
@@ -75,7 +76,7 @@ container instead of on the machine that runs the real bot:
 
 ```
 workshop launch dev
-workshop run dev check  # lint + unit suite, as CI runs them
+workshop run dev check  # the bot's lint + unit suite, as CI runs them
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the other actions and for what is
@@ -96,6 +97,10 @@ deliberately left out of the sandbox (Launchpad credentials, `opencode`).
   gate](doc/write_gate.svg), [sync-request sub-flow](doc/sync_triage.svg).
 
 ## Deployment notes
+
+Production runs from the charm: `doc/CHARM.md` covers deploying it, its
+config, actions and where everything lives on the unit. The notes below are
+what the bot expects when run by hand, and what the charm provides.
 
 Machine-local setup, none of it in the repository:
 

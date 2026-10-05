@@ -48,7 +48,7 @@ Actions (`workshop actions` lists them):
 
 | action | what it does |
 |---|---|
-| `check` | `make all`: `ruff check`, `ruff format --check`, then the unit suite |
+| `check` | `make usf-check`: `ruff check`, `ruff format --check`, then the bot's unit suite |
 | `stats` | the audit-trail retrospective (`stats.py`) |
 | `triage` | `main.py` on one item; it defaults to `--dry-run`, so nothing is written unless you pass a write mode |
 
@@ -108,15 +108,36 @@ extension tied to it), so there's no virtualenv:
 ```
 sudo apt install python3-apt python3-debian python3-launchpadlib python3-yaml \
                  python3-pytest distro-info
-make all
+make usf-check
 ```
+
+## The charm
+
+`src/` is the machine charm that deploys the bot (`doc/CHARM.md`). It is
+built and tested with [uv](https://docs.astral.sh/uv/), like Canonical's
+other charms, because `ops` isn't packaged for the system interpreter --
+which is why the make targets come in two halves:
+
+| target | what | needs |
+|---|---|---|
+| `usf-check` | the bot: ruff + unit suite (`usf-lint`, `usf-test`) | system python3 + the packages above, ruff 0.15.21 |
+| `charm-check` | the charm: ruff + Scenario unit tests (`charm-lint`, `charm-unit`) | uv |
+| `all` | both -- what must pass before committing | both |
+| `charm-integration` | deploys to a temporary model and checks the wiring with dummy secrets | uv, charmcraft, a juju controller |
+| `fmt` | ruff fix + format, whole repo | ruff |
+
+The Workshop is the bot's environment and only runs `usf-check`; charm work
+needs a host with uv (and juju/charmcraft to deploy). `make charm-integration
+CHARM_PATH=<file>.charm` skips packing; `ARGS=--model=<name>` uses an
+existing model instead of a temporary one.
 
 See the README's deployment notes for credentials, the operator webhook and
 the `opencode` agent the LLM phases need.
 
 ## Before proposing a change
 
-- `make all` must pass: `ruff check`, `ruff format --check`, then the suite.
+- `make all` must pass: `ruff check`, `ruff format --check` and the unit
+  suite, for both the bot and the charm.
 - Every behavioural change gets a numbered entry in
   `doc/design_journal.md` explaining *why*, plus a test. Live-found fixes
   should name the bug or MP that triggered them.

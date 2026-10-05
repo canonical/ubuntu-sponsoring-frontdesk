@@ -1,0 +1,26 @@
+# Installed by the ubuntu-sponsoring-frontdesk charm; edits are overwritten.
+[Unit]
+Description=Ubuntu Sponsoring Frontdesk - queue pass
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+# The wrapper sets the environment (state paths, proxy) and takes the lock
+# that keeps a pass from overlapping a manual run.
+ExecStart=/usr/local/bin/frontdesk --all __MODE_FLAG__
+# 75 = the lock was held, i.e. a manual run was in progress: this pass was
+# skipped, which isn't a failure.
+SuccessExitStatus=75
+# A full pass takes ~15 minutes; anything near this is stuck, not slow.
+TimeoutStartSec=3h
+
+KeyringMode=private
+PrivateTmp=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes

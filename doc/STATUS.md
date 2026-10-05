@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-09-16_
+_Last updated: 2026-10-05_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -34,8 +34,9 @@ Current pipeline: `flow.svg`.
 ## How to run
 
 ```bash
-make test                       # unit suite (needs pytest, launchpadlib, pyyaml, python3-apt; runtime also needs distro-info -- #83)
-make smoke URL=<lp-url>          # read-only attribute check against real Launchpad
+make usf-test                    # unit suite (needs pytest, launchpadlib, pyyaml, python3-apt; runtime also needs distro-info -- #83)
+make usf-smoke URL=<lp-url>      # read-only attribute check against real Launchpad
+make all                         # both halves' lint + units: the bot's and the charm's (#146)
 python3 usf/main.py --url <url> [--dry-run|--interactive|--yes] [--verbose]
 python3 usf/main.py --all  [--dry-run|--interactive|--yes] [--force] [--verbose]
 python3 usf/main.py --sweep [--dry-run|--interactive|--yes]   # Rule B sweep only (#66); --all already includes it
@@ -1340,16 +1341,26 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   grace, with two labels predating #128/#134. `AGENTS.md` now carries the
   upkeep rule.
 
-## Next: charm the bot (machine charm)
+## The charm (#146) -- built, not yet run for real
 
-Starting point written up in `doc/CHARM.md` (#143): what the workload is,
-the runtime requirements, every state/config path and its env override, how
-it runs today (interactive, because of the unsubscribe permission gap), and
-the questions a charm forces -- credentials, timer vs service, write mode as
-config, storage for `state.db`, the ubuntu-lint PPA, observability.
+`src/` is a machine charm deploying `usf/`; `doc/CHARM.md` has the decisions
+and how to deploy it. Deployed and iterated on a 26.04 LXD model with dummy
+secrets: install, statuses, the timer following `mode`, the lock and all
+three actions work, and `make charm-integration` checks that wiring.
 
-Intended to be picked up in a sandbox with a juju controller, where a charm
-can actually be deployed and iterated on.
+- **Next: a real dry-run under the charm.** Real `lp-triager-credentials`
+  and `opencode-auth` secrets, `mode=dry-run`, and a human reading the first
+  pass's journal and `stats` -- nothing has triaged a real item there yet.
+  `mode=yes` stays blocked on the account question (backlog above).
+- **Backlog: where state lives.** `state.db` and `audit.jsonl` sit on the
+  unit's rootfs; seb128 handles backups by hand for now. Juju storage
+  (survives unit replacement only if detached and re-attached) vs. pushing
+  copies off-host, e.g. to S3, needs a discussion -- storage may be a lot of
+  machinery for a small DB and a log. Losing `state.db` costs one full
+  re-triage (LLM spend), not wrong behaviour.
+- **Backlog: drop the ubuntu-lint PPA** from `src/frontdesk.py` once
+  `python3-ubuntu-lint` is SRUed to 26.04 (planned), so the unit takes it
+  from the archive. The PPA currently has 0.2.3, without the #129 fix.
 
 ## Watch list (no work, just things to notice)
 

@@ -60,9 +60,20 @@ Prompts embed contributor-written text, so LLM calls run under the tool-less
 
 ## Before committing
 
-- `make all` must pass: `ruff check`, `ruff format --check`, then the suite.
-  Read the whole output, not the last line -- the format step passing says
-  nothing about `ruff check`.
+- `make all` must pass: `ruff check`, `ruff format --check`, then the suite,
+  for both halves -- `usf-check` (the bot, system python3) and
+  `charm-check` (the charm, uv). Read the whole output, not the last line --
+  the format step passing says nothing about `ruff check`, and the bot's
+  suite passing says nothing about the charm's.
+- A change to the charm (`src/`) should be checked on a real model, not
+  only unit-tested -- the charm's journal entry (#146) lists four bugs that
+  only showed up that way. But `make charm-integration` packs the charm and
+  deploys to a juju controller: slow, and a change to the contributor's
+  system they may not have or want. So it is never run unprompted: when a
+  change touches the charm, *suggest* it, say what it would do and roughly
+  how long it takes (~15 minutes), and run it only once the person you're
+  working with agrees. If they decline, say in the journal entry that the
+  change wasn't deployed.
 - New behaviour comes with a test.
 - Commit messages wrap at 72 columns.
 - A check that posts to Launchpad is exercised in `--interactive` mode
