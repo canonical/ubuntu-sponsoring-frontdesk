@@ -3448,3 +3448,42 @@ each action reaching Launchpad.
 * Tests stub `login_with` (no network): the kept, mismatched and
   pre-existing cases. Not yet run against real Launchpad -- the first real
   use is seb128 creating the charm's secrets.
+
+## 149. Check 5: A Bug Citing Itself on Another Package Name
+
+* **Found on the first real write under the charm** (seb128,
+  `--interactive`, bug #2009138, oslo.messaging SRU to jammy). The debdiff
+  for `python-oslo.messaging` cites `LP: #2009138` -- the bug it is
+  attached to -- whose Ubuntu tasks are filed against `oslo.messaging`, a
+  name that publishes nothing in jammy. Check 5 told the contributor to
+  "double-check the bug number(s)", blocking, and the bug went Incomplete.
+  The number was right; seb128 followed up on the bug by hand.
+* **The check's premise doesn't hold for the host bug.** It exists to catch
+  typo'd or copy-pasted numbers before they ship permanently in a released
+  changelog (#26). A number that is the very bug the debdiff is attached to
+  can't be one. What the mismatch does mean is real but different: the task
+  is on another package name, so the upload won't close it -- or, rarely,
+  the debdiff is for the wrong package.
+* **So that case gets its own note, question/verify tier** (seb128 agreed
+  the wording): it names the bug's Ubuntu task package(s) and the debdiff's
+  package, says the upload won't auto-close the bug, and says what to do if
+  the debdiff is the right one -- without assuming which side is wrong,
+  since the bot can't tell. Not advisory: if it's the debdiff that's wrong,
+  it matters. Non-Ubuntu tasks (upstream, cloud-archive) are left out of
+  the naming. The check already held the host bug (`host_bug`, #63), so
+  telling the cases apart costs no lookup.
+* **Every other citation is unchanged**, including on MPs (no host bug
+  there). One check returns one finding, so when a changelog cites both its
+  own bug and another mismatched number, the blocking finding for the other
+  number is what's posted; the note follows on the pass after it is fixed.
+* **The doc test could hang.** `test_checks_doc` turns each quote into a
+  regex with placeholders as `.*?`; the new quote is the first to *start*
+  with one, and an unbounded leading wildcard made a non-matching quote
+  quadratic over the whole source -- the test hung instead of failing.
+  Leading/trailing placeholders are now dropped (they add nothing to a
+  search) and the rest bounded to 300 characters, which also stops a
+  placeholder spanning half a module. Checked: a deliberately broken quote
+  now fails in a tenth of a second.
+* Tests: the own-bug note's exact text, the no-Ubuntu-task phrasing, and
+  the mixed case still blocking on the other number only -- all three fail
+  against the previous code. Not yet seen live.

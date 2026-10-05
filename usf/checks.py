@@ -1974,11 +1974,18 @@ def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug
     a citation of the very bug under triage -- we already hold it, no
     extra API call."""
     mismatched = []
+    host_mismatched = False
     lookup_failed = False
     host_id = getattr(host_bug, "id", None) if host_bug is not None else None
     for number in sorted(bug_numbers):
         if number == host_id:
-            bug = host_bug
+            # #149: citing the bug the debdiff is attached to can't be a
+            # typo'd number -- a mismatch there means the bug's task is on
+            # another package name (or the debdiff is for the wrong one),
+            # which gets its own, non-blocking note below.
+            if not _bug_targets_package(host_bug, package):
+                host_mismatched = True
+            continue
         else:
             try:
                 bug = lp_client.lp.bugs[number]
@@ -2002,6 +2009,8 @@ def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug
         lookup_failed,
     )
     if not mismatched:
+        if host_mismatched:
+            return _host_bug_package_mismatch(url, host_bug, package)
         if lookup_failed:
             logger.debug(
                 "check_changelog_bug_reference: couldn't verify every cited bug; can't determine."
@@ -2021,6 +2030,40 @@ def _bug_reference_verdict(url, where, bug_numbers, package, lp_client, host_bug
         f"The bug reference(s) in {where} ({bug_list}) don't appear to "
         f"be reported against `{package}`. Please double-check the bug "
         "number(s) are correct.",
+    )
+
+
+def _host_bug_package_mismatch(url, bug, package):
+    """#149: the debdiff cites the very bug it is attached to, but that
+    bug has no task on the debdiff's package -- typically the task was
+    filed under another source name (bug #2009138: `oslo.messaging` vs
+    `python-oslo.messaging`). The number is right, so "double-check the
+    bug number" (which bounced that bug) is the wrong advice; and the bot
+    can't tell whether the task or the debdiff is the wrong side, so it
+    asks rather than blocks."""
+    ubuntu = sorted(
+        {
+            name.split(" (", 1)[0]
+            for name in (t.bug_target_name or "" for t in bug.bug_tasks)
+            if " (Ubuntu" in name
+        }
+    )
+    if ubuntu:
+        filed = "This bug's Ubuntu task is filed against " + ", ".join(f"`{n}`" for n in ubuntu)
+    else:
+        filed = "This bug has no Ubuntu task"
+    logger.info(
+        "[%s] the debdiff cites its own bug, which has no task on %r. Adding a verify finding.",
+        url,
+        package,
+    )
+    return Finding(
+        "question",
+        f"{filed}, but the attached debdiff is for `{package}`, so uploading it "
+        "won't close the bug automatically. If the debdiff is for the right "
+        f"package, the task needs moving to `{package}` (a sponsor can do this "
+        "when uploading).",
+        kind="verify",
     )
 
 

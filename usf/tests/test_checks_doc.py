@@ -78,10 +78,17 @@ def test_quoted_wording_matches_the_code():
             continue
         # A quote may be an excerpt and carries {placeholders} filled in at
         # runtime, so match it as a regex with those spans as wildcards.
+        # Leading/trailing ones add nothing to a search, and an unbounded
+        # leading one made a mismatch quadratic over the whole source --
+        # the test hung instead of failing (#149). A placeholder stands for
+        # one expression, so its wildcard is bounded too.
+        parts = [p for p in re.split(r"(\{[^}]*\})", _normalize(quote)) if p]
+        while parts and parts[0].startswith("{"):
+            parts.pop(0)
+        while parts and parts[-1].startswith("{"):
+            parts.pop()
         pattern = "".join(
-            ".*?" if part.startswith("{") else re.escape(part)
-            for part in re.split(r"(\{[^}]*\})", _normalize(quote))
-            if part
+            ".{0,300}?" if part.startswith("{") else re.escape(part) for part in parts
         )
         if not re.search(pattern, source):
             missing.append(quote[:70] + ("..." if len(quote) > 70 else ""))

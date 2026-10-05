@@ -270,6 +270,64 @@ def test_bugref_citation_targeting_the_package_is_clean():
     assert checks.check_changelog_bug_reference(URL, bug, _LP({2000001: cited})) is False
 
 
+def test_bugref_own_bug_on_another_package_name_asks_rather_than_blocks():
+    """#149, bug #2009138: the debdiff cites the bug it's attached to, whose
+    Ubuntu task is filed under another source name. The number is right,
+    so no "double-check the bug number" bounce -- a verify note naming both
+    packages instead."""
+    bug = FakeBug(
+        id=2000001,
+        tasks=[
+            FakeTask("oslo.messaging", "Fix Released"),
+            FakeTask("cloud-archive/yoga", "New"),
+            FakeTask("othername (Ubuntu)", "Fix Released"),
+            FakeTask("othername (Ubuntu Jammy)", "New"),
+        ],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", content=DEBDIFF)],
+    )
+
+    finding = checks.check_changelog_bug_reference(URL, bug, _LP())
+
+    assert (finding.tier, finding.kind) == ("question", "verify")
+    assert finding.message == (
+        "This bug's Ubuntu task is filed against `othername`, but the attached "
+        "debdiff is for `testpkg`, so uploading it won't close the bug "
+        "automatically. If the debdiff is for the right package, the task needs "
+        "moving to `testpkg` (a sponsor can do this when uploading)."
+    )
+    assert "double-check" not in finding.message
+
+
+def test_bugref_own_bug_without_an_ubuntu_task_says_so():
+    bug = FakeBug(
+        id=2000001,
+        tasks=[FakeTask("some-upstream-project", "New")],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", content=DEBDIFF)],
+    )
+
+    finding = checks.check_changelog_bug_reference(URL, bug, _LP())
+
+    assert finding.message.startswith("This bug has no Ubuntu task, but the attached debdiff")
+
+
+def test_bugref_another_mismatched_bug_still_blocks_alongside_the_own_bug():
+    debdiff = DEBDIFF.replace("LP: #2000001", "LP: #2000001, LP: #2000002")
+    assert debdiff != DEBDIFF
+    other = FakeBug(tasks=[FakeTask("unrelated (Ubuntu)", "New")])
+    bug = FakeBug(
+        id=2000001,
+        tasks=[FakeTask("othername (Ubuntu)", "New")],
+        attachments=[FakeAttachment("fix.debdiff", type="Patch", content=debdiff)],
+    )
+
+    finding = checks.check_changelog_bug_reference(URL, bug, _LP({2000002: other}))
+
+    # A different number can still be a typo: today's bounce, naming only it.
+    assert finding.tier == "incomplete"
+    assert "LP: #2000002" in finding.message
+    assert "#2000001" not in finding.message
+
+
 def test_bugref_plain_patch_has_no_entry_and_skips():
     bug = FakeBug(attachments=[FakeAttachment("fix.patch", content=PLAIN_PATCH)])
     assert checks.check_changelog_bug_reference(URL, bug, _LP()) is False

@@ -101,7 +101,7 @@ proposals reject status writes from the bot (a human closes them out).
 | 2 | [Target branch](#check-2-target-branch) | MP | A merge MP targeting `ubuntu/devel` instead of `debian/*`; an SRU-shaped MP targeting the wrong series branch; a release-pocket branch that is behind what's published. | incomplete, **except** advisory when a release-pocket branch isn't actually behind. Firing here suppresses Check 3. |
 | 3 | [Merge conflicts](#check-3-merge-conflicts) | MP | The branch cannot be merged cleanly into its target. | incomplete. Skipped entirely when Check 2 fired, since a wrong target branch is usually the cause. |
 | 4 | [Empty diff](#check-4-empty-diff) | MP | The preview diff is empty: the change already landed in the target. | closing: comments, no status write. |
-| 5 | [Changelog bug reference](#check-5-changelog-bug-reference) | MP + bug | The changelog cites `LP: #N` for a bug not reported against this source package. | incomplete. |
+| 5 | [Changelog bug reference](#check-5-changelog-bug-reference) | MP + bug | The changelog cites `LP: #N` for a bug not reported against this source package. | incomplete; question/verify when the bug cited is the one the debdiff is attached to. |
 | 6 | [Version vs. the archive](#check-6-version-vs-the-archive) | MP + bug | The proposed version against everything published for the target series: already uploaded, same version with different content, older than the archive, or waiting in the upload queue. | Varies: closing when already uploaded; incomplete for a collision or a stale version; or defers the item silently (waiting for the archive importer, or for the upload queue). The only check that notifies the operator. A bounce here skips Check 13. |
 | 7 | [Newer series first](#check-7-newer-series-first) | MP + bug | An SRU with no evidence the fix landed in the development release or newer supported series. Evidence can be a task status, a linked MP, a patch attachment, or the bug text. | question / verify. Runs late in the pass because it can spend an LLM call. |
 | 8 | [Direct source edit](#check-8-direct-source-edit) | MP + bug | Files outside `debian/` edited directly instead of via `debian/patches`. Merges, new upstream versions and native packages are exempt. | incomplete. |
@@ -200,6 +200,18 @@ instead:
 
 > The bug reference(s) in {where} ({bug_list}) don't appear to be reported
 > against `{package}`. Please double-check the bug number(s) are correct.
+
+When the cited bug is the one the debdiff is attached to, the number can't
+be a typo: the bug's task is on another package name, or the debdiff is for
+the wrong package. Asked, not blocked (design #149, bug #2009138):
+
+> {filed}, but the attached debdiff is for `{package}`, so uploading it
+> won't close the bug automatically. If the debdiff is for the right
+> package, the task needs moving to `{package}` (a sponsor can do this when
+> uploading).
+
+`{filed}` is "This bug's Ubuntu task is filed against `{name}`", or "This
+bug has no Ubuntu task".
 
 ### Check 6: version vs. the archive
 
