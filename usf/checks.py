@@ -4695,3 +4695,128 @@ def check_xsbc_original_maintainer(url, lp_obj, lp_client):
     if _XSBC_ORIGINAL_MAINTAINER_RE.search(full_text):
         return False
     return _xsbc_original_maintainer_finding(url)
+
+
+# --- Check 16: new patches need a DEP-3 header (#151) ------------------------
+
+_DEP3_POLICY_URL = "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/patches/"
+# A new file's only hunk: "@@ -0,0 +1,N @@" (N omitted when 1).
+_NEW_FILE_HUNK_RE = re.compile(r"^@@ -0,0 \+1(?:,(\d+))? @@")
+# Where a patch's header ends and its own diff begins.
+_PATCH_BODY_START_RE = re.compile(r"^(Index: |--- |\+\+\+ |diff |=== )")
+# DEP-3's one mandatory field; Subject: is its alias (git format-patch).
+_DEP3_DESCRIPTION_RE = re.compile(r"^(Description|Subject):\s*\S", re.IGNORECASE | re.MULTILINE)
+
+
+def _added_files(text):
+    """{path: content} for the files a unified diff creates -- those whose
+    only hunk is "@@ -0,0 +1,N @@" -- with paths normalized like
+    attachments.classify_diff (first component stripped). Works for MP
+    (git) diffs and debdiffs alike: a new file is "--- /dev/null" in one
+    and an epoch-dated old path in the other, but the hunk is the same.
+    Lines are consumed by the hunk's count, so a patch's own "--- a/..."
+    lines (prefixed "+" here) can't be mistaken for file boundaries."""
+    files = {}
+    path = None
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("+++ "):
+            path = attachments._norm_path(line[4:])
+        else:
+            match = _NEW_FILE_HUNK_RE.match(line)
+            if match and path:
+                count = int(match.group(1) or 1)
+                body = [ln[1:] for ln in lines[i + 1 : i + 1 + count] if ln.startswith("+")]
+                files[path] = "\n".join(body)
+                i += count
+        i += 1
+    return files
+
+
+def _patches_without_dep3_header(text):
+    """New debian/patches/ files whose header (everything before the
+    patch's own diff starts) has no Description:/Subject: field."""
+    missing = []
+    for path, content in sorted(_added_files(text).items()):
+        name = path.rsplit("/", 1)[-1]
+        if not path.startswith("debian/patches/") or "series" in name or name == "README":
+            continue
+        header = []
+        for line in content.splitlines():
+            if _PATCH_BODY_START_RE.match(line):
+                break
+            header.append(line)
+        if not _DEP3_DESCRIPTION_RE.search("\n".join(header)):
+            missing.append(path)
+    return missing
+
+
+def _dep3_finding(url, paths):
+    names = ", ".join(f"`{p}`" for p in paths)
+    noun = "patch" if len(paths) == 1 else "patches"
+    verb = "has" if len(paths) == 1 else "have"
+    logger.info("[%s] new %s without a DEP-3 header: %s.", url, noun, names)
+    return Finding(
+        "incomplete",
+        f"The new {noun} {names} {verb} no DEP-3 header. Please add one "
+        "describing the change: at least `Description:`, plus `Origin:` (or "
+        "`Author:`), `Bug-Ubuntu:` and `Forwarded:` where they apply. See "
+        f"{_DEP3_POLICY_URL}",
+    )
+
+
+def check_dep3_patch_header(url, lp_obj, lp_client):
+    """
+    Check 16: a newly added debian/patches patch must carry a DEP-3 header
+    (design_journal.md #151; trigger: golang-github-a-h-templ MP #512397,
+    whose new patch started straight at "Index:"). Ubuntu's patches policy
+    (_DEP3_POLICY_URL, "When (not) to rewrite a patch header") requires one
+    when introducing a new patch.
+
+    Deliberately narrow (seb128): fires only when a NEW patch file has no
+    Description:/Subject: at all -- DEP-3's one mandatory field, Subject:
+    covering git format-patch headers. Header quality, Origin:/Forwarded:,
+    and modified existing patches (the policy's "substantive change"
+    and SRU exceptions are a judgement) are left to humans. Merge MPs and
+    merge bugs are skipped: their patches are carried, not written for
+    this upload.
+
+    MPs read the preview diff; bugs the newest usable debdiff
+    (attachments.review_target). Returns an incomplete Finding, False, or
+    None (diff/attachment unreadable, or merge detection failed --
+    retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
+            return False
+        target = attachments.review_target(bug)
+        if target is None:
+            return None
+        if target is False:
+            return False
+        missing = _patches_without_dep3_header(target[1])
+        return _dep3_finding(url, missing) if missing else False
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    text = diff_text(lp_obj)
+    if text is None:
+        return None
+    if text is False or not text.strip():
+        return False
+    missing = _patches_without_dep3_header(text)
+    if not missing:
+        logger.debug("check_dep3_patch_header: no new patch without a header.")
+        return False
+    # Only now pay the merge classification (it may need a lookup).
+    merge = _is_merge_proposal(lp_obj)
+    if merge is None:
+        return None
+    if merge:
+        logger.debug("check_dep3_patch_header: merge MP; carried patches. Skipping.")
+        return False
+    return _dep3_finding(url, missing)

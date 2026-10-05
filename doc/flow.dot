@@ -83,10 +83,12 @@ digraph SponsoringBot {
     c13 [label="Check 13: sru_version_suffix_convention\n(#109/#129) via ubuntu-lint\nMPs + debdiff attachments on bugs\nskipped if Check 6 already bounced\nthe version (#122); silent if\npython3-ubuntu-lint is absent\n→ question/advisory Finding", shape=box, fillcolor="#FFFFFF"];
     c14 [label="Check 14: sru_version_newer_series_\nprecedence (#110/#124)\n1) newer series publishes a LOWER\nversion -> fix hasn't landed there\n2) proposed version already used\nanywhere in archive history\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c15 [label="Check 15: no_change_rebuild_version\n(#132) only debian/changelog changed\n(+ update-maintainer's control lines)\nbut an ubuntuN revision, not buildN\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c16 [label="Check 16: dep3_patch_header (#151)\nnew debian/patches patch with no\nDescription:/Subject: header\nMPs + debdiff attachments on bugs;\nmerges skipped\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c11 -> c13;
     c13 -> c14;
     c14 -> c15;
-    c15 -> c12;
+    c15 -> c16;
+    c16 -> c12;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];

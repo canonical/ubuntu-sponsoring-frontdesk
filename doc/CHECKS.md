@@ -112,6 +112,7 @@ proposals reject status writes from the bot (a human closes them out).
 | 13 | [SRU version convention](#check-13-sru-version-convention) | MP + bug | The SRU version string doesn't follow the recommended convention. Delegates to `ubuntu-lint`; silently skipped when `python3-ubuntu-lint` isn't installed. | question / advisory. Skipped when Check 6 already bounced the version. |
 | 14 | [SRU version precedence](#check-14-sru-version-precedence) | MP + bug | A newer series publishing a *lower* version (so the fix hasn't landed there yet), or a proposed version already used somewhere in archive history. | incomplete. |
 | 15 | [No-change rebuild version](#check-15-no-change-rebuild-version) | MP + bug | A no-change rebuild (only `debian/changelog`, plus `update-maintainer`'s `debian/control` lines) using an `ubuntuN` instead of a `buildN` revision. | incomplete. |
+| 16 | [DEP-3 patch header](#check-16-dep-3-patch-header) | MP + bug | A newly added `debian/patches/` patch with no DEP-3 header (no `Description:`/`Subject:`). Merges skipped; modified patches not judged. | incomplete. |
 
 ## What the bot posts
 
@@ -332,6 +333,17 @@ to two parts, each with its own bullet list of findings:
 > This is a no-change rebuild, so the version should be `{expected}`, not
 > `{proposed_version}`: an `ubuntuN` revision declares an Ubuntu delta that
 > later merges would try to preserve.
+
+### Check 16: DEP-3 patch header
+
+`check_dep3_patch_header`, design #151.
+
+> The new {noun} {names} {verb} no DEP-3 header. Please add one describing
+> the change: at least `Description:`, plus `Origin:` (or `Author:`),
+> `Bug-Ubuntu:` and `Forwarded:` where they apply. See {url}
+
+`{noun}`/`{verb}` read "patch ... has" or "patches ... have"; `{url}` is
+https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/patches/
 
 ## LLM-assisted reviews
 

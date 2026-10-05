@@ -3547,3 +3547,35 @@ each action reaching Launchpad.
   child stands in for the bot), confirmed failing with the old call.
   Deployed; the timeout path itself not exercised live (it takes a
   30-minute item).
+
+## 151. Check 16: New Patches Need a DEP-3 Header
+
+* **Request (seb128):** golang-github-a-h-templ MP #512397 adds
+  `debian/patches/0007-fix-armhf-atomic-alignment.patch` with no header at
+  all -- it starts at `Index:` -- and the bot said nothing. Ubuntu's
+  patches policy ("When (not) to rewrite a patch header to follow DEP 3")
+  asks for a DEP-3 header when introducing a new patch. DEP-3 headers had
+  been on the backlog since #47 ("patch review still out of scope").
+* **Deliberately narrow, incomplete tier** (seb128's choices): fires only
+  when a *new* file under `debian/patches/` (not `series`/`README`) has no
+  `Description:` or `Subject:` before its own diff starts -- DEP-3's one
+  mandatory field, with `Subject:` covering `git format-patch` headers. The
+  wording suggests `Origin:`/`Author:`, `Bug-Ubuntu:` and `Forwarded:`
+  without checking them. Left to humans: header quality, and modified
+  existing patches -- the policy only wants those rewritten on a
+  "substantive" change and has SRU exceptions, a judgement call. Merge MPs
+  and merge bugs are skipped: their patches are carried, not written for
+  this upload.
+* **New files are found by their hunk, not their header line.** A new file
+  is `--- /dev/null` in a git diff but an epoch-dated old path in a
+  debdiff; both have the single hunk `@@ -0,0 +1,N @@`. The parser
+  consumes exactly N lines after it, so a patch's own `--- a/...` lines
+  (prefixed `+` in the outer diff) can't be taken for file boundaries.
+* Wiring: MPs read the preview diff (merge classification only paid when
+  it would fire), bugs the newest usable debdiff (`review_target`), placed
+  after Check 15. Flow chart and CHECKS.md updated.
+* Tests: the trigger shape, `Description:`/`Subject:` both accepted, a
+  `Description:` inside the patch body not counting, several patches in
+  one finding, modified patches and non-patch files ignored, merges
+  skipped, an unreadable diff inconclusive, and the bug-side debdiff path.
+  Dry-run verified on the trigger MP; not yet posted live.

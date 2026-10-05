@@ -582,6 +582,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     elif result:
         add_finding("check_no_change_rebuild_version", result)
 
+    # Check 16: a new debian/patches patch needs a DEP-3 header (#151).
+    # Deterministic, pre-gate.
+    result = checks.check_dep3_patch_header(url, lp_obj, lp_client)
+    checkpoint("check_dep3_patch_header")
+    logger.debug("check_dep3_patch_header -> %s", result)
+    if result is None:
+        mark_inconclusive("check_dep3_patch_header")
+    elif result:
+        add_finding("check_dep3_patch_header", result)
+
     # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
     # Deterministic, pre-gate.
     result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)
