@@ -3598,3 +3598,29 @@ each action reaching Launchpad.
   starts from a clean state anyway.
 * Tests: singular for one finding (MP and bug closing lines), plural when
   findings span sections.
+
+## 153. Every Debdiff Says Where It Goes, Not Just the Newest
+
+* **Found by seb128 on the first item of his `--interactive` queue pass**
+  (openblas bug #2169719): "SRU-shaped text but nothing targets a stable
+  series (devel is stonking); not treating it as an SRU" -- on a bug with
+  a debdiff for resolute *and* one for stonking. So the SRU template review
+  was skipped on an actual SRU.
+* **Cause:** #125's devel-only guard read the upload suite from
+  `attachments.review_target`, which is the *newest* usable debdiff only
+  (#62's "newest-only for now"). SRUs commonly attach one debdiff per
+  series, and the devel one is often posted last; the bug had no series
+  task or MP to catch it otherwise.
+* **Fix:** `_targets_only_devel` reads the suite of every patch attachment.
+  An unreadable one means "don't conclude devel-only" (treat as an SRU, the
+  pre-#125 behaviour) rather than deciding from a partial view. The extra
+  fetches only happen for SRU-shaped text without an `sru` tag.
+* **Not changed, noted:** the deterministic checks still review only the
+  newest debdiff (#62), so on this bug Checks 5/6/8/... judged the stonking
+  one, not resolute's. Reviewing each per-series debdiff is a bigger
+  change, left for a decision.
+* Tests: an older stable debdiff plus a newer devel one counts as an SRU
+  (fails without the fix); an unreadable debdiff doesn't conclude
+  devel-only. The test file's `_Bug` stub gained the `attachments` list
+  every real bug has: `review_target` used to swallow its absence, hiding
+  that the stub didn't match the API (the #145 theme again).

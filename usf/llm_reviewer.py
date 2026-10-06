@@ -135,10 +135,19 @@ def _targets_only_devel(lp_obj, devel_name):
                 stable.add(series)
         # A debdiff's own changelog stanza names where it would be
         # uploaded -- the same signal check_sru_newer_series uses (#115),
-        # read straight from the stanza header, no LLM involved.
-        target = attachments.review_target(lp_obj)
-        if isinstance(target, tuple):
-            stanza = _new_changelog_stanza(target[1])
+        # read straight from the stanza header, no LLM involved. EVERY
+        # debdiff, not just the newest (#153): an SRU commonly attaches one
+        # per series, and the devel one is often uploaded last (openblas bug
+        # #2169719: resolute + stonking, only stonking was read).
+        for attachment in attachments.patch_attachments(lp_obj):
+            text = attachments.attachment_text(attachment)
+            if text is None:
+                # Couldn't read it: don't conclude "devel only" from a
+                # partial view -- fall back to treating it as an SRU.
+                return False
+            if text is False:
+                continue
+            stanza = _new_changelog_stanza(text)
             header = _CHANGELOG_SUITE_RE.match(stanza.splitlines()[0]) if stanza else None
             if header:
                 suite = _POCKET_SUFFIX_RE.sub("", header.group("suite").strip().lower())

@@ -90,6 +90,9 @@ class _Bug:
         self.description = description
         self.title = "backport-iwlwifi-dkms FFe"
         self.tags = list(tags)
+        # Every real bug has an attachment list; _targets_only_devel reads
+        # it (#153), and an unreadable one means "don't conclude devel-only".
+        self.attachments = []
 
 
 _FFE_TEXT = "## FFE ##\n\n[Rationale]\n\n* x\n\n[ Regression Potential ]\n\n* y\n"
@@ -244,3 +247,46 @@ def test_rejected_stable_mp_does_not_count():
     mp.queue_status = "Rejected"
     bug = _Bug([_Task("foo (Ubuntu)")], mps=[mp])
     assert _targets_only_devel(bug, "stonking") is True
+
+
+# --- #153: every debdiff, not only the newest ---------------------------------
+
+
+def test_older_stable_debdiff_counts_when_the_newest_targets_devel():
+    """openblas bug #2169719: resolute debdiff first, stonking (devel) one
+    uploaded after -- only the newest used to be read."""
+    from fakes import FakeAttachment, FakeBug
+
+    import attachments
+    from llm_reviewer import _targets_only_devel
+
+    attachments.reset_cache()
+    bug = FakeBug(
+        description=_FFE_TEXT,
+        attachments=[
+            FakeAttachment("stable.debdiff", type="Patch", content=_NOBLE_DEBDIFF),
+            FakeAttachment(
+                "devel.debdiff", type="Patch", content=_NOBLE_DEBDIFF.replace("noble", "stonking")
+            ),
+        ],
+    )
+    assert _targets_only_devel(bug, "stonking") is False
+
+
+def test_unreadable_debdiff_does_not_conclude_devel_only():
+    from fakes import FakeAttachment, FakeBug
+
+    import attachments
+    from llm_reviewer import _targets_only_devel
+
+    attachments.reset_cache()
+    bug = FakeBug(
+        description=_FFE_TEXT,
+        attachments=[
+            FakeAttachment("stable.debdiff", type="Patch", fail_fetch=True),
+            FakeAttachment(
+                "devel.debdiff", type="Patch", content=_NOBLE_DEBDIFF.replace("noble", "stonking")
+            ),
+        ],
+    )
+    assert _targets_only_devel(bug, "stonking") is False
