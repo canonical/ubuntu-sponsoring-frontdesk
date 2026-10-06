@@ -212,6 +212,7 @@ _QUIET = [
     "check_sru_version_newer_series_precedence",
     "check_no_change_rebuild_version",
     "check_xsbc_original_maintainer",
+    "check_released_changelog_edit",
     "check_sru_newer_series",
     "check_human_engaged",
 ]

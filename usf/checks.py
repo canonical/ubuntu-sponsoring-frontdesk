@@ -4984,3 +4984,134 @@ def check_dep3_patch_header(url, lp_obj, lp_client):
         logger.debug("check_dep3_patch_header: merge MP; carried patches. Skipping.")
         return False
     return _dep3_finding(url, missing)
+
+
+# --- Check 17: released changelog entries must not be edited (#155) ----------
+
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
+
+
+def _edited_released_entries(changelog_lines):
+    """
+    The changelog entries below the new one that the diff edits, as
+    (count, names): how many distinct entries were touched and the
+    "pkg version" of those whose header is visible in the diff.
+
+    Works on the diff, not a parsed changelog (python-debian needs the whole
+    file; a diff has fragments). Walking each hunk in old-file order, the
+    entry a line belongs to is the last header seen as context or as a
+    removed line; added lines before the first such header in a hunk that
+    starts at the top of the file are the new entry. Any other added or
+    removed line -- whitespace and line endings included (seb128: those get
+    bounced by hand today) -- edits history.
+
+    Returns None when no new entry was added at the top (Check 9's case, or
+    an in-place edit of an UNRELEASED top entry). Edits to an UNRELEASED
+    entry are fine (never uploaded); an edit whose entry header isn't in its
+    hunk counts unless the old top entry itself is UNRELEASED, the only
+    entry it could then be part of without being released.
+    """
+    new_entry = False
+    top_suite = None
+    edited = []  # one key per edited entry: "pkg version", or the hunk's index
+    current = None
+    at_top = False
+    hunk_index = 0
+    for line in changelog_lines or []:
+        hunk = _HUNK_HEADER_RE.match(line)
+        if hunk:
+            at_top = hunk.group(1) in ("0", "1")
+            current = None
+            hunk_index += 1
+            continue
+        if not line or line[0] not in " +-" or line.startswith(("--- ", "+++ ")):
+            continue  # file headers, "\ No newline at end of file"
+        sign, header = line[0], _CHANGELOG_HEADER_RE.match(line[1:])
+        if sign in " -" and header:
+            current = header
+            if top_suite is None and at_top:
+                top_suite = header.group("suite").lower()
+        if sign == " ":
+            continue
+        if current is None and at_top:
+            new_entry = new_entry or (sign == "+" and header is not None)
+            continue  # the new entry's own lines
+        suite = current.group("suite").lower() if current else top_suite
+        if suite == "unreleased":
+            continue
+        key = f"{current.group('pkg')} {current.group('version')}" if current else hunk_index
+        if key not in edited:
+            edited.append(key)
+    if not new_entry:
+        return None
+    return len(edited), [key for key in edited if isinstance(key, str)]
+
+
+def _released_entry_edit_finding(url, count, names):
+    listed = f" ({', '.join(f'`{n}`' for n in names)})" if names else ""
+    what = (
+        f"an existing `debian/changelog` entry{listed}"
+        if count == 1
+        else f"existing `debian/changelog` entries{listed}"
+    )
+    verb = "was" if count == 1 else "were"
+    logger.info("[%s] the diff edits released changelog entries: %s.", url, names or count)
+    return Finding(
+        "incomplete",
+        f"The diff also changes {what} that {verb} already uploaded. Released entries are "
+        "a record of past uploads and shouldn't be edited: please limit your changelog "
+        "changes to the new entry at the top.",
+    )
+
+
+def check_released_changelog_edit(url, lp_obj, lp_client):
+    """
+    Check 17: the diff edits a changelog entry that was already uploaded
+    (design_journal.md #155; trigger: python-awscurl MP #511734, which
+    reworded the 0.44-0ubuntu1 entry and added a bullet to it while adding
+    0.44-0ubuntu2 on top). Released entries record past uploads; a sponsor
+    has to undo such edits before uploading.
+
+    Blocking, no whitespace exception (seb128: editor-normalized spacing or
+    line endings in old entries is a common bounce). Skipped: merges (their
+    diffs legitimately rewrite changelog history, #26), diffs that add no
+    new entry (Check 9's business), edits to an UNRELEASED entry.
+
+    MPs read the preview diff; bugs the debdiff under review
+    (attachments.review_target, per series since #154). Returns an
+    incomplete Finding, False, or None (diff/attachment unreadable, or merge
+    detection failed -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type in ("bug", "bug_task"):
+        bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        if _MERGE_BUG_TITLE_RE.match(getattr(bug, "title", "") or ""):
+            return False
+        target = attachments.review_target(bug)
+        if target is None:
+            return None
+        if target is False:
+            return False
+        edited = _edited_released_entries(attachments.classify_diff(target[1])["changelog_lines"])
+        if not edited or not edited[0]:
+            return False
+        return _released_entry_edit_finding(url, *edited)
+    if resource_type != "branch_merge_proposal":
+        return False
+
+    text = diff_text(lp_obj)
+    if text is None:
+        return None
+    if text is False or not text.strip():
+        return False
+    edited = _edited_released_entries(attachments.classify_diff(text)["changelog_lines"])
+    if not edited or not edited[0]:
+        logger.debug("check_released_changelog_edit: no released entry edited.")
+        return False
+    merge = _is_merge_proposal(lp_obj)
+    if merge is None:
+        return None
+    if merge:
+        logger.debug("check_released_changelog_edit: merge MP; history rewrites expected.")
+        return False
+    return _released_entry_edit_finding(url, *edited)

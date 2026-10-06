@@ -3676,3 +3676,32 @@ each action reaching Launchpad.
   bounced, one uploaded series dropping out, all uploaded closing once, a
   bug-wide blocker bouncing every series, single-series unchanged. The
   four multi-series ones fail without the `main` change.
+
+## 155. Check 17: Released Changelog Entries Aren't Edited
+
+* **Request (seb128):** python-awscurl MP #511734 adds 0.44-0ubuntu2 and,
+  in the same diff, rewords the 0.44-0ubuntu1 entry below it ("0.44" ->
+  "0.44.") and adds a bullet to it. That entry was uploaded; its text is
+  the record of that upload, and a sponsor has to undo the edit before
+  uploading. Nothing caught it: Check 9 only asks whether a new entry
+  exists, Check 5 only reads the new entry. Not formally documented that
+  seb128 knows of, so the wording gives the reason rather than a link.
+* **Blocking, and no whitespace exception** (seb128): editors normalizing
+  spacing or line endings in old entries is a common bounce today.
+* **Read from the diff, not a parsed changelog.** seb128 suggested
+  python-debian's parser; it needs the whole file and a diff carries
+  fragments. The diff's structure is enough: walking each changelog hunk
+  in old-file order, a line belongs to the last header seen as context or
+  removed; added lines before the first such header in the top hunk are
+  the new entry; any other `+`/`-` line edits history. `classify_diff`
+  already isolated the changelog section for MP diffs and debdiffs alike.
+* **Skipped:** merges (their diffs legitimately rewrite changelog history,
+  #26), diffs adding no new entry (Check 9; also an in-place edit of an
+  UNRELEASED top entry), and edits to an UNRELEASED entry. An edit whose
+  entry header isn't in its hunk (deep in history) still counts, unnamed,
+  unless the old top entry itself is UNRELEASED.
+* Per series on multi-series bugs, like every debdiff check since #154.
+* Tests: the trigger hunk with its exact message, a new entry alone,
+  a whitespace-only edit, two entries named, an unnamed deep edit,
+  UNRELEASED, no new entry, merge MP/bug, unreadable diff, bug debdiff --
+  all fail without the change. Dry-run verified on the trigger MP.

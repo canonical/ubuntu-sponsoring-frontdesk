@@ -140,6 +140,7 @@ debdiffs all target one series gets the plain comment, without headings.
 | 14 | [SRU version precedence](#check-14-sru-version-precedence) | MP + bug | A newer series publishing a *lower* version (so the fix hasn't landed there yet), or a proposed version already used somewhere in archive history. | incomplete. |
 | 15 | [No-change rebuild version](#check-15-no-change-rebuild-version) | MP + bug | A no-change rebuild (only `debian/changelog`, plus `update-maintainer`'s `debian/control` lines) using an `ubuntuN` instead of a `buildN` revision. | incomplete. |
 | 16 | [DEP-3 patch header](#check-16-dep-3-patch-header) | MP + bug | A newly added `debian/patches/` patch with no DEP-3 header (no `Description:`/`Subject:`). Merges skipped; modified patches not judged. | incomplete. |
+| 17 | [Released changelog entry edited](#check-17-released-changelog-entry-edited) | MP + bug | The diff adds a new changelog entry but also changes an older, already-uploaded one -- whitespace included. Merges and `UNRELEASED` entries skipped. | incomplete. |
 
 ## What the bot posts
 
@@ -378,6 +379,18 @@ to two parts, each with its own bullet list of findings:
 
 `{noun}`/`{verb}` read "patch ... has" or "patches ... have"; `{url}` is
 https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/patches/
+
+### Check 17: released changelog entry edited
+
+`check_released_changelog_edit`, design #155.
+
+> The diff also changes {what} that {verb} already uploaded. Released
+> entries are a record of past uploads and shouldn't be edited: please limit
+> your changelog changes to the new entry at the top.
+
+`{what}` is "an existing `debian/changelog` entry (`{pkg} {version}`)" or
+"existing `debian/changelog` entries (...)", naming each entry whose header
+is visible in the diff; `{verb}` is "was"/"were".
 
 ## LLM-assisted reviews
 

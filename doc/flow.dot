@@ -89,8 +89,10 @@ digraph SponsoringBot {
     c11 -> c13;
     c13 -> c14;
     c14 -> c15;
+    c17 [label="Check 17: released_changelog_edit (#155)\nnew entry added, but an older,\nalready-uploaded entry edited too\n(whitespace included; merges and\nUNRELEASED skipped)\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c15 -> c16;
-    c16 -> c12;
+    c16 -> c17;
+    c17 -> c12;
 
     // ---- inconclusive gate (#31 addendum) ----
     incgate [label="any check inconclusive?", shape=diamond, fillcolor="#FFF9C4"];

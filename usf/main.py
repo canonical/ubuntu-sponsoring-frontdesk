@@ -580,6 +580,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         elif result:
             add("check_dep3_patch_header", result)
 
+        # Check 17: an already-uploaded changelog entry edited (#155).
+        # Deterministic, pre-gate.
+        result = checks.check_released_changelog_edit(url, lp_obj, lp_client)
+        checkpoint("check_released_changelog_edit")
+        logger.debug("check_released_changelog_edit -> %s", result)
+        if result is None:
+            mark_inconclusive("check_released_changelog_edit")
+        elif result:
+            add("check_released_changelog_edit", result)
+
         # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
         # Deterministic, pre-gate.
         result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)
