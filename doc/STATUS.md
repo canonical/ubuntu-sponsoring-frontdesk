@@ -1,6 +1,6 @@
 # Status & Handoff
 
-_Last updated: 2026-10-05_
+_Last updated: 2026-10-06_
 
 Snapshot of where the bot stands, how to run it, and what's next. Architectural
 rationale lives in `design_journal.md`.
@@ -1311,14 +1311,14 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 
 ## Backlog: metrics/stats follow-ups (#131)
 
-- **70% of live passes end inconclusive** (#138, measured over 30 days /
-  205 items). The reason is now recorded per item, but nothing has been
-  diagnosed yet: the next `--all` runs will show which lookup is failing.
-  This is the top open question about whether the bot is actually working.
-- **The bot account can't unsubscribe `~ubuntu-sponsors`**, so those writes
-  are declined and seb128 has been doing them by hand. Needs a dedicated
-  account that is a member of the team (his note, 2026-10-01). Until then
-  the "declined writes" numbers say nothing about finding quality.
+- ~~**70% of live passes end inconclusive** (#138)~~ -- resolved in
+  practice: the first full dry-run under the charm (2026-10-05) had 1
+  inconclusive item of 60, a link attachment fixed by #150, and seb128's
+  interactive pass the next day had none.
+- ~~**The bot account can't unsubscribe `~ubuntu-sponsors`**~~ -- DONE: the
+  `ubuntu-sponsoring-helper` account (#78's privileged helper) unsubscribed
+  the team live on bug #2087772 (2026-10-05), via the charm's
+  `lp-sponsor-credentials`.
 
 - `audit.jsonl` grows unboundedly (231 KB for ~2 months of runs). Small by
   current standards -- watch it rather than build rotation now.
@@ -1341,17 +1341,46 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
   grace, with two labels predating #128/#134. `AGENTS.md` now carries the
   upkeep rule.
 
-## The charm (#146) -- built, not yet run for real
+## The charm (#146) -- running for real, `testing` model
 
 `src/` is a machine charm deploying `usf/`; `doc/CHARM.md` has the decisions
-and how to deploy it. Deployed and iterated on a 26.04 LXD model with dummy
-secrets: install, statuses, the timer following `mode`, the lock and all
-three actions work, and `make charm-integration` checks that wiring.
+and how to deploy it. The `testing` LXD model runs it with the real secrets
+(both Launchpad accounts, opencode, Mattermost), `llm-model` pinned to
+`github-copilot/claude-sonnet-5.5`, charm revision 9 = `main` at #155,
+`mode=off` while seb128 keeps running `--interactive` passes himself.
 
-- **Next: a real dry-run under the charm.** Real `lp-triager-credentials`
-  and `opencode-auth` secrets, `mode=dry-run`, and a human reading the first
-  pass's journal and `stats` -- nothing has triaged a real item there yet.
-  `mode=yes` stays blocked on the account question (backlog above).
+**Verified live (2026-10-05/06):**
+- real login as `~ubuntu-sponsoring-bot` (and a refused token now fails
+  the pass up front, #147); opencode under the tool-less agent on the unit;
+- a full `--all --dry-run` pass (60 items, 34 LLM calls, $0.38) and a full
+  `--interactive` pass by seb128 over the queue;
+- the first unattended writes under the charm: a comment + Needs Fixing
+  vote (templ MP #512397, the team review slot left open) and a close with
+  the helper unsubscribing `~ubuntu-sponsors` (bug #2087772);
+- the `triage`, `stats` and `run-now` actions, the timer following `mode`,
+  and the pass lock.
+
+**Found and fixed along the way:** #149 (Check 5 bounced a bug citing
+itself), #150 (link attachments kept an MP inconclusive), #152 ("point"
+vs "points"), #153/#154 (only the newest debdiff was reviewed -- now every
+series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
+17 (edited released changelog entry, #155).
+
+- **Next: decide how production starts.** A first `mode=yes` pass from an
+  empty `state.db` re-reviews the whole queue and stacks a second comment
+  wherever the wording or the checks changed since the last one (seb128
+  declined several such writes in his interactive pass). Options: copy the
+  old setup's `state.db` (keeping `audit.jsonl` empty, so stats still start
+  at zero), or a bot rule to stay quiet on a revision it already commented
+  on. seb128 is thinking about it; `testing` stays `mode=off` meanwhile --
+  its state still holds those declined writes as pending.
+- **Then:** production model, `mode=yes`, first pass watched (seb128 runs it
+  himself), the old setup's runs stopped.
+- **`make charm-integration` not re-run** since the action-timeout fix and
+  revisions 8-9; those were checked by hand on the unit. Worth a run before
+  production.
+- **Later:** Charmhub registration and a publish workflow (`promote.yml` is
+  ready but has nothing to promote); live output for the `triage` action.
 - **Backlog: where state lives.** `state.db` and `audit.jsonl` sit on the
   unit's rootfs; seb128 handles backups by hand for now. Juju storage
   (survives unit replacement only if detached and re-attached) vs. pushing
@@ -1361,6 +1390,13 @@ three actions work, and `make charm-integration` checks that wiring.
 - **Backlog: drop the ubuntu-lint PPA** from `src/frontdesk.py` once
   `python3-ubuntu-lint` is SRUed to 26.04 (planned), so the unit takes it
   from the archive. The PPA currently has 0.2.3, without the #129 fix.
+- **Backlog: limits deliberately left in place**, to revisit if live data
+  pushes on them: Check 16 doesn't judge modified patches or header
+  quality; Check 17 can't name an edited entry whose header isn't in the
+  diff; on a multi-series bug a plain patch is dropped when debdiffs exist;
+  #149's note is hidden behind another mismatched bug number.
+- **Upstream, optional:** lazr.restfulclient's `HostedFileBuffer` raises at
+  finalization after a failed `open()` (#150; reproducer handed to seb128).
 
 ## Watch list (no work, just things to notice)
 
@@ -1373,9 +1409,13 @@ three actions work, and `make charm-integration` checks that wiring.
   `checks.lint_handles_dotted_revisions()` (#141) starts logging, once per
   run, that the #129 workaround can be deleted and Check 13 can cover NMU'd
   packages again.
-- **Inconclusive rate after #140.** The last measured pass had 3 of 55 items
-  inconclusive, all of them archive-changelog timeouts. With the 45s budget
-  that should be at or near zero; `stats.py` names the failing check if not.
+- **Inconclusive rate after #140.** Confirmed low: 1 of 60 on the first
+  charm dry-run (2026-10-05, a link attachment, fixed by #150), 0 in the
+  following interactive pass. Keep an eye on it via `stats.py`.
+- **`vulnerability_patches` attachments (#150).** Handled from the qastaging
+  API docs only; re-check against a real one once Launchpad deploys it.
+- **No Mattermost notification has fired from the charm yet** -- the
+  webhook secret is in place but no anomaly has come up.
 
 ## Known residual edges (documented in code)
 
