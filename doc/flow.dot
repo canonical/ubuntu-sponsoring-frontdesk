@@ -61,6 +61,8 @@ digraph SponsoringBot {
     c4 [label="Check 4: empty_diff\n(closing)", shape=box, fillcolor="#FFFFFF"];
     c5 [label="Check 5: changelog_bug_reference (#25/#63)\nMPs + debdiff attachments on bugs\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c6 [label="Check 6: stale_version (#27/#65)\nMPs + debdiff attachments on bugs\nmixed: closing (done/pending),\nqueued = in upload queue (#55)\nor incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    seriesnote [label="bug with debdiffs for 2+ series (#154):\nChecks 5-16 run once per series, on\nthat series' newest debdiff; findings\ngrouped by series. Check 6 'already\nuploaded' only drops its series -- the\nbug closes when every series has; only\nthe blocked series' tasks go Incomplete", shape=note, fillcolor="#FFFDE7"];
+    c5 -> seriesnote [style=dotted, arrowhead=none];
     incnote [label="every check can also return None:\na lookup failed, not \"nothing to flag\"\n-> inconclusive=True, keep going (#28)", shape=note, fillcolor="#FFFDE7"];
     c6 -> incnote [style=dotted, arrowhead=none];
 

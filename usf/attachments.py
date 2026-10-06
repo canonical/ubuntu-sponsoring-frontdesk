@@ -20,6 +20,7 @@ attachment bytes" note only ever mattered for the LLM's tooling, and
 canonical/lpcli#23 was resolved 2026-07-10 anyway).
 """
 
+import contextlib
 import gzip
 import io
 import logging
@@ -45,11 +46,30 @@ _DIFF_MARKER_RE = re.compile(r"^(diff --git |--- |Index: )", re.MULTILINE)
 # the same attachment within one item's pass.
 _review_target_cache = None
 
+# #154: while a multi-series bug's per-series debdiffs are reviewed one at
+# a time, review_target answers with the debdiff in focus instead of the
+# newest one -- so every bug-side check reviews that series without each
+# needing to know about series. (bug self_link, (attachment, text)).
+_focus = None
+
 
 def reset_cache():
     """Called by main at the start of each item and by tests."""
-    global _review_target_cache
+    global _review_target_cache, _focus
     _review_target_cache = None
+    _focus = None
+
+
+@contextlib.contextmanager
+def focused(bug, attachment, text):
+    """Make review_target(bug) return (attachment, text) inside the block."""
+    global _focus
+    previous = _focus
+    _focus = (getattr(bug, "self_link", None), (attachment, text))
+    try:
+        yield
+    finally:
+        _focus = previous
 
 
 def patch_attachments(bug):
@@ -194,9 +214,12 @@ def review_target(bug):
 
     Returns (attachment, text), None (a fetch failed before a usable
     candidate was found -- retriable), or False (no usable candidate --
-    stable). Memoized per bug per run."""
+    stable). Memoized per bug per run. Inside `focused(...)`, the debdiff
+    in focus instead (#154)."""
     global _review_target_cache
     key = getattr(bug, "self_link", None)
+    if _focus is not None and _focus[0] == key:
+        return _focus[1]
     if key is not None and _review_target_cache and _review_target_cache[0] == key:
         logger.debug("review_target: reusing already-fetched attachment")
         return _review_target_cache[1]

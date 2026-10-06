@@ -3624,3 +3624,55 @@ each action reaching Launchpad.
   devel-only. The test file's `_Bug` stub gained the `attachments` list
   every real bug has: `review_target` used to swallow its absence, hiding
   that the stub didn't match the API (the #145 theme again).
+
+## 154. Every Series' Debdiff Is Reviewed, Grouped by Series
+
+* **Found with #153** (openblas bug #2169719, resolute + stonking
+  debdiffs): every bug-side check read one debdiff, the newest
+  (`attachments.review_target`, #62's "newest-only for now"). On an SRU
+  with one debdiff per series that is usually the devel one, so the
+  stable series -- the SRU itself -- never had its version, bug reference,
+  patches or SRU version convention checked.
+* **Agreed with seb128:** review every series' newest debdiff, and group
+  the comment *by series* -- his reasoning, which I had no argument
+  against: each series then reads like its own ticket, and it's obvious at
+  a glance which ones are blocked. Findings about the bug as a whole (SRU
+  template, newer-series-first) come first, ungrouped; then one
+  `=== series (file) ===` block per series, oldest first, "Nothing to fix."
+  for a clean one. A `===` heading rather than blank lines (Launchpad may
+  collapse those) or dashes (the footer starts with the `-- ` signature
+  separator).
+* **How:** `checks.bug_review_targets` picks the newest usable debdiff per
+  target series (suite from its own changelog stanza, pocket stripped) and
+  orders them by `supported_series_ordered`. With two or more series,
+  `main` runs Checks 5-16 once per target with `attachments.focused(...)`
+  making `review_target` answer with that debdiff -- so no check had to
+  learn about series -- and tags each finding (`Finding.group`). With one
+  series nothing changes, so the common case's comment is identical.
+  With several, a plain patch is dropped (the debdiffs supersede it) and a
+  debdiff whose suite can't be read (or is UNRELEASED) is its own block
+  under its filename.
+* **Closing per series:** Check 6's bug-side "already uploaded" used to
+  comment and unsubscribe from inside the check; under
+  `checks.defer_bug_close()` it only reports, and `main` decides: a series
+  already uploaded (or waiting in the upload queue) gets a one-line note
+  instead of a review, and only when every series is done does the bug
+  close -- one comment naming each upload. All uploaded but some still
+  queued -> PENDING_UPLOAD_QUEUE, as for a single debdiff.
+* **Incomplete per series:** only the tasks of series with a blocker
+  (#127's scoping, once per blocked series with its debdiff in focus); a
+  blocker about the bug as a whole blocks every series still under review.
+* **Cost:** the debdiff checks' archive/Launchpad lookups once per series;
+  LLM calls unchanged. Reading every attachment also means one unfetchable
+  old attachment makes the pass inconclusive, which Check 7 already did.
+* **Wording new beyond the agreed layout** (shown to seb128 before
+  committing): the per-series "Already uploaded as `pkg version` [and
+  waiting in the upload queue], nothing left to do for this series.", and
+  the all-uploaded close naming several uploads.
+* Tests: target selection (ordering, superseded iterations, plain patch,
+  filename fallback, fetch failure, focus), the exact grouped comment, and
+  end to end through `main` with the checks stubbed to react to the
+  focused debdiff -- both series reviewed and only the blocked one
+  bounced, one uploaded series dropping out, all uploaded closing once, a
+  bug-wide blocker bouncing every series, single-series unchanged. The
+  four multi-series ones fail without the `main` change.

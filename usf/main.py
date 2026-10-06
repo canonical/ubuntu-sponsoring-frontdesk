@@ -48,6 +48,8 @@ class ItemReport:
 
     def add(self, check, finding):
         entry = {"check": check, "tier": finding.tier, "kind": finding.kind}
+        if finding.group:
+            entry["group"] = finding.group  # #154: which series' debdiff
         self.findings.append(entry)
         self._entries.append((finding, entry))
 
@@ -141,6 +143,28 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
             )
         logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
         logger.info("--- Finished triage for: %s ---\n", url)
+
+
+def _blocked_series_task_targets(lp_obj, lp_client, review_targets, group_layout, findings):
+    """#154: the Incomplete scope on a multi-series bug -- the tasks of the
+    series with a blocking finding (each via bounce_task_targets, #127,
+    with that series' debdiff in focus). A blocking finding about the bug
+    as a whole blocks every series still under review. None (= every open
+    task) as soon as one series can't be scoped."""
+    open_labels = [label for label, note in group_layout if note is None]
+    blocked = {f.group for f in findings if f.tier == "incomplete"}
+    labels = open_labels if None in blocked else [lb for lb in open_labels if lb in blocked]
+    bug = lp_obj.bug if lp_obj.resource_type_link.endswith("#bug_task") else lp_obj
+    names = set()
+    for target in review_targets:
+        if target.label not in labels:
+            continue
+        with attachments.focused(bug, target.attachment, target.text):
+            scoped = checks.bounce_task_targets(lp_obj, lp_client)
+        if scoped is None:
+            return None
+        names |= scoped
+    return names or None
 
 
 def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start, report):
@@ -437,26 +461,197 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
-    # Check 5: changelog LP bug reference sanity (incomplete tier)
-    result = checks.check_changelog_bug_reference(url, lp_obj, lp_client)
-    checkpoint("check_changelog_bug_reference")
-    logger.debug("check_changelog_bug_reference -> %s", result)
-    if result is None:
-        mark_inconclusive("check_changelog_bug_reference")
-    elif result:
-        add_finding("check_changelog_bug_reference", result)
+    def run_target_checks(add):
+        """Checks 5-16 against the item's review target: the MP's diff, or
+        the bug's debdiff (attachments.review_target -- the newest one, or
+        on a multi-series bug the one in focus, #154). Findings go to
+        `add`. Returns Check 6's closing outcome ("done"/"pending"/
+        "queued") as soon as it has one, else None."""
+        # Check 5: changelog LP bug reference sanity (incomplete tier)
+        result = checks.check_changelog_bug_reference(url, lp_obj, lp_client)
+        checkpoint("check_changelog_bug_reference")
+        logger.debug("check_changelog_bug_reference -> %s", result)
+        if result is None:
+            mark_inconclusive("check_changelog_bug_reference")
+        elif result:
+            add("check_changelog_bug_reference", result)
 
-    # Check 6: proposed version vs. archive (stale / already-uploaded).
-    version_bounced = False
-    # Mixed tiers: returns a Finding (incomplete -- stale/duplicate version),
-    # "done"/"pending" (closing -- already landed), "queued" (uploaded,
-    # waiting in the series' upload queue -- deferred, #55), False, or None.
-    outcome = checks.check_stale_version(url, lp_obj, lp_client)
-    checkpoint("check_stale_version")
-    logger.debug("check_stale_version -> %s", outcome)
-    if outcome is None:
-        mark_inconclusive("check_stale_version")
-    elif outcome == "done":
+        # Check 6: proposed version vs. archive (stale / already-uploaded).
+        version_bounced = False
+        # Mixed tiers: returns a Finding (incomplete -- stale/duplicate version),
+        # "done"/"pending" (closing -- already landed), "queued" (uploaded,
+        # waiting in the series' upload queue -- deferred, #55), False, or None.
+        outcome = checks.check_stale_version(url, lp_obj, lp_client)
+        checkpoint("check_stale_version")
+        logger.debug("check_stale_version -> %s", outcome)
+        if outcome is None:
+            mark_inconclusive("check_stale_version")
+        elif outcome in ("done", "pending", "queued"):
+            return outcome
+        elif outcome:
+            add("check_stale_version", outcome)
+            # #122 (live, alsa-ucm-conf MP #509669): Check 6 already asked for a
+            # rebase with a new version number, so Check 12's convention advice
+            # about that same version is a consequence of it, not a separate
+            # point -- and its "expected" value is just the bump Check 6 asked
+            # for. Skip it.
+            version_bounced = True
+
+        # Check 8: upstream source edited directly instead of via
+        # debian/patches (#60). Deterministic, so it runs with checks 1-6
+        # before the inconclusive gate.
+        result = checks.check_direct_source_edit(url, lp_obj, lp_client)
+        checkpoint("check_direct_source_edit")
+        logger.debug("check_direct_source_edit -> %s", result)
+        if result is None:
+            mark_inconclusive("check_direct_source_edit")
+        elif result:
+            add("check_direct_source_edit", result)
+
+        # Check 9: no debian/changelog entry in the diff (#61). Deterministic,
+        # runs with checks 1-6/8 before the inconclusive gate.
+        result = checks.check_missing_changelog_stanza(url, lp_obj, lp_client)
+        checkpoint("check_missing_changelog_stanza")
+        logger.debug("check_missing_changelog_stanza -> %s", result)
+        if result is None:
+            mark_inconclusive("check_missing_changelog_stanza")
+        elif result:
+            add("check_missing_changelog_stanza", result)
+
+        # Check 10: a plain code patch on a bug needs to become a debdiff
+        # (#64). Deterministic, pre-gate.
+        result = checks.check_patch_not_debdiff(url, lp_obj, lp_client)
+        checkpoint("check_patch_not_debdiff")
+        logger.debug("check_patch_not_debdiff -> %s", result)
+        if result is None:
+            mark_inconclusive("check_patch_not_debdiff")
+        elif result:
+            add("check_patch_not_debdiff", result)
+
+        # Check 11: proposed version carries a ~ppaN suffix (#90). Deterministic,
+        # pre-gate.
+        result = checks.check_ppa_version_suffix(url, lp_obj, lp_client)
+        checkpoint("check_ppa_version_suffix")
+        logger.debug("check_ppa_version_suffix -> %s", result)
+        if result is None:
+            mark_inconclusive("check_ppa_version_suffix")
+        elif result:
+            add("check_ppa_version_suffix", result)
+
+        # Check 13: SRU version-suffix convention (#109), via ubuntu-lint --
+        # skipped when Check 6 already bounced the version itself (#122).
+        if not version_bounced:
+            result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)
+            checkpoint("check_sru_version_suffix_convention")
+            logger.debug("check_sru_version_suffix_convention -> %s", result)
+            if result is None:
+                mark_inconclusive("check_sru_version_suffix_convention")
+            elif result:
+                add("check_sru_version_suffix_convention", result)
+
+        # Check 14: SRU version-precedence correctness (#110). Deterministic,
+        # pre-gate.
+        result = checks.check_sru_version_newer_series_precedence(url, lp_obj, lp_client)
+        checkpoint("check_sru_version_newer_series_precedence")
+        logger.debug("check_sru_version_newer_series_precedence -> %s", result)
+        if result is None:
+            mark_inconclusive("check_sru_version_newer_series_precedence")
+        elif result:
+            add("check_sru_version_newer_series_precedence", result)
+
+        # Check 15: a no-change rebuild must use a buildN revision (#132).
+        # Deterministic, pre-gate; unrelated to the SRU version checks (a
+        # rebuild is part of a devel transition, never an SRU).
+        result = checks.check_no_change_rebuild_version(url, lp_obj, lp_client)
+        checkpoint("check_no_change_rebuild_version")
+        logger.debug("check_no_change_rebuild_version -> %s", result)
+        if result is None:
+            mark_inconclusive("check_no_change_rebuild_version")
+        elif result:
+            add("check_no_change_rebuild_version", result)
+
+        # Check 16: a new debian/patches patch needs a DEP-3 header (#151).
+        # Deterministic, pre-gate.
+        result = checks.check_dep3_patch_header(url, lp_obj, lp_client)
+        checkpoint("check_dep3_patch_header")
+        logger.debug("check_dep3_patch_header -> %s", result)
+        if result is None:
+            mark_inconclusive("check_dep3_patch_header")
+        elif result:
+            add("check_dep3_patch_header", result)
+
+        # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
+        # Deterministic, pre-gate.
+        result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)
+        checkpoint("check_xsbc_original_maintainer")
+        logger.debug("check_xsbc_original_maintainer -> %s", result)
+        if result is None:
+            mark_inconclusive("check_xsbc_original_maintainer")
+        elif result:
+            add("check_xsbc_original_maintainer", result)
+
+        return None
+
+    # #154: a bug whose debdiffs target several series gets Checks 5-16 once
+    # per series, each finding tagged with its series; [] keeps the
+    # single-target path (MPs, and bugs with one series), unchanged.
+    review_targets = []
+    if resource_type in ("bug", "bug_task"):
+        bug_for_targets = lp_obj.bug if resource_type == "bug_task" else lp_obj
+        review_targets = checks.bug_review_targets(bug_for_targets)
+        checkpoint("bug_review_targets")
+        if review_targets is None:
+            mark_inconclusive("bug_review_targets")
+            review_targets = []
+    group_layout = None
+
+    if len(review_targets) < 2:
+        outcome = run_target_checks(add_finding)
+    else:
+        group_layout = []
+        closed = {}
+        for target in review_targets:
+            logger.info("Reviewing the %s debdiff.", target.label)
+            buffered = []
+            with (
+                attachments.focused(bug_for_targets, target.attachment, target.text),
+                checks.defer_bug_close(),
+            ):
+                result = run_target_checks(
+                    lambda check, f, label=target.label: buffered.append(
+                        (check, f._replace(group=label))
+                    )
+                )
+            if result in ("done", "pending", "queued"):
+                # Already uploaded for this series: nothing to nitpick there
+                # (the closing tier's rule, per series).
+                closed[target.label] = result
+                note = checks.already_uploaded_series_note(target, result)
+                group_layout.append((target.label, note))
+                continue
+            group_layout.append((target.label, None))
+            for check, finding in buffered:
+                add_finding(check, finding)
+        outcome = None
+        if len(closed) == len(review_targets):
+            if all(result == "done" for result in closed.values()):
+                if not inconclusive_reasons:
+                    logger.info(
+                        "Every series' debdiff is already uploaded. Commenting and "
+                        "unsubscribing ~ubuntu-sponsors."
+                    )
+                    lp_client.comment(
+                        bug_for_targets,
+                        checks.already_uploaded_comment(
+                            [(t.package, t.version) for t in review_targets]
+                        ),
+                    )
+                    lp_client.unsubscribe_sponsors(bug_for_targets)
+                outcome = "done"
+            else:
+                outcome = "queued"
+
+    if outcome == "done":
         state_manager.update_status(
             url,
             "DONE",
@@ -464,7 +659,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             facts=persistable_facts(),
         )
         return
-    elif outcome == "pending":
+    if outcome == "pending":
         # The change is (almost certainly) already in the archive, just too
         # recently for git-ubuntu's importer to have auto-closed the MP yet.
         # Everything stays quiet -- including any findings collected above:
@@ -483,7 +678,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "deferring in case git-ubuntu's importer auto-closes this MP first.",
         )
         return
-    elif outcome == "queued":
+    if outcome == "queued":
         # Already uploaded, waiting in the target series' upload queue
         # (typically an SRU awaiting the SRU team, design #55). Sponsoring
         # is done; queue review isn't the sponsors' job -- but the MP isn't
@@ -500,107 +695,6 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             "while it waits.",
         )
         return
-    elif outcome:
-        add_finding("check_stale_version", outcome)
-        # #122 (live, alsa-ucm-conf MP #509669): Check 6 already asked for a
-        # rebase with a new version number, so Check 12's convention advice
-        # about that same version is a consequence of it, not a separate
-        # point -- and its "expected" value is just the bump Check 6 asked
-        # for. Skip it.
-        version_bounced = True
-
-    # Check 8: upstream source edited directly instead of via
-    # debian/patches (#60). Deterministic, so it runs with checks 1-6
-    # before the inconclusive gate.
-    result = checks.check_direct_source_edit(url, lp_obj, lp_client)
-    checkpoint("check_direct_source_edit")
-    logger.debug("check_direct_source_edit -> %s", result)
-    if result is None:
-        mark_inconclusive("check_direct_source_edit")
-    elif result:
-        add_finding("check_direct_source_edit", result)
-
-    # Check 9: no debian/changelog entry in the diff (#61). Deterministic,
-    # runs with checks 1-6/8 before the inconclusive gate.
-    result = checks.check_missing_changelog_stanza(url, lp_obj, lp_client)
-    checkpoint("check_missing_changelog_stanza")
-    logger.debug("check_missing_changelog_stanza -> %s", result)
-    if result is None:
-        mark_inconclusive("check_missing_changelog_stanza")
-    elif result:
-        add_finding("check_missing_changelog_stanza", result)
-
-    # Check 10: a plain code patch on a bug needs to become a debdiff
-    # (#64). Deterministic, pre-gate.
-    result = checks.check_patch_not_debdiff(url, lp_obj, lp_client)
-    checkpoint("check_patch_not_debdiff")
-    logger.debug("check_patch_not_debdiff -> %s", result)
-    if result is None:
-        mark_inconclusive("check_patch_not_debdiff")
-    elif result:
-        add_finding("check_patch_not_debdiff", result)
-
-    # Check 11: proposed version carries a ~ppaN suffix (#90). Deterministic,
-    # pre-gate.
-    result = checks.check_ppa_version_suffix(url, lp_obj, lp_client)
-    checkpoint("check_ppa_version_suffix")
-    logger.debug("check_ppa_version_suffix -> %s", result)
-    if result is None:
-        mark_inconclusive("check_ppa_version_suffix")
-    elif result:
-        add_finding("check_ppa_version_suffix", result)
-
-    # Check 13: SRU version-suffix convention (#109), via ubuntu-lint --
-    # skipped when Check 6 already bounced the version itself (#122).
-    if not version_bounced:
-        result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)
-        checkpoint("check_sru_version_suffix_convention")
-        logger.debug("check_sru_version_suffix_convention -> %s", result)
-        if result is None:
-            mark_inconclusive("check_sru_version_suffix_convention")
-        elif result:
-            add_finding("check_sru_version_suffix_convention", result)
-
-    # Check 14: SRU version-precedence correctness (#110). Deterministic,
-    # pre-gate.
-    result = checks.check_sru_version_newer_series_precedence(url, lp_obj, lp_client)
-    checkpoint("check_sru_version_newer_series_precedence")
-    logger.debug("check_sru_version_newer_series_precedence -> %s", result)
-    if result is None:
-        mark_inconclusive("check_sru_version_newer_series_precedence")
-    elif result:
-        add_finding("check_sru_version_newer_series_precedence", result)
-
-    # Check 15: a no-change rebuild must use a buildN revision (#132).
-    # Deterministic, pre-gate; unrelated to the SRU version checks (a
-    # rebuild is part of a devel transition, never an SRU).
-    result = checks.check_no_change_rebuild_version(url, lp_obj, lp_client)
-    checkpoint("check_no_change_rebuild_version")
-    logger.debug("check_no_change_rebuild_version -> %s", result)
-    if result is None:
-        mark_inconclusive("check_no_change_rebuild_version")
-    elif result:
-        add_finding("check_no_change_rebuild_version", result)
-
-    # Check 16: a new debian/patches patch needs a DEP-3 header (#151).
-    # Deterministic, pre-gate.
-    result = checks.check_dep3_patch_header(url, lp_obj, lp_client)
-    checkpoint("check_dep3_patch_header")
-    logger.debug("check_dep3_patch_header -> %s", result)
-    if result is None:
-        mark_inconclusive("check_dep3_patch_header")
-    elif result:
-        add_finding("check_dep3_patch_header", result)
-
-    # Check 12: first Ubuntu delta missing XSBC-Original-Maintainer (#93).
-    # Deterministic, pre-gate.
-    result = checks.check_xsbc_original_maintainer(url, lp_obj, lp_client)
-    checkpoint("check_xsbc_original_maintainer")
-    logger.debug("check_xsbc_original_maintainer -> %s", result)
-    if result is None:
-        mark_inconclusive("check_xsbc_original_maintainer")
-    elif result:
-        add_finding("check_xsbc_original_maintainer", result)
 
     if inconclusive_reasons:
         # Design #31's addendum: the aggregated comment presents itself as
@@ -816,7 +910,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             )
             findings = blocking_findings
         aggregated = checks.render_findings_comment(
-            findings, for_bug=resource_type in ("bug", "bug_task")
+            findings, for_bug=resource_type in ("bug", "bug_task"), groups=group_layout
         )
         blocking = [f for f in findings if f.tier == "incomplete"]
         logger.info(
@@ -840,9 +934,13 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             # its clock is date_incomplete.
             # #127: scope the bounce to the series the reviewed debdiff
             # targets, so a multi-series SRU's other tasks stay untouched.
-            changed = lp_client.set_bug_tasks_incomplete(
-                lp_obj, only_targets=checks.bounce_task_targets(lp_obj, lp_client)
-            )
+            if group_layout:
+                only_targets = _blocked_series_task_targets(
+                    lp_obj, lp_client, review_targets, group_layout, findings
+                )
+            else:
+                only_targets = checks.bounce_task_targets(lp_obj, lp_client)
+            changed = lp_client.set_bug_tasks_incomplete(lp_obj, only_targets=only_targets)
             new_facts = facts.apply_task_status_changes(new_facts, changed)
         if blocking:
             state_manager.update_status(

@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import logging
 import os
@@ -52,9 +53,13 @@ class Finding(NamedTuple):
     tier: str
     message: str
     kind: str = "advisory"
+    # #154: on a bug with debdiffs for several series, the review target
+    # this finding is about ("resolute (fix.debdiff)"); None for findings
+    # about the bug as a whole, and for everything else.
+    group: str | None = None
 
 
-def render_findings_comment(findings, for_bug=False):
+def render_findings_comment(findings, for_bug=False, groups=None):
     """
     Render the one aggregated comment for a pass's fired findings
     (design_journal.md #31): a single intro, a "needs fixing" section, an
@@ -67,35 +72,61 @@ def render_findings_comment(findings, for_bug=False):
     queue: set the status back to New. (Rule B's sweep would also notice a
     new attachment or reply on its own, but the explicit route shouldn't
     depend on that.)
+
+    groups (#154): for a bug whose debdiffs target two or more series, the
+    ordered (label, note) review targets. Each gets an "=== label ==="
+    block with its own findings (Finding.group == label), "Nothing to
+    fix." when it has none, or `note` instead when it needs no review
+    (already uploaded). Fewer than two groups renders exactly as before.
     """
-    incomplete = [f for f in findings if f.tier == "incomplete"]
-    verify = [f for f in findings if f.tier == "question" and f.kind == "verify"]
-    advisory = [f for f in findings if f.tier == "question" and f.kind == "advisory"]
 
     def bullets(items):
         # Continuation lines are indented so a multi-line message stays
         # visually attached to its bullet in Launchpad's plain-text renderer.
         return "\n".join("* " + f.message.replace("\n", "\n  ") for f in items)
 
+    def sections(items):
+        incomplete = [f for f in items if f.tier == "incomplete"]
+        verify = [f for f in items if f.tier == "question" and f.kind == "verify"]
+        advisory = [f for f in items if f.tier == "question" and f.kind == "advisory"]
+        out = []
+        if incomplete:
+            out.append("Needs fixing before this can be sponsored:\n\n" + bullets(incomplete))
+        if verify:
+            out.append(
+                "Please verify (not confirmed -- if any of these are real they'd "
+                "need fixing, but the automated review isn't confident enough to "
+                "block on them):\n\n" + bullets(verify)
+            )
+        if advisory:
+            out.append(
+                "Nice to have (non-blocking -- none of these block the upload, "
+                "but you may want to address them now, before a sponsor reviews "
+                "this, or in a future contribution):\n\n" + bullets(advisory)
+            )
+        return out
+
+    blocking = any(f.tier == "incomplete" for f in findings)
     # #152: one bullet reads "the following point" / "the point above is".
-    one = len(incomplete) + len(verify) + len(advisory) == 1
+    one = len(findings) == 1
     points = "point" if one else "points"
     parts = [f"Thanks for your contribution! The automated review spotted the following {points}:"]
-    if incomplete:
-        parts.append("Needs fixing before this can be sponsored:\n\n" + bullets(incomplete))
-    if verify:
-        parts.append(
-            "Please verify (not confirmed -- if any of these are real they'd "
-            "need fixing, but the automated review isn't confident enough to "
-            "block on them):\n\n" + bullets(verify)
-        )
-    if advisory:
-        parts.append(
-            "Nice to have (non-blocking -- none of these block the upload, "
-            "but you may want to address them now, before a sponsor reviews "
-            "this, or in a future contribution):\n\n" + bullets(advisory)
-        )
-    if incomplete:
+    if groups and len(groups) >= 2:
+        # #154: one block per series, each reading like its own ticket --
+        # findings about the bug as a whole first, ungrouped.
+        parts += sections([f for f in findings if f.group is None])
+        for label, note in groups:
+            parts.append(f"=== {label} ===")
+            mine = [f for f in findings if f.group == label]
+            if note:
+                parts.append(note)
+            elif mine:
+                parts += sections(mine)
+            else:
+                parts.append("Nothing to fix.")
+    else:
+        parts += sections(findings)
+    if blocking:
         if for_bug:
             parts.append(
                 "The bug status is being set to Incomplete while waiting. "
@@ -2878,22 +2909,150 @@ def _classify_against_publication_bug(url, bug, lp_client, package, version, pro
             "rebased (with a new version number) and resubmitted.",
         )
 
-    pub_url = archive_lookup.published_source_url(package, version)
+    if _defer_bug_close:
+        # #154: one series of several -- main decides what to do once every
+        # series has been looked at; no write from here.
+        logger.info("[%s] version %r already published with matching content.", url, version)
+        return "done"
     logger.info(
         "[%s] version %r already published with matching content. "
         "Commenting and unsubscribing ~ubuntu-sponsors.",
         url,
         version,
     )
-    lp_client.comment(
-        bug,
-        "Thanks for your contribution! It seems that this change was "
-        f"already uploaded to the archive as `{package} {version}`, so "
-        "there is nothing left to sponsor here. Cleaning up the queue by "
-        f"unsubscribing ~ubuntu-sponsors.\n\n{pub_url}",
-    )
+    lp_client.comment(bug, already_uploaded_comment([(package, version)]))
     lp_client.unsubscribe_sponsors(bug)
     return "done"
+
+
+# #154: set while one series of a multi-series bug is being reviewed, so an
+# already-uploaded series doesn't close the whole bug on its own.
+_defer_bug_close = False
+
+
+@contextlib.contextmanager
+def defer_bug_close():
+    global _defer_bug_close
+    previous = _defer_bug_close
+    _defer_bug_close = True
+    try:
+        yield
+    finally:
+        _defer_bug_close = previous
+
+
+def already_uploaded_comment(uploads):
+    """The bug-side "already uploaded" close comment for (package, version)
+    pairs: one (Check 6, #65) or, when every series' debdiff of a
+    multi-series bug already landed, several (#154)."""
+    names = [f"`{package} {version}`" for package, version in uploads]
+    urls = "\n".join(archive_lookup.published_source_url(p, v) for p, v in uploads)
+    if len(names) == 1:
+        return (
+            "Thanks for your contribution! It seems that this change was "
+            f"already uploaded to the archive as {names[0]}, so "
+            "there is nothing left to sponsor here. Cleaning up the queue by "
+            f"unsubscribing ~ubuntu-sponsors.\n\n{urls}"
+        )
+    listed = ", ".join(names[:-1]) + " and " + names[-1]
+    return (
+        "Thanks for your contribution! It seems that these changes were "
+        f"already uploaded to the archive as {listed}, so there is nothing "
+        "left to sponsor here. Cleaning up the queue by unsubscribing "
+        f"~ubuntu-sponsors.\n\n{urls}"
+    )
+
+
+def already_uploaded_series_note(target, outcome):
+    """#154: what a multi-series comment says for a series whose debdiff
+    Check 6 found already uploaded ("done") or waiting in the upload queue
+    ("queued"/"pending") -- instead of reviewing it."""
+    upload = f"`{target.package} {target.version}`"
+    if outcome == "done":
+        return f"Already uploaded as {upload}, nothing left to do for this series."
+    return (
+        f"Already uploaded as {upload} and waiting in the upload queue, "
+        "nothing left to do for this series."
+    )
+
+
+class ReviewTarget(NamedTuple):
+    """One series' debdiff on a multi-series bug (#154)."""
+
+    label: str  # "resolute (fix.debdiff)", or just the filename
+    series: str | None
+    attachment: object
+    text: str
+    package: str | None
+    version: str | None
+
+
+def bug_review_targets(bug):
+    """
+    #154: the debdiffs a sponsor would review on `bug`, one per target
+    series -- the newest one whose new changelog stanza names that series
+    (older ones for the same series are superseded iterations, as in
+    attachments.review_target). Before this, every bug-side check read only
+    the newest debdiff, so on an SRU with one debdiff per series every
+    series but the last-uploaded one went unreviewed (openblas bug
+    #2169719: the resolute debdiff was never checked).
+
+    Returns a list of ReviewTarget, oldest series first, when the debdiffs
+    target two or more series; [] otherwise (the caller keeps the
+    single-target path, unchanged). With several series, a debdiff whose
+    suite can't be read (or is UNRELEASED) is its own target under its
+    filename, and a plain patch (no debian/ file) is left out -- the
+    debdiffs supersede it. None when an attachment couldn't be fetched
+    (retriable).
+    """
+    try:
+        candidates = attachments.patch_attachments(bug)
+    except Exception as e:
+        logger.debug("bug_review_targets: couldn't list attachments (%s).", e)
+        return None
+    by_key = {}
+    for index, attachment in enumerate(candidates):
+        text = attachments.attachment_text(attachment)
+        if text is None:
+            return None
+        if text is False:
+            continue
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0]) if stanza else None
+        series = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower()) if header else None
+        if series == "unreleased":
+            series = None
+        title = getattr(attachment, "title", "") or "attachment"
+        if series:
+            key = ("series", series)
+        elif attachments.classify_diff(text)["debian_paths"]:
+            key = ("file", title)
+        else:
+            continue
+        # Launchpad lists attachments oldest first: a later one replaces
+        # an earlier iteration for the same series.
+        by_key[key] = (
+            index,
+            ReviewTarget(
+                f"{series} ({title})" if series else title,
+                series,
+                attachment,
+                text,
+                header.group("pkg") if header else None,
+                header.group("version") if header else None,
+            ),
+        )
+    if sum(1 for kind, _name in by_key if kind == "series") < 2:
+        return []
+    order = [name for name, _version in archive_lookup.supported_series_ordered(None) or []]
+
+    def sort_key(item):
+        (kind, name), (index, _target) = item
+        if kind == "series" and name in order:
+            return (0, order.index(name))
+        return (1, index)
+
+    return [target for _key, (_index, target) in sorted(by_key.items(), key=sort_key)]
 
 
 # Task shape of a series-specific Ubuntu bug task: 'pkg (Ubuntu Noble)'.

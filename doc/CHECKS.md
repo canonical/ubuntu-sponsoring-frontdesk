@@ -92,6 +92,33 @@ Two cases close without a status write: Check 4 and the "already uploaded"
 branch of Check 6 comment and leave the MP open, because git-ubuntu merge
 proposals reject status writes from the bot (a human closes them out).
 
+### A bug with debdiffs for several series
+
+An SRU often attaches one debdiff per series. The checks that read a
+debdiff (5, 6 and 8-16) then run once per series, on the newest debdiff
+targeting it, and the comment is grouped by series (design #154): findings
+about the bug as a whole first, then one block per series, oldest first,
+each under its own heading:
+
+> === {label} ===
+
+A series with nothing to report reads:
+
+> Nothing to fix.
+
+A series whose debdiff is already in the archive drops out of the review:
+
+> Already uploaded as {upload}, nothing left to do for this series.
+
+> Already uploaded as {upload} and waiting in the upload queue, nothing
+> left to do for this series.
+
+When every series' debdiff is already uploaded, the bug is closed with
+Check 6's "already uploaded" comment, naming each upload. Only the tasks of
+series with a blocker are set Incomplete; a blocker about the bug as a whole
+(the SRU template, say) blocks every series still under review. A bug whose
+debdiffs all target one series gets the plain comment, without headings.
+
 ## The checks
 
 | # | Check | Scope | What it detects | What the bot does |
@@ -226,8 +253,15 @@ closed:
 The same situation on a bug:
 
 > Thanks for your contribution! It seems that this change was already
-> uploaded to the archive as `{package} {version}`, so there is nothing left
+> uploaded to the archive as {upload}, so there is nothing left
 > to sponsor here. Cleaning up the queue by unsubscribing ~ubuntu-sponsors.
+
+`{upload}` is `` `{package} {version}` ``. When every series' debdiff of a
+multi-series bug is already uploaded (#154):
+
+> Thanks for your contribution! It seems that these changes were already
+> uploaded to the archive as {uploads}, so there is nothing left to sponsor
+> here. Cleaning up the queue by unsubscribing ~ubuntu-sponsors.
 
 Proposed version older than what's published:
 
