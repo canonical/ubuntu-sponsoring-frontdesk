@@ -300,3 +300,44 @@ than starting empty.
 
 `audit.jsonl` is optional: copy it to keep the history in `stats`, leave it
 out to start the stats at zero (seb128's choice for production).
+
+## Network access (firewall rules)
+
+Every host the unit talks to, for production environments behind a firewall
+or proxy. Built from the code and from the DNS queries seen on the `testing`
+unit during triages and an opencode call (2026-10-06).
+
+At runtime, the bot:
+
+| host | why |
+|---|---|
+| `api.launchpad.net`, `launchpad.net` | the Launchpad API, both bot accounts |
+| `launchpadlibrarian.net`, `*.restricted.launchpadlibrarian.net` | MP diffs, bug attachments, archive changelogs, `.dsc`/`.changes` files; the restricted host has a random prefix per file, so it needs a wildcard rule |
+| `sponsoring-reports.ubuntu.com` | the queue JSON each pass starts from |
+| `api.ftp-master.debian.org` | Debian versions (madison), for sync requests and merges |
+| `people.canonical.com` | not our code: ubuntu-lint (Check 13) queries `~ubuntu-archive/madison.cgi` there |
+| `git.launchpad.net` | the git ancestry check (#49) fetches the upload's `Vcs-Git` URL -- in practice git.launchpad.net, in principle any host |
+| `api.githubcopilot.com` | the LLM calls; allow it by name, the address behind it is a GitHub load balancer |
+| `models.opencode.ai` | opencode fetches its model catalogue on each run |
+| `api.github.com` | in opencode's binary (Copilot token handling, presumably); not seen in the capture, allowed to be safe |
+| the Mattermost host | the operator webhook |
+
+At install and upgrade (apt and snapd use the model's proxy settings, not
+the bot's):
+
+| host | why |
+|---|---|
+| the Ubuntu archive, or the local mirror | the runtime packages |
+| `ppa.launchpadcontent.net`, `api.launchpad.net` | the ubuntu-lint PPA and its signing key (`add-apt-repository`) |
+| `api.snapcraft.io`, `*.snapcraftcontent.com` | the opencode snap |
+
+**Proxies:** the charm writes Juju's `juju-http-proxy`, `juju-https-proxy`
+and `juju-no-proxy` into the bot's environment as `http(s)_proxy`/`no_proxy`
+(both cases), which launchpadlib (httplib2), urllib, requests, git and
+opencode all honour. Checked in the code only: the `testing` model has no
+proxy, so this hasn't run through one yet.
+
+**Allow or reject `people.canonical.com`, don't silently drop it.**
+ubuntu-lint calls `requests.get()` without a timeout; behind a firewall that
+drops packets, every SRU item would hang on Check 13. Every lookup of the
+bot's own has a timeout.
