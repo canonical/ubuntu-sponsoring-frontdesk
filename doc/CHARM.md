@@ -282,6 +282,21 @@ On the unit:
 | `/var/cache/frontdesk/` | launchpadlib caches, disposable |
 | `~ubuntu/.config/opencode/opencode.jsonc` | the tool-less agent, rewritten by the charm |
 
-Moving an existing deployment: copy `state.db` and `audit.jsonl` into
-`/var/lib/frontdesk/` (owned by ubuntu) while `mode=off`, before the first
-pass -- otherwise the whole queue is re-triaged once (#130).
+Moving an existing deployment: copy `state.db` into `/var/lib/frontdesk/`
+(owned by ubuntu) while `mode=off`, before the first pass:
+
+```
+juju scp state.db frontdesk/0:/tmp/state.db
+juju ssh frontdesk/0 -- 'sudo install -o ubuntu -g ubuntu -m 644 /tmp/state.db /var/lib/frontdesk/state.db && rm /tmp/state.db'
+```
+
+`state.db` is what matters: it records each item as already reviewed and
+unchanged since, so items the old setup handled stay quiet until their
+contributor changes something. Starting without it re-triages the whole
+queue once (#130) -- LLM spend, and a second comment on every item whose
+wording or checks changed since its last review. If a stored record doesn't
+match what the current bot computes, the item is simply re-triaged, no worse
+than starting empty.
+
+`audit.jsonl` is optional: copy it to keep the history in `stats`, leave it
+out to start the stats at zero (seb128's choice for production).

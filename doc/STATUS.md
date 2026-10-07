@@ -1366,16 +1366,16 @@ vs "points"), #153/#154 (only the newest debdiff was reviewed -- now every
 series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
 17 (edited released changelog entry, #155).
 
-- **Next: decide how production starts.** A first `mode=yes` pass from an
-  empty `state.db` re-reviews the whole queue and stacks a second comment
-  wherever the wording or the checks changed since the last one (seb128
-  declined several such writes in his interactive pass). Options: copy the
-  old setup's `state.db` (keeping `audit.jsonl` empty, so stats still start
-  at zero), or a bot rule to stay quiet on a revision it already commented
-  on. seb128 is thinking about it; `testing` stays `mode=off` meanwhile --
-  its state still holds those declined writes as pending.
-- **Then:** production model, `mode=yes`, first pass watched (seb128 runs it
-  himself), the old setup's runs stopped.
+- **Production starts from the old setup's `state.db`** (seb128,
+  2026-10-06). A first `mode=yes` pass from an empty one would re-review the
+  whole queue and stack a second comment wherever the wording or the checks
+  changed since the last one (seb128 declined several such writes in his
+  interactive pass). `audit.jsonl` is left out, so stats start at zero.
+  Steps in `doc/CHARM.md`, "Moving an existing deployment". `testing` stays
+  `mode=off` meanwhile -- its state still holds those declined writes as
+  pending.
+- **Then:** production model, copy `state.db` while `mode=off`, `mode=yes`,
+  first pass watched (seb128 runs it himself), the old setup's runs stopped.
 - **`make charm-integration` not re-run** since the action-timeout fix and
   revisions 8-9; those were checked by hand on the unit. Worth a run before
   production.
