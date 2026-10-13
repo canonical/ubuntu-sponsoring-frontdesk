@@ -97,16 +97,12 @@ proposals reject status writes from the bot (a human closes them out).
 An SRU often attaches one debdiff per series. The checks that read a
 debdiff (5, 6 and 8-16) then run once per series, on the newest debdiff
 targeting it, and the comment is grouped by series (design #154): findings
-about the bug as a whole first, then one block per series, oldest first,
-each under its own heading:
+about the bug as a whole first, then one block per series that has
+something to report, oldest first, each under its own heading:
 
 > === {label} ===
 
-A series with nothing to report reads:
-
-> Nothing to fix.
-
-A series whose debdiff is already in the archive drops out of the review:
+A series with nothing to report gets no block (#156). A series whose debdiff is already in the archive drops out of the review:
 
 > Already uploaded as {upload}, nothing left to do for this series.
 

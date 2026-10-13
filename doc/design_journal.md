@@ -3705,3 +3705,17 @@ each action reaching Launchpad.
   a whitespace-only edit, two entries named, an unnamed deep edit,
   UNRELEASED, no new entry, merge MP/bug, unreadable diff, bug debdiff --
   all fail without the change. Dry-run verified on the trigger MP.
+
+## 156. No Block for a Series With Nothing to Say
+
+* **Found by seb128 in an interactive pass** (systemd bug #2170538, jammy +
+  noble debdiffs): the only finding was bug-level (Check 7, newer series
+  first), followed by two `=== series ===` blocks each reading "Nothing to
+  fix." -- noise. Once only series with something to report get a block,
+  a missing block already reads "fine".
+* A series now gets a block only for findings or an "already uploaded"
+  note (which carries information). With only bug-level findings the
+  comment is the plain one, no headings. Supersedes #154's "Nothing to
+  fix." line, a deliberate removal of posted wording.
+* Tests: the trigger shape renders exactly like a single-series comment;
+  the grouped and end-to-end tests now expect no block for clean series.

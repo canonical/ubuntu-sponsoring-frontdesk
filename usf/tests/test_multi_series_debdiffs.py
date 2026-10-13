@@ -161,11 +161,21 @@ def test_comment_is_grouped_by_series():
         "Nice to have (non-blocking -- none of these block the upload, but you may want "
         "to address them now, before a sponsor reviews this, or in a future "
         "contribution):\n\n* Resolute nicety.\n\n"
-        "=== stonking (s.debdiff) ===\n\n"
-        "Nothing to fix.\n\n"
         "The bug status is being set to Incomplete while waiting. Once the points above "
         "are addressed, please set it back to New so the request re-enters the review queue!"
     )
+
+
+def test_only_bug_level_findings_render_without_series_blocks():
+    """#156, systemd bug #2170538: one bug-level bullet over two clean
+    series used to come with two "Nothing to fix." blocks."""
+    findings = [checks.Finding("question", "Newer series first.", kind="verify")]
+    groups = [("jammy (j.debdiff)", None), ("noble (n.debdiff)", None)]
+
+    out = checks.render_findings_comment(findings, for_bug=True, groups=groups)
+
+    assert "===" not in out
+    assert out == checks.render_findings_comment(findings, for_bug=True)
 
 
 def test_a_single_group_renders_as_before():
@@ -287,7 +297,8 @@ def test_both_series_reviewed_and_only_the_blocked_one_bounced(pipeline):
     comment = lp.comments[0]
     assert "=== resolute (r.debdiff) ===\n\nNeeds fixing before this can be sponsored:" in comment
     assert "* Add a DEP-3 header." in comment
-    assert "=== stonking (s.debdiff) ===\n\nNothing to fix." in comment
+    # #156: the clean series gets no block.
+    assert "stonking" not in comment
     assert "point above is addressed" in comment
     assert _statuses(bug) == {"foo (Ubuntu)": "New", "foo (Ubuntu Resolute)": "Incomplete"}
     assert status == "WAITING_ON_CONTRIBUTOR"
@@ -334,7 +345,8 @@ def test_a_bug_wide_blocker_bounces_every_series_under_review(pipeline):
     lp, _status = pipeline(bug, llm)
 
     comment = lp.comments[0]
-    assert comment.index("* The SRU template is incomplete.") < comment.index("=== resolute")
+    assert "* The SRU template is incomplete." in comment
+    assert "===" not in comment  # both series clean: no blocks (#156)
     assert _statuses(bug) == {"foo (Ubuntu)": "Incomplete", "foo (Ubuntu Resolute)": "Incomplete"}
 
 

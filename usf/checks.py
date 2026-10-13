@@ -74,10 +74,11 @@ def render_findings_comment(findings, for_bug=False, groups=None):
     depend on that.)
 
     groups (#154): for a bug whose debdiffs target two or more series, the
-    ordered (label, note) review targets. Each gets an "=== label ==="
-    block with its own findings (Finding.group == label), "Nothing to
-    fix." when it has none, or `note` instead when it needs no review
-    (already uploaded). Fewer than two groups renders exactly as before.
+    ordered (label, note) review targets. Each with something to say gets
+    an "=== label ===" block with its own findings (Finding.group ==
+    label), or `note` instead when it needs no review (already uploaded);
+    a series with neither is left out (#156). Fewer than two groups
+    renders exactly as before.
     """
 
     def bullets(items):
@@ -115,15 +116,16 @@ def render_findings_comment(findings, for_bug=False, groups=None):
         # #154: one block per series, each reading like its own ticket --
         # findings about the bug as a whole first, ungrouped.
         parts += sections([f for f in findings if f.group is None])
+        # #156: a series with nothing to say gets no block at all -- its
+        # absence already reads "fine", and "Nothing to fix." blocks were
+        # noise in practice (systemd bug #2170538: one bug-level bullet over
+        # two empty series blocks).
         for label, note in groups:
-            parts.append(f"=== {label} ===")
             mine = [f for f in findings if f.group == label]
             if note:
-                parts.append(note)
+                parts += [f"=== {label} ===", note]
             elif mine:
-                parts += sections(mine)
-            else:
-                parts.append("Nothing to fix.")
+                parts += [f"=== {label} ==="] + sections(mine)
     else:
         parts += sections(findings)
     if blocking:
