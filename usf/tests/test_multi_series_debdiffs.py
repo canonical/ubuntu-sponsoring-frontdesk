@@ -364,3 +364,84 @@ def test_a_single_series_bug_is_unchanged(pipeline):
     assert "===" not in lp.comments[0]
     assert "* Add a DEP-3 header." in lp.comments[0]
     assert "old.debdiff" not in pipeline.reviewed
+
+
+# --- #157: debdiffs for closed or unsupported series aren't reviewed ---------
+
+
+def test_debdiff_for_a_fix_released_series_is_dropped():
+    """gnutls28 bug #2150202: bounced over the stonking debdiff's outdated
+    version while the stonking task was Fix Released."""
+    bug = FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu)", "Fix Released"),
+            FakeTask("foo (Ubuntu Noble)", "In Progress"),
+            FakeTask("foo (Ubuntu Resolute)", "In Progress"),
+            FakeTask("foo (Ubuntu Stonking)", "Fix Released"),
+        ],
+        attachments=[
+            _att("n.debdiff", _debdiff("noble", "1.2-3ubuntu0.1")),
+            _att("r.debdiff", _debdiff("resolute", "1.2-3ubuntu0.2")),
+            _att("s.debdiff", _debdiff("stonking", "1.2-4ubuntu1")),
+        ],
+    )
+
+    labels = [t.label for t in checks.bug_review_targets(bug)]
+
+    assert labels == ["noble (n.debdiff)", "resolute (r.debdiff)"]
+
+
+def test_plain_ubuntu_task_stands_for_devel():
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu)", "Fix Released"), FakeTask("foo (Ubuntu Noble)", "New")],
+        attachments=[
+            _att("n.debdiff", _debdiff("noble", "1.2-3ubuntu0.1")),
+            _att("s.debdiff", _debdiff("stonking", "1.2-4ubuntu1")),
+        ],
+    )
+
+    # One series left: still the per-target path, so the dropped stonking
+    # debdiff (the newest) isn't what gets reviewed.
+    assert [t.label for t in checks.bug_review_targets(bug)] == ["noble (n.debdiff)"]
+
+
+def test_debdiff_for_an_unsupported_series_is_dropped():
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu Noble)", "New"), FakeTask("foo (Ubuntu Resolute)", "New")],
+        attachments=[
+            _att("q.debdiff", _debdiff("questing", "1.2-3ubuntu0.5")),
+            _att("n.debdiff", _debdiff("noble", "1.2-3ubuntu0.1")),
+            _att("r.debdiff", _debdiff("resolute", "1.2-3ubuntu0.2")),
+        ],
+    )
+
+    labels = [t.label for t in checks.bug_review_targets(bug)]
+
+    assert labels == ["noble (n.debdiff)", "resolute (r.debdiff)"]
+
+
+def test_every_debdiff_dropped_means_nothing_to_review():
+    bug = FakeBug(
+        tasks=[FakeTask("foo (Ubuntu Stonking)", "Fix Released")],
+        attachments=[_att("s.debdiff", _debdiff("stonking", "1.2-4ubuntu1"))],
+    )
+    assert checks.bug_review_targets(bug) is False
+
+
+def test_closed_series_debdiff_is_not_reviewed_end_to_end(pipeline):
+    bug = FakeBug(
+        tasks=[
+            FakeTask("foo (Ubuntu Resolute)", "New"),
+            FakeTask("foo (Ubuntu Stonking)", "Fix Released"),
+        ],
+        attachments=[
+            _att("r.debdiff", _debdiff("resolute", "1.2-3ubuntu0.1", "fine")),
+            _att("s.debdiff", _debdiff("stonking", "1.2-4ubuntu1", "BAD")),
+        ],
+    )
+
+    lp, status = pipeline(bug)
+
+    assert "s.debdiff" not in pipeline.reviewed
+    assert lp.comments == []
+    assert status == "READY_FOR_HUMAN"

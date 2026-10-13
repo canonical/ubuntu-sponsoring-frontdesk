@@ -2978,6 +2978,36 @@ def already_uploaded_series_note(target, outcome):
     )
 
 
+def _closed_or_eol_series(bug, series, supported):
+    """#157: {series: reason} for the debdiffs that no longer need review --
+    the series' bug task is closed (Fix Released, Won't Fix, ...; the plain
+    "(Ubuntu)" task stands for the devel series when it has no task of its
+    own), or the series is no longer supported. Trigger: gnutls28 bug
+    #2150202, bounced over its stonking debdiff's outdated version while
+    the stonking task was Fix Released -- another upload had fixed it.
+    `supported` empty (lookup failed) means no EOL judgement."""
+    devel = supported[-1] if supported else None
+    statuses = {}
+    plain = None
+    for task in bug.bug_tasks:
+        match = _UBUNTU_TASK_SERIES_RE.search(task.bug_target_name or "")
+        if not match:
+            continue
+        if match.group("series"):
+            statuses[match.group("series").lower()] = task.status
+        else:
+            plain = task.status
+    if devel and devel not in statuses and plain is not None:
+        statuses[devel] = plain
+    dropped = {}
+    for name in series:
+        if statuses.get(name) in _CLOSED_TASK_STATUSES:
+            dropped[name] = f"its task is {statuses[name]}"
+        elif supported and name not in supported:
+            dropped[name] = "no longer a supported series"
+    return dropped
+
+
 class ReviewTarget(NamedTuple):
     """One series' debdiff on a multi-series bug (#154)."""
 
@@ -2999,9 +3029,13 @@ def bug_review_targets(bug):
     series but the last-uploaded one went unreviewed (openblas bug
     #2169719: the resolute debdiff was never checked).
 
+    Debdiffs for a series that needs no review are dropped first (#157):
+    its bug task is closed, or the series is no longer supported.
+
     Returns a list of ReviewTarget, oldest series first, when the debdiffs
-    target two or more series; [] otherwise (the caller keeps the
-    single-target path, unchanged). With several series, a debdiff whose
+    target two or more series or any was dropped (then possibly just one);
+    False when every debdiff was dropped (nothing to review); [] otherwise
+    (the caller keeps the single-target path, unchanged). With several series, a debdiff whose
     suite can't be read (or is UNRELEASED) is its own target under its
     filename, and a plain patch (no debian/ file) is left out -- the
     debdiffs supersede it. None when an attachment couldn't be fetched
@@ -3044,9 +3078,18 @@ def bug_review_targets(bug):
                 header.group("version") if header else None,
             ),
         )
-    if sum(1 for kind, _name in by_key if kind == "series") < 2:
+    supported = archive_lookup.supported_series_ordered(None)
+    order = [name for name, _version in supported or []]
+    dropped = _closed_or_eol_series(
+        bug, {name for kind, name in by_key if kind == "series"}, order
+    )
+    for name in dropped:
+        logger.info("bug_review_targets: skipping the %s debdiff (%s).", name, dropped[name])
+        del by_key[("series", name)]
+    if not dropped and sum(1 for kind, _name in by_key if kind == "series") < 2:
         return []
-    order = [name for name, _version in archive_lookup.supported_series_ordered(None) or []]
+    if not by_key:
+        return False
 
     def sort_key(item):
         (kind, name), (index, _target) = item

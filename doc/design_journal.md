@@ -3719,3 +3719,24 @@ each action reaching Launchpad.
   fix." line, a deliberate removal of posted wording.
 * Tests: the trigger shape renders exactly like a single-series comment;
   the grouped and end-to-end tests now expect no block for clean series.
+
+## 157. A Closed Series' Debdiff Isn't Reviewed
+
+* **Found by seb128 in an interactive pass** (gnutls28 bug #2150202,
+  debdiffs for jammy, noble, resolute, stonking and questing): the bot
+  bounced the stonking debdiff as older than the archive -- but the
+  stonking task was Fix Released (another upload had fixed it since), so
+  that debdiff was simply obsolete. The questing one targeted a series
+  that is EOL, with a Won't Fix task.
+* **Fix:** `bug_review_targets` drops a series' debdiff when its bug task is
+  closed (Fix Released/Committed, Won't Fix, Invalid, Opinion, Expired --
+  the plain "(Ubuntu)" task standing for devel when there's no devel task)
+  or the series is no longer supported. When anything is dropped the
+  per-series path is kept even with one series left, so the dropped
+  debdiff (often the newest) can't come back as the single review target;
+  when everything is dropped, Checks 5-16 aren't run on the debdiffs, and a
+  bug-level bounce falls back to every open task.
+* No new wording: a dropped series simply isn't mentioned.
+* Tests: Fix Released series dropped, plain task as devel, EOL series
+  dropped, all dropped, and end to end the closed series' debdiff never
+  reviewed.

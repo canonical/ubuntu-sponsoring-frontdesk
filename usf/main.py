@@ -615,7 +615,12 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             review_targets = []
     group_layout = None
 
-    if len(review_targets) < 2:
+    if review_targets is False:
+        # #157: every debdiff targets a series that needs no review (task
+        # closed or series unsupported) -- nothing for Checks 5-16 to say.
+        logger.info("Every debdiff targets a closed or unsupported series; not reviewing them.")
+        outcome = None
+    elif not review_targets:
         outcome = run_target_checks(add_finding)
     else:
         group_layout = []
@@ -944,7 +949,11 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
             # its clock is date_incomplete.
             # #127: scope the bounce to the series the reviewed debdiff
             # targets, so a multi-series SRU's other tasks stay untouched.
-            if group_layout:
+            if review_targets is False:
+                # #157: no debdiff under review to scope by (every one
+                # targets a closed series) -- every open task, as before #127.
+                only_targets = None
+            elif group_layout:
                 only_targets = _blocked_series_task_targets(
                     lp_obj, lp_client, review_targets, group_layout, findings
                 )
