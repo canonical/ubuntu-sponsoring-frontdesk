@@ -67,7 +67,7 @@ config:
       default: ""
       description: |
         Model for the tool-less sponsoring-reviewer opencode agent, as
-        opencode's provider/model (e.g. "github-copilot/claude-sonnet-4.5").
+        opencode's provider/model (e.g. "openrouter/anthropic/claude-sonnet-5.5").
         Empty uses opencode's default.
     lp-triager-credentials:
       type: secret

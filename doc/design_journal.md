@@ -3740,3 +3740,26 @@ each action reaching Launchpad.
 * Tests: Fix Released series dropped, plain task as devel, EOL series
   dropped, all dropped, and end to end the closed series' debdiff never
   reviewed.
+
+## 158. The LLM Goes Through OpenRouter
+
+* **seb128's call:** Canonical's service accounts use OpenRouter or Gemini;
+  Copilot seats are for developers. So the bot's opencode login is an
+  OpenRouter API key -- a credential made for a service, revocable on its
+  own, with a spending cap, and with per-token billing so the `cost` in the
+  audit trail and `stats` is close to what is actually paid (Copilot's
+  premium-request multipliers made it a list-price estimate).
+* **Only the OpenRouter entry goes in `opencode-auth`.** With the Copilot
+  login still in `auth.json`, opencode contacted `api.githubcopilot.com` (and
+  `models.opencode.ai`) on every run even though the selected model was an
+  OpenRouter one -- seen in a DNS capture on the unit. With an
+  OpenRouter-only file, the same triage looked up only `openrouter.ai` and
+  Launchpad. Simpler setup, fewer firewall rules (seb128).
+* `llm-model` pinned to an exact version
+  (`openrouter/anthropic/claude-sonnet-5.5`, the model already in use), not
+  the `~anthropic/claude-sonnet-latest` alias, so the model can't change
+  silently.
+* Live-verified on `testing` (2026-10-07): an SRU template review on
+  openblas bug #2169719 returned a parsed verdict; the saved session
+  reports `providerID: openrouter`. CHARM.md's secret block now builds the
+  OpenRouter-only file, and its firewall table drops the Copilot hosts.

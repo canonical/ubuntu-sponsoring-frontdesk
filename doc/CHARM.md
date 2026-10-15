@@ -220,11 +220,16 @@ juju config frontdesk lp-sponsor-credentials="$id"
 ```
 
 **opencode login** (`opencode-auth`, optional -- without it the LLM phases
-fail safe). Copied from a machine already logged in; don't log in on the
-unit, the charm deletes an `auth.json` that no secret backs:
+fail safe). The bot uses **OpenRouter**, with a service API key: Canonical's
+service accounts use OpenRouter (or Gemini), Copilot seats are for people
+(seb128). Log in once anywhere with `opencode auth login` -> OpenRouter, then
+keep *only* that entry -- another provider's login left in the file makes
+opencode contact that provider too (extra firewall rules, someone's seat on
+a service). Don't log in on the unit: the charm deletes an `auth.json` that
+no secret backs.
 
 ```
-cp ~/.local/share/opencode/auth.json opencode-auth.json
+python3 -c 'import json, os; d = json.load(open(os.path.expanduser("~/.local/share/opencode/auth.json"))); print(json.dumps({"openrouter": d["openrouter"]}))' > opencode-auth.json
 id=$(juju add-secret frontdesk-opencode auth-json#file=opencode-auth.json)
 juju grant-secret frontdesk-opencode frontdesk
 juju config frontdesk opencode-auth="$id"
@@ -240,10 +245,12 @@ juju grant-secret frontdesk-webhook frontdesk
 juju config frontdesk mattermost-webhook="$id"
 ```
 
-**LLM model** (`llm-model`, optional -- empty uses opencode's default):
+**LLM model** (`llm-model`, optional -- empty uses opencode's default). Pin
+an exact version rather than a `~...-latest` alias, so the model can't change
+under you; `opencode models openrouter` on the unit lists them:
 
 ```
-juju config frontdesk llm-model=github-copilot/<model>
+juju config frontdesk llm-model=openrouter/anthropic/claude-sonnet-5.5
 ```
 
 To replace a secret's content later (a new token), update it in place; the
@@ -317,9 +324,8 @@ At runtime, the bot:
 | `api.ftp-master.debian.org` | Debian versions (madison), for sync requests and merges |
 | `people.canonical.com` | not our code: ubuntu-lint (Check 13) queries `~ubuntu-archive/madison.cgi` there |
 | `git.launchpad.net` | the git ancestry check (#49) fetches the upload's `Vcs-Git` URL -- in practice git.launchpad.net, in principle any host |
-| `openrouter.ai` | the LLM calls, with an OpenRouter key in `opencode-auth` and `llm-model=openrouter/...` (what `testing` uses since 2026-10-07) |
-| `models.opencode.ai` | opencode fetches its model catalogue on each run |
-| `api.githubcopilot.com`, `api.github.com` | only with a GitHub Copilot login in `opencode-auth`: the LLM calls when `llm-model` is `github-copilot/...`. opencode contacts it whenever the login is present, even if the model is an OpenRouter one, so leave the Copilot entry out of `auth.json` to drop this rule. Allow it by name; the address behind it is a GitHub load balancer. `api.github.com` is in opencode's binary but wasn't seen in the capture |
+| `openrouter.ai` | the LLM calls (OpenRouter key in `opencode-auth`, `llm-model=openrouter/...`) |
+| `models.opencode.ai` | possibly: opencode's model catalogue. Looked up while a Copilot login was in `auth.json`, not with the OpenRouter-only one (2026-10-07); allow it to be safe |
 | the Mattermost host | the operator webhook |
 
 At install and upgrade (apt and snapd use the model's proxy settings, not
