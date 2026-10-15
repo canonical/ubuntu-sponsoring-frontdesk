@@ -317,9 +317,9 @@ At runtime, the bot:
 | `api.ftp-master.debian.org` | Debian versions (madison), for sync requests and merges |
 | `people.canonical.com` | not our code: ubuntu-lint (Check 13) queries `~ubuntu-archive/madison.cgi` there |
 | `git.launchpad.net` | the git ancestry check (#49) fetches the upload's `Vcs-Git` URL -- in practice git.launchpad.net, in principle any host |
-| `api.githubcopilot.com` | the LLM calls; allow it by name, the address behind it is a GitHub load balancer |
+| `openrouter.ai` | the LLM calls, with an OpenRouter key in `opencode-auth` and `llm-model=openrouter/...` (what `testing` uses since 2026-10-07) |
 | `models.opencode.ai` | opencode fetches its model catalogue on each run |
-| `api.github.com` | in opencode's binary (Copilot token handling, presumably); not seen in the capture, allowed to be safe |
+| `api.githubcopilot.com`, `api.github.com` | only with a GitHub Copilot login in `opencode-auth`: the LLM calls when `llm-model` is `github-copilot/...`. opencode contacts it whenever the login is present, even if the model is an OpenRouter one, so leave the Copilot entry out of `auth.json` to drop this rule. Allow it by name; the address behind it is a GitHub load balancer. `api.github.com` is in opencode's binary but wasn't seen in the capture |
 | the Mattermost host | the operator webhook |
 
 At install and upgrade (apt and snapd use the model's proxy settings, not
