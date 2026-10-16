@@ -276,6 +276,35 @@ def test_units_carry_mode_and_interval(fd, mode, flag):
     assert "__" not in service + timer
 
 
+def test_service_carries_the_proxy_house_style(fd):
+    """#159: like the other ubuntu-* charms' units, so `systemctl cat` shows
+    it; the wrapper sets the same values from the environment file."""
+    fd.environ = {
+        "JUJU_CHARM_HTTPS_PROXY": "http://proxy.example.internal:3128",
+        "JUJU_CHARM_NO_PROXY": "127.0.0.1,10.0.0.0/8",
+    }
+
+    fd.configure("dry-run", 60, SECRETS)
+
+    service = (fd.systemd_dir / "frontdesk.service").read_text()
+    env = fd.env_file.read_text()
+    for line in (
+        'Environment="https_proxy=http://proxy.example.internal:3128"',
+        'Environment="HTTPS_PROXY=http://proxy.example.internal:3128"',
+        'Environment="no_proxy=127.0.0.1,10.0.0.0/8"',
+    ):
+        assert line in service.splitlines()
+    assert 'https_proxy="http://proxy.example.internal:3128"' in env.splitlines()
+    assert "/etc/frontdesk/environment" in service
+    assert "Loaded by /usr/local/bin/frontdesk" in env
+
+
+def test_service_has_no_proxy_lines_without_a_proxy(fd):
+    fd.configure("dry-run", 60, SECRETS)
+
+    assert "proxy=" not in (fd.systemd_dir / "frontdesk.service").read_text().lower()
+
+
 def test_timer_enabled_only_with_a_mode_and_credentials(fd, systemd):
     fd.configure("dry-run", 60, SECRETS)
     assert ("enable", "--now", "frontdesk.timer") in systemd.calls

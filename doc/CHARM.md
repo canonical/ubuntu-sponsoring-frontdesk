@@ -289,6 +289,34 @@ On the unit:
 | `/var/cache/frontdesk/` | launchpadlib caches, disposable |
 | `~ubuntu/.config/opencode/opencode.jsonc` | the tool-less agent, rewritten by the charm |
 
+### `/etc/frontdesk/environment`
+
+Every variable the bot needs, written by the charm and rewritten whenever it
+changes (edits are overwritten):
+
+- `PATH` (with `/snap/bin`, for opencode), `PYTHONUNBUFFERED`,
+  `PYTHONDONTWRITEBYTECODE` (the code tree is root-owned);
+- every `SPONSORING_BOT_*` path -- state, audit trail, notification config,
+  both Launchpad credential files and their caches -- so nothing lands in
+  `~ubuntu`;
+- Juju's model proxy (`juju-http-proxy`, `juju-https-proxy`,
+  `juju-no-proxy`) as `http_proxy`/`https_proxy`/`no_proxy`, both cases.
+
+It is loaded by `/usr/local/bin/frontdesk`, and so by everything that runs
+the bot through it: the timer's `frontdesk.service`, the `triage`, `stats`
+and `run-now` actions, and manual `sudo -u ubuntu frontdesk ...` runs. A
+plain shell on the unit does **not** load it -- `opencode`, `curl` or
+`python3` run directly see no proxy. Load it first:
+
+```
+set -a; . /etc/frontdesk/environment; set +a
+```
+
+`frontdesk.service` also carries the proxy as `Environment=` lines, like the
+other ubuntu-* charms' units, so `systemctl cat frontdesk` shows it (#159).
+They repeat the file's values; the file is the source.
+
+
 Moving an existing deployment: copy `state.db` into `/var/lib/frontdesk/`
 (owned by ubuntu) while `mode=off`, before the first pass:
 
@@ -338,10 +366,11 @@ the bot's):
 | `api.snapcraft.io`, `*.snapcraftcontent.com` | the opencode snap |
 
 **Proxies:** the charm writes Juju's `juju-http-proxy`, `juju-https-proxy`
-and `juju-no-proxy` into the bot's environment as `http(s)_proxy`/`no_proxy`
-(both cases), which launchpadlib (httplib2), urllib, requests, git and
-opencode all honour. Checked in the code only: the `testing` model has no
-proxy, so this hasn't run through one yet.
+and `juju-no-proxy` into `/etc/frontdesk/environment` (above) as
+`http(s)_proxy`/`no_proxy`, both cases, which launchpadlib (httplib2),
+urllib, requests, git and opencode all honour. Seen working in production
+behind a proxy (2026-10): the file carried the model's proxy, and opencode
+reached OpenRouter through it.
 
 **Allow or reject `people.canonical.com`, don't silently drop it.**
 ubuntu-lint calls `requests.get()` without a timeout; behind a firewall that

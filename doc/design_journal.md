@@ -3763,3 +3763,28 @@ each action reaching Launchpad.
   openblas bug #2169719 returned a parsed verdict; the saved session
   reports `providerID: openrouter`. CHARM.md's secret block now builds the
   OpenRouter-only file, and its firewall table drops the Copilot hosts.
+
+## 159. The Proxy Shows in the Unit File, and the Environment File Is Documented
+
+* **Found by seb128 deploying to production** (behind an HTTP proxy):
+  `frontdesk.service` had no proxy lines, where
+  every other ubuntu-* charm's unit (ubuntu-sponsors included) ends with
+  `Environment=HTTP_PROXY=...`. It looked like the charm had lost the
+  proxy. It hadn't: the charm writes it into `/etc/frontdesk/environment`,
+  which the `frontdesk` wrapper loads -- the timer, the actions and manual
+  runs all go through it (#146's choice, so a manual run sees exactly the
+  timer's environment). The file had the model's proxy, correctly.
+* What made it confusing is real, though: nothing said where the
+  environment comes from, and running `opencode` or `curl` directly on the
+  unit sees no proxy, because a plain shell doesn't load the file.
+* **So:** the service now also carries the proxy as `Environment=` lines
+  (house style, same values, the file stays the source), its comment and
+  the environment file's header say who loads the file and how to load it
+  by hand, and CHARM.md documents the file -- what it holds, what sources
+  it, what doesn't.
+* `Environment=` quoting: systemd quotes the whole assignment
+  (`Environment="KEY=value"`), not the value.
+* Tests: the proxy lines appear (and nothing when the model has no proxy),
+  and the comments point at the file. **Not deployed** (seb128): the local
+  model has no proxy to show it; to be confirmed at the next charm refresh
+  in production.

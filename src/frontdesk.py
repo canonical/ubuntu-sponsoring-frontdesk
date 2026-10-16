@@ -445,7 +445,12 @@ class Frontdesk:
         return env
 
     def _write_environment(self):
-        lines = ["# Written by the ubuntu-sponsoring-frontdesk charm; edits are overwritten."]
+        lines = [
+            "# Written by the ubuntu-sponsoring-frontdesk charm; edits are overwritten.",
+            "# Loaded by /usr/local/bin/frontdesk -- the timer's service, the",
+            "# triage/stats/run-now actions and manual `frontdesk ...` runs. A plain",
+            "# shell doesn't load it: `set -a; . /etc/frontdesk/environment; set +a`.",
+        ]
         lines += [f"{k}={_env_quote(v)}" for k, v in self.environment().items()]
         self._write(self.env_file, "\n".join(lines) + "\n", 0o644)
 
@@ -454,7 +459,23 @@ class Frontdesk:
         # "off" never runs from the timer; a manual `systemctl start` then
         # gets the harmless mode rather than an error.
         flag = "--yes" if mode == "yes" else "--dry-run"
-        return text.replace("__MODE_FLAG__", flag).replace("__INTERVAL__", str(int(interval)))
+        text = text.replace("__MODE_FLAG__", flag).replace("__INTERVAL__", str(int(interval)))
+        if name == SERVICE:
+            # House style (#159): the proxy as Environment= lines, like the
+            # other ubuntu-* charms, so it shows in `systemctl cat`. The
+            # wrapper sets the same values from /etc/frontdesk/environment
+            # anyway -- this is for whoever looks at the unit.
+            proxy = {k: v for k, v in self.environment().items() if k.lower().endswith("_proxy")}
+            if proxy:
+                text = (
+                    text.rstrip("\n")
+                    + "\n\n# Juju's model proxy (also in /etc/frontdesk/environment)\n"
+                )
+                # systemd quotes the whole assignment; the same escaping holds.
+                text += "".join(
+                    f"Environment={_env_quote(f'{k}={v}')}\n" for k, v in proxy.items()
+                )
+        return text
 
     def _apply_units(self, mode, interval, enabled):
         service_changed = self._write(

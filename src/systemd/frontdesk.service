@@ -8,8 +8,11 @@ After=network-online.target
 Type=oneshot
 User=ubuntu
 Group=ubuntu
-# The wrapper sets the environment (state paths, proxy) and takes the lock
-# that keeps a pass from overlapping a manual run.
+# The wrapper loads the bot's environment from /etc/frontdesk/environment
+# (state paths, credentials, Juju's proxy) and takes the lock that keeps a
+# pass from overlapping a manual run. The proxy lines the charm appends
+# below repeat that file's proxy, house style, so `systemctl cat` shows it;
+# the file is what the bot actually uses, here and in manual runs.
 ExecStart=/usr/local/bin/frontdesk --all __MODE_FLAG__
 # 75 = the lock was held, i.e. a manual run was in progress: this pass was
 # skipped, which isn't a failure.
