@@ -172,8 +172,19 @@ hard-coded).
 
 ## Deploying
 
-Not in Charmhub yet: pack locally. `.github/workflows/promote.yml` is ready
-for when it is (manual trigger only).
+From Charmhub ([ubuntu-sponsoring-frontdesk](https://charmhub.io/ubuntu-sponsoring-frontdesk),
+`latest/edge`; base 26.04):
+
+```
+juju deploy ubuntu-sponsoring-frontdesk frontdesk --channel latest/edge
+juju refresh frontdesk                      # later: pick up a new revision
+```
+
+Uploads are by hand for now (`charmcraft pack` from a clean checkout of
+`main`, then `charmcraft upload ... --release latest/edge`); the revision's
+`version` is `git describe --dirty`, so a `-dirty` suffix means it wasn't
+built from a commit. `.github/workflows/promote.yml` promotes an uploaded
+revision to beta/stable (manual trigger only). To try local changes instead:
 
 ```
 charmcraft pack
