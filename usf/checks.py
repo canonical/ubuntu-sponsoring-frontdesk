@@ -77,8 +77,11 @@ def render_findings_comment(findings, for_bug=False, groups=None):
     ordered (label, note) review targets. Each with something to say gets
     an "=== label ===" block with its own findings (Finding.group ==
     label), or `note` instead when it needs no review (already uploaded);
-    a series with neither is left out (#156). Fewer than two groups
-    renders exactly as before.
+    a series with neither is left out (#156). A finding identical (tier,
+    kind and message) to one already shown under an earlier series is
+    replaced with "Same as <series>." (#164), so a check that doesn't
+    look at series-specific content isn't repeated verbatim per series.
+    Fewer than two groups renders exactly as before.
     """
 
     def bullets(items):
@@ -120,12 +123,32 @@ def render_findings_comment(findings, for_bug=False, groups=None):
         # absence already reads "fine", and "Nothing to fix." blocks were
         # noise in practice (systemd bug #2170538: one bug-level bullet over
         # two empty series blocks).
+        # #164: the SAME finding (tier, kind and message all equal) on two
+        # or more series -- a check that doesn't look at series-specific
+        # content, e.g. the XSBC-Original-Maintainer advisory, fires
+        # identically on each -- is spelled out once, then referenced by
+        # the first series that had it, rather than repeating the whole
+        # bullet per series.
+        first_label_for = {}
         for label, note in groups:
             mine = [f for f in findings if f.group == label]
             if note:
                 parts += [f"=== {label} ===", note]
-            elif mine:
-                parts += [f"=== {label} ==="] + sections(mine)
+                continue
+            if not mine:
+                continue
+            rendered = []
+            for finding in mine:
+                key = (finding.tier, finding.kind, finding.message)
+                first_label = first_label_for.get(key)
+                if first_label is None:
+                    # The series name alone, not the "(attachment)" part --
+                    # used only if this SAME finding shows up again later.
+                    first_label_for[key] = label.split(" (")[0]
+                    rendered.append(finding)
+                else:
+                    rendered.append(finding._replace(message=f"Same as {first_label}."))
+            parts += [f"=== {label} ==="] + sections(rendered)
     else:
         parts += sections(findings)
     if blocking:

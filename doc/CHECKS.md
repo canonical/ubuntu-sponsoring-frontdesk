@@ -109,6 +109,13 @@ A series with nothing to report gets no block (#156). A series whose debdiff is 
 > Already uploaded as {upload} and waiting in the upload queue, nothing
 > left to do for this series.
 
+A finding identical to one already shown under an earlier series (same
+check, tier and wording -- a check that doesn't look at series-specific
+content, like Check 12, can fire the same way on several) is shortened to a
+reference instead of repeated (#164):
+
+> Same as {series}.
+
 When every series' debdiff is already uploaded, the bug is closed with
 Check 6's "already uploaded" comment, naming each upload. Only the tasks of
 series with a blocker are set Incomplete; a blocker about the bug as a whole

@@ -3888,3 +3888,32 @@ each action reaching Launchpad.
   archive version still reaching the LLM, and a lookup failure falling
   through rather than going inconclusive -- the first fails against the
   pre-fix code. Not yet re-triaged live.
+
+## 164. An Identical Finding Across Series Is Shortened, Not Repeated
+
+* **Found reviewing #154/#156's output live** (tigervnc bug #2161717): a
+  check that doesn't look at series-specific content, like Check 12
+  (XSBC-Original-Maintainer), fires the same way on every series' debdiff,
+  so its exact message was repeated verbatim in each `=== series ===`
+  block. Discussed with seb128 as two options -- merge into one
+  bug-level bullet naming every series it applies to, or keep each
+  series' block but shorten repeats to a reference. Picked the second:
+  merging would make an affected series' block disappear entirely under
+  #156 whenever this was its only finding, reading as "nothing to report
+  here" when there is something, just filed under the bug-wide section.
+* **Fix:** a finding identical to one already shown under an earlier
+  series (same tier, kind and message -- Finding carries no check name,
+  and an identical message from two different checks doesn't happen in
+  practice) is replaced with "Same as {series}." -- the series name
+  alone, not the "(attachment)" part of its label. A third series
+  sharing the same finding still points at the first, not the second, so
+  the reference is never a few links deep.
+* **Deliberately mechanical, no invented summary.** The wording proposed
+  in discussion ("Same as noble: missing `XSBC-Original-Maintainer`")
+  was illustrative prose, not something to generate from an arbitrary
+  message -- summarizing would mean guessing, which the project avoids.
+  Shown to seb128 before writing any code.
+* Tests: a later series' identical finding shortened, a third series
+  pointing at the first, different messages not merged, and a
+  series-less (filename-only) label used whole as the reference -- the
+  first three fail without the fix.

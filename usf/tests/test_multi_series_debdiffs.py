@@ -166,6 +166,91 @@ def test_comment_is_grouped_by_series():
     )
 
 
+# --- #164: an identical finding on several series isn't repeated verbatim ---
+
+
+def test_an_identical_finding_on_a_later_series_is_shortened():
+    """tigervnc bug #2161717: the XSBC-Original-Maintainer advisory fired
+    identically on the noble and resolute debdiffs."""
+    msg = "Missing XSBC-Original-Maintainer."
+    findings = [
+        checks.Finding("question", msg, kind="advisory", group="noble (n.debdiff)"),
+        checks.Finding("question", msg, kind="advisory", group="resolute (r.debdiff)"),
+    ]
+    groups = [("noble (n.debdiff)", None), ("resolute (r.debdiff)", None)]
+
+    out = checks.render_findings_comment(findings, for_bug=True, groups=groups)
+
+    assert (
+        "=== noble (n.debdiff) ===\n\n"
+        + (
+            "Nice to have (non-blocking -- none of these block the upload, but you may want "
+            "to address them now, before a sponsor reviews this, or in a future "
+            f"contribution):\n\n* {msg}"
+        )
+        in out
+    )
+    assert (
+        "=== resolute (r.debdiff) ===\n\n"
+        + (
+            "Nice to have (non-blocking -- none of these block the upload, but you may want "
+            "to address them now, before a sponsor reviews this, or in a future "
+            "contribution):\n\n* Same as noble."
+        )
+        in out
+    )
+    assert out.count(msg) == 1
+
+
+def test_a_third_series_still_points_at_the_first_not_the_second():
+    msg = "Missing XSBC-Original-Maintainer."
+    findings = [
+        checks.Finding("question", msg, kind="advisory", group="noble (n.debdiff)"),
+        checks.Finding("question", msg, kind="advisory", group="resolute (r.debdiff)"),
+        checks.Finding("question", msg, kind="advisory", group="stonking (s.debdiff)"),
+    ]
+    groups = [
+        ("noble (n.debdiff)", None),
+        ("resolute (r.debdiff)", None),
+        ("stonking (s.debdiff)", None),
+    ]
+
+    out = checks.render_findings_comment(findings, for_bug=True, groups=groups)
+
+    assert out.count("Same as noble.") == 2
+    assert "Same as resolute" not in out
+
+
+def test_findings_with_different_text_are_not_merged():
+    findings = [
+        checks.Finding("question", "Noble-specific point.", kind="advisory", group="noble (n.d)"),
+        checks.Finding(
+            "question", "Resolute-specific point.", kind="advisory", group="resolute (r.d)"
+        ),
+    ]
+    groups = [("noble (n.d)", None), ("resolute (r.d)", None)]
+
+    out = checks.render_findings_comment(findings, for_bug=True, groups=groups)
+
+    assert "Same as" not in out
+    assert "Noble-specific point." in out and "Resolute-specific point." in out
+
+
+def test_a_filename_only_label_is_referenced_by_its_filename():
+    """A series-less group (an unreadable suite or UNRELEASED, #154) has no
+    "series (" prefix to strip -- the whole label is the reference."""
+    msg = "Same text, no series known for either."
+    findings = [
+        checks.Finding("question", msg, kind="advisory", group="first.debdiff"),
+        checks.Finding("question", msg, kind="advisory", group="second.debdiff"),
+    ]
+    groups = [("first.debdiff", None), ("second.debdiff", None)]
+
+    out = checks.render_findings_comment(findings, for_bug=True, groups=groups)
+
+    assert "Same as first.debdiff." in out
+
+
 def test_only_bug_level_findings_render_without_series_blocks():
     """#156, systemd bug #2170538: one bug-level bullet over two clean
     series used to come with two "Nothing to fix." blocks."""
