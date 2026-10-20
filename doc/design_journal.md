@@ -3806,7 +3806,9 @@ each action reaching Launchpad.
   now also logs the tool's own last lines, not just its exit status -- the
   debug-log said nothing useful here.
 * Tests: the proxy reaches add-apt-repository, and a failure's own message
-  is logged (both fail without the fix). **Not deployed yet**: confirmed at
-  the next production refresh (the unit's status should lose the
-  ubuntu-lint note). The proxied command was not run by hand on the VM at
-  the time of writing.
+  is logged (both fail without the fix).
+* **Verified in production:** seb128 ran the same command with the proxy
+  from `/etc/frontdesk/environment` by hand -- it added the PPA at once --
+  then removed the source again so the refresh would show the charm doing
+  it alone. After uploading a clean revision and refreshing, the unit had
+  the PPA source and `python3-ubuntu-lint` 0.2.3 installed by the charm.
