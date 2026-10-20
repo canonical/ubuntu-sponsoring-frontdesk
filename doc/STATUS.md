@@ -1390,6 +1390,23 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   copies off-host, e.g. to S3, needs a discussion -- storage may be a lot of
   machinery for a small DB and a log. Losing `state.db` costs one full
   re-triage (LLM spend), not wrong behaviour.
+- **Backlog: keep distro-info-data current without a human.** Every six
+  months a new devel series opens before its distro-info-data SRU lands
+  (#161: tenacious). #161 keeps the bot working through that window, but
+  Check 13 stays silent until the package is upgraded -- and nothing
+  upgrades it: unattended-upgrades only installs from `-security`, and the
+  charm only ensures packages are present, never newer. On the production
+  unit seb128 upgraded it by hand once the SRU reached `-updates`. Options,
+  not decided:
+  - the charm upgrades `distro-info-data` itself when the status check
+    finds it outdated (`apt-get install --only-upgrade distro-info-data`,
+    with the model's proxy) -- narrow, self-healing within one
+    update-status after the SRU is released;
+  - an apt.conf.d drop-in letting unattended-upgrades take that one package
+    from `-updates` -- no charm code, but needs checking that
+    unattended-upgrades can be scoped to a single package;
+  - at minimum, a Mattermost notification when the status turns
+    "outdated", so it doesn't depend on someone reading `juju status`.
 - **Backlog: drop the ubuntu-lint PPA handling** once `python3-ubuntu-lint`
   is SRUed to 26.04 (resolute; planned), so the unit takes it from the
   archive like every other package. What goes, all in `src/frontdesk.py`:
