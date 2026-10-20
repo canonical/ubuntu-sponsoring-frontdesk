@@ -3864,3 +3864,27 @@ each action reaching Launchpad.
   trigger MP/bug shape with a fake ubuntu_lint (the real package isn't
   installed on this host); not yet re-triaged live.
 
+## 163. Check 7: the Archive Can Already Show a Series Is Fixed
+
+* **Found alongside #162, same run** (tigervnc bug #2161717): Check 7
+  asked the LLM about stonking, with "no evidence of it being resolved" --
+  but stonking had no task, no linked MP and no attachment at all; it
+  simply **published the exact version** that tenacious's Fix Released
+  task names. The archive already showed the fix had landed there; the
+  bug's own metadata just never said so.
+* **Fix:** `_series_covered_by_archive_version`, tried only once the
+  existing mechanical evidence (`_series_evidence`) finds nothing, since
+  unlike it this costs an archive lookup per candidate series. For each of
+  the bug's Fix Released/Committed series tasks (the plain `(Ubuntu)` task
+  standing for devel), it fetches that series' published version; if the
+  series being checked publishes the same version or newer
+  (`archive_lookup.is_at_least`), it counts as fixed too.
+* **Fails open, not inconclusive.** This is an optimization over a
+  mechanical check that already existed, not a new source of truth: a
+  lookup failure here just means the shortcut doesn't apply, and the
+  series falls through to the LLM question exactly as before -- it must
+  never make an otherwise-complete pass inconclusive.
+* Tests: the live trigger shape resolved without an LLM call, an older
+  archive version still reaching the LLM, and a lookup failure falling
+  through rather than going inconclusive -- the first fails against the
+  pre-fix code. Not yet re-triaged live.

@@ -445,3 +445,108 @@ def test_launchpad_failure_keeps_the_distro_info_list():
     broken = types.SimpleNamespace(distributions={})
 
     assert archive_lookup.supported_series_ordered(broken)[-1] == ("stonking", "26.10")
+
+
+# --- #163: a series with no evidence, but the same archive version as a
+# series whose task IS Fix Released/Committed -------------------------------
+
+
+def _fake_ubuntu_versions(by_series):
+    """{series_names -> {suite: version}}, like the real
+    archive_lookup.ubuntu_versions, for any number of requested series
+    (the removed-package exemption below this check asks for several at
+    once). `jammy` (the target in these tests) is always present, so that
+    exemption doesn't fire and mask what #163 is testing."""
+    by_series = {"jammy": "1.12.0+dfsg-4ubuntu0.22.04.1", **by_series}
+
+    def fake(lp, pkg, series_names=None):
+        return {name: by_series[name] for name in series_names if name in by_series}
+
+    return fake
+
+
+def test_no_evidence_series_matching_a_fixed_series_version_is_handled(monkeypatch):
+    """tigervnc bug #2161717: stonking had no task, no linked MP and no
+    attachment naming it, but published the exact version tenacious's
+    (here: stonking's own devel task) Fix Released task names -- the
+    archive, not the bug's metadata, already shows it's fixed."""
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        _fake_ubuntu_versions(
+            {
+                "noble": "1.13.1+dfsg-2build2",
+                "resolute": "1.15.0+dfsg-2.1",  # no task, but matches stonking's
+                "stonking": "1.15.0+dfsg-2.1",  # the devel (plain) task's version
+            }
+        ),
+    )
+    bug = _bug(
+        [
+            FakeTask("testpkg (Ubuntu)", "Fix Released"),  # devel (stonking)
+            FakeTask("testpkg (Ubuntu Jammy)", "In Progress"),  # target
+            FakeTask("testpkg (Ubuntu Noble)", "Confirmed"),
+            # No task at all for resolute.
+        ],
+        attachments=[FakeAttachment("fix-noble.debdiff", type="Patch")],
+    )
+    llm = FakeLLM()
+
+    result = checks.check_sru_newer_series(
+        "url", _sru_mp([bug], target="refs/heads/ubuntu/jammy-devel"), _LP(), llm
+    )
+
+    assert result is False
+    assert getattr(llm, "newer_series_queries", []) == []
+
+
+def test_an_older_archive_version_is_still_unhandled(monkeypatch):
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        _fake_ubuntu_versions(
+            {
+                "noble": "1.13.1+dfsg-2build2",
+                "resolute": "1.13.1+dfsg-2build2",  # older than stonking's fix
+                "stonking": "1.15.0+dfsg-2.1",
+            }
+        ),
+    )
+    bug = _bug(
+        [
+            FakeTask("testpkg (Ubuntu)", "Fix Released"),
+            FakeTask("testpkg (Ubuntu Jammy)", "In Progress"),
+            FakeTask("testpkg (Ubuntu Noble)", "Confirmed"),
+        ],
+        attachments=[FakeAttachment("fix-noble.debdiff", type="Patch")],
+    )
+    llm = FakeLLM()
+
+    finding = checks.check_sru_newer_series(
+        "url", _sru_mp([bug], target="refs/heads/ubuntu/jammy-devel"), _LP(), llm
+    )
+
+    assert finding.tier == "question"
+    assert "resolute" in finding.message
+
+
+def test_archive_version_lookup_failure_falls_through_to_the_llm(monkeypatch):
+    """Not a new source of truth (#163): a lookup failure here must not
+    make the whole pass inconclusive, only skip this shortcut."""
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None)
+    bug = _bug(
+        [
+            FakeTask("testpkg (Ubuntu)", "Fix Released"),
+            FakeTask("testpkg (Ubuntu Jammy)", "In Progress"),
+            FakeTask("testpkg (Ubuntu Noble)", "Confirmed"),
+        ],
+        attachments=[FakeAttachment("fix-noble.debdiff", type="Patch")],
+    )
+    llm = FakeLLM()
+
+    finding = checks.check_sru_newer_series(
+        "url", _sru_mp([bug], target="refs/heads/ubuntu/jammy-devel"), _LP(), llm
+    )
+
+    assert finding.tier == "question"
+    assert "resolute" in finding.message

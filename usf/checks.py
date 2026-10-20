@@ -3211,6 +3211,54 @@ def _series_evidence(bug, package, series_name, is_devel, devel_name, attachment
     return False
 
 
+def _series_covered_by_archive_version(bug, package, series_name, devel_name, lp_client):
+    """#163 (tigervnc bug #2161717): a newer series with no task, no linked
+    MP and no attachment evidence can still already carry the fix -- it may
+    simply publish the same version (or newer) as another series whose
+    task IS Fix Released/Committed. Live case: stonking had no task at all,
+    but published the exact version tenacious's Fix Released task names.
+
+    Checked only once `_series_evidence` finds nothing, since unlike it
+    this costs an archive lookup per candidate. Never raises: a lookup
+    failure just means this shortcut doesn't apply and the series falls
+    through to the LLM question as before -- this is an optimization that
+    silences a known-safe case, not a new source of truth, so a failure
+    here must not make the whole pass inconclusive.
+    """
+    try:
+        fixed_versions = []
+        for task in bug.bug_tasks:
+            if task.status not in DONE_STATUSES:
+                continue
+            match = _UBUNTU_TASK_SERIES_RE.search(task.bug_target_name or "")
+            if not match:
+                continue
+            name = (match.group("series") or devel_name or "").lower()
+            if not name or name == series_name:
+                continue
+            versions = archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=[name])
+            version = _max_published_version(versions) if versions else None
+            if version:
+                fixed_versions.append(version)
+        if not fixed_versions:
+            return False
+        own_versions = archive_lookup.ubuntu_versions(
+            lp_client.lp, package, series_names=[series_name]
+        )
+        own_version = _max_published_version(own_versions) if own_versions else None
+        if not own_version:
+            return False
+        return any(archive_lookup.is_at_least(own_version, v) for v in fixed_versions)
+    except Exception as e:
+        logger.debug(
+            "_series_covered_by_archive_version: couldn't check %r via archive "
+            "versions (%s); falling through to the usual evidence.",
+            series_name,
+            e,
+        )
+        return False
+
+
 def check_sru_newer_series(url, lp_obj, lp_client, llm):
     """
     Check 7: SRU 'fix newer series first' (design_journal.md #58).
@@ -3235,9 +3283,15 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     SRU" and letting Checks 13/14 evaluate the proposed version with no
     context on whether the underlying fix is even in devel yet.
 
-    When some newer series looks unhandled mechanically, the LLM gets one
-    focused question -- does the bug text state the issue is already fixed
-    there? (Task tables are often stale: updating them needs privileges
+    A series with none of that evidence can still already carry the fix: if
+    it publishes the same version (or newer) as another series whose task
+    IS Fix Released/Committed, that's handled too (#163:
+    _series_covered_by_archive_version), tried only once the mechanical
+    evidence above finds nothing, since it costs an archive lookup.
+
+    When some newer series looks unhandled after both of those, the LLM
+    gets one focused question -- does the bug text state the issue is
+    already fixed there? (Task tables are often stale: updating them needs privileges
     most submitters don't have, while the description frequently documents
     'newer series ship version X which has the fix'.) Yes -> silent, there
     is nothing actionable left to ask (updating the task table needs
@@ -3388,7 +3442,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         attachment_targets_by_bug = {id(bug): _bug_attachment_target_series(bug) for bug in bugs}
         for series_name in newer:
             is_devel = series_name == devel_name
-            if not any(
+            if any(
                 _series_evidence(
                     bug,
                     package,
@@ -3399,7 +3453,20 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
                 )
                 for bug in bugs
             ):
-                unhandled.append(series_name)
+                continue
+            # #163 (live, tigervnc bug #2161717): stonking had no task, no
+            # linked MP and no attachment naming it, yet already carried the
+            # fix -- it published the exact version tenacious's Fix Released
+            # task names. Only tried once the mechanical evidence above
+            # finds nothing, since it costs an archive lookup per series.
+            if any(
+                _series_covered_by_archive_version(
+                    bug, package, series_name, devel_name, lp_client
+                )
+                for bug in bugs
+            ):
+                continue
+            unhandled.append(series_name)
     except Exception as e:
         logger.warning(
             "check_sru_newer_series: couldn't read the bug's tasks/MPs/"
