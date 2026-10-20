@@ -3788,3 +3788,25 @@ each action reaching Launchpad.
   and the comments point at the file. **Not deployed** (seb128): the local
   model has no proxy to show it; to be confirmed at the next charm refresh
   in production.
+
+## 160. add-apt-repository Gets the Proxy
+
+* **Found in production** (behind an HTTP proxy): the unit came up with
+  "no ubuntu-lint (Check 13 silent)" and no PPA source in
+  `/etc/apt/sources.list.d/`. seb128 reproduced it on the VM: a plain
+  `sudo add-apt-repository -y ppa:enr0n/ubuntu-lint` hangs. The tool fetches
+  the PPA's signing key from api.launchpad.net itself, and needs the usual
+  `https_proxy` for that.
+* **Cause:** a hook gets Juju's model proxy only as `JUJU_CHARM_*_PROXY`,
+  which add-apt-repository ignores -- the same as a plain shell. apt and
+  snapd were fine: Juju configures their proxies itself. `testing` has no
+  proxy, so it never showed there.
+* **Fix:** add-apt-repository runs with the hook's environment plus the
+  proxy variables the charm already computes for the bot (#159). A failure
+  now also logs the tool's own last lines, not just its exit status -- the
+  debug-log said nothing useful here.
+* Tests: the proxy reaches add-apt-repository, and a failure's own message
+  is logged (both fail without the fix). **Not deployed yet**: confirmed at
+  the next production refresh (the unit's status should lose the
+  ubuntu-lint note). The proxied command was not run by hand on the VM at
+  the time of writing.

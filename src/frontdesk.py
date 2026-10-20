@@ -275,18 +275,40 @@ class Frontdesk:
     def _install_opencode(self):
         snap.ensure_installed(OPENCODE_SNAP, classic=True)
 
+    def _proxy_environ(self):
+        """The hook's environment plus Juju's model proxy as the usual
+        http(s)_proxy/no_proxy variables. Hooks only get the proxy as
+        JUJU_CHARM_*_PROXY, which tools like add-apt-repository ignore (#160).
+        apt and snapd don't need this: Juju configures their proxies itself."""
+        env = dict(self.environ)
+        env.update({k: v for k, v in self.environment().items() if k.lower().endswith("_proxy")})
+        return env
+
     def _install_ubuntu_lint(self):
         try:
+            # add-apt-repository fetches the PPA's signing key from
+            # api.launchpad.net itself -- without the proxy it fails behind
+            # one (#160, seen in production).
             subprocess.run(
                 ["add-apt-repository", "-y", UBUNTU_LINT_PPA],
                 check=True,
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=self._proxy_environ(),
             )
             apt.add_package(UBUNTU_LINT_PACKAGE, update_cache=True)
+        except subprocess.CalledProcessError as e:
+            # The exit status alone said nothing in production; keep the
+            # tool's own last words.
+            output = ((e.stderr or "") + (e.stdout or "")).strip().splitlines()
+            logger.warning(
+                "ubuntu-lint unavailable, Check 13 will stay silent: %s exited %s: %s",
+                UBUNTU_LINT_PPA,
+                e.returncode,
+                " | ".join(output[-5:]) or "no output",
+            )
         except (
-            subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
             apt.PackageError,
             apt.PackageNotFoundError,
