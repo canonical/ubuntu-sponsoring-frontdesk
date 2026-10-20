@@ -416,3 +416,32 @@ def test_sru_to_eol_series_is_skipped():
     bug = _bug([FakeTask("testpkg (Ubuntu Focal)", "In Progress")])
     mp = _sru_mp([bug], target="refs/heads/ubuntu/focal-devel")
     assert checks.check_sru_newer_series("url", mp, _LP(), FakeLLM()) is False
+
+
+# --- #161: Launchpad's devel series when distro-info doesn't know it --------
+
+
+def _lp_devel(name, version):
+    series = types.SimpleNamespace(name=name, version=version)
+    return types.SimpleNamespace(
+        distributions={"ubuntu": types.SimpleNamespace(current_series=series)}
+    )
+
+
+def test_devel_missing_from_distro_info_is_appended_from_launchpad():
+    """tenacious opened before distro-info-data knew it."""
+    result = archive_lookup.supported_series_ordered(_lp_devel("tenacious", "27.04"))
+
+    assert result[-2:] == [("stonking", "26.10"), ("tenacious", "27.04")]
+
+
+def test_devel_already_known_is_not_duplicated():
+    result = archive_lookup.supported_series_ordered(_lp_devel("stonking", "26.10"))
+
+    assert [name for name, _v in result] == ["jammy", "noble", "resolute", "stonking"]
+
+
+def test_launchpad_failure_keeps_the_distro_info_list():
+    broken = types.SimpleNamespace(distributions={})
+
+    assert archive_lookup.supported_series_ordered(broken)[-1] == ("stonking", "26.10")

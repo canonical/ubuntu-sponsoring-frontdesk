@@ -319,6 +319,19 @@ class Frontdesk:
             logger.warning("ubuntu-lint unavailable, Check 13 will stay silent: %s", e)
 
     @property
+    def distro_info_outdated(self):
+        """distro-info-data doesn't know the current devel series yet (#161):
+        Check 13 is silent until the package is updated, and the bot falls
+        back to Launchpad for the devel series."""
+        try:
+            proc = subprocess.run(
+                ["ubuntu-distro-info", "--devel"], capture_output=True, text=True, timeout=15
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return proc.returncode != 0 and "outdated" in (proc.stdout + proc.stderr).lower()
+
+    @property
     def ubuntu_lint_installed(self):
         return self._p("/usr/lib/python3/dist-packages/ubuntu_lint").is_dir()
 

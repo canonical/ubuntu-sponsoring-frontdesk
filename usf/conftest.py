@@ -3,6 +3,7 @@
 
 import pytest
 
+import archive_lookup
 import checks
 
 
@@ -12,6 +13,7 @@ def _reset_diff_lines_cache():
     # short ones ('/d/1') across tests -- without this, one test's cached
     # diff content (or cached failure) would leak into the next.
     checks.reset_diff_lines_cache()
+    archive_lookup.reset_cache()
     yield
 
 

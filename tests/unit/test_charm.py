@@ -29,6 +29,7 @@ def workload():
     w.pass_running = False
     w.last_pass_failed = False
     w.ubuntu_lint_installed = True
+    w.distro_info_outdated = False
     with patch("charm.Frontdesk", return_value=w):
         yield w
 
@@ -232,6 +233,20 @@ def test_running_pass_and_missing_ubuntu_lint_are_reported(ctx, workload):
 
     assert out.unit_status == ActiveStatus(
         "dry-run every 60m; pass running; no ubuntu-lint (Check 13 silent)"
+    )
+
+
+def test_outdated_distro_info_is_reported(ctx, workload):
+    """#161: a new devel series not in distro-info-data yet silences Check 13."""
+    workload.distro_info_outdated = True
+    state = _configured(
+        lp_sponsor_credentials=("credentials", "s"), opencode_auth=("auth-json", "{}")
+    )
+
+    out = ctx.run(ctx.on.update_status(), state)
+
+    assert out.unit_status == ActiveStatus(
+        "dry-run every 60m; distro-info-data outdated (Check 13 silent)"
     )
 
 

@@ -217,6 +217,8 @@ class FrontdeskCharm(ops.CharmBase):
             parts.append("no lp-sponsor-credentials")
         if not self.workload.ubuntu_lint_installed:
             parts.append("no ubuntu-lint (Check 13 silent)")
+        elif self.workload.distro_info_outdated:
+            parts.append("distro-info-data outdated (Check 13 silent)")
         return "; ".join(parts)
 
     # --- actions ---------------------------------------------------------------

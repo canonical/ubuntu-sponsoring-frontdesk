@@ -608,7 +608,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     review_targets = []
     if resource_type in ("bug", "bug_task"):
         bug_for_targets = lp_obj.bug if resource_type == "bug_task" else lp_obj
-        review_targets = checks.bug_review_targets(bug_for_targets)
+        review_targets = checks.bug_review_targets(bug_for_targets, getattr(lp_client, "lp", None))
         checkpoint("bug_review_targets")
         if review_targets is None:
             mark_inconclusive("bug_review_targets")

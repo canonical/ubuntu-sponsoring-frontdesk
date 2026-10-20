@@ -3812,3 +3812,31 @@ each action reaching Launchpad.
   then removed the source again so the refresh would show the charm doing
   it alone. After uploading a clean revision and refreshing, the unit had
   the PPA source and `python3-ubuntu-lint` 0.2.3 installed by the charm.
+
+## 161. A New Devel Series Before distro-info-data Knows It
+
+* **Found in production** (tigervnc bug #2161717, the week tenacious
+  opened): every SRU item ended inconclusive, nothing posted. ubuntu-lint
+  asks distro-info for the devel series, and the unit's distro-info-data
+  (0.72) didn't know tenacious yet -- the update was still in
+  resolute-proposed. Check 13 read the resulting `DistroDataOutdated` as
+  "couldn't determine", and an inconclusive check holds back the whole
+  item (#31). It recurs every six months: a series opens before its
+  distro-info-data SRU lands.
+* The bot's own series list had the same gap, silently: it comes from
+  `ubuntu-distro-info --supported` (#83), which ended at stonking. So
+  Check 7 didn't ask about tenacious, a tenacious debdiff would have been
+  dropped as unsupported (#157), and the plain "(Ubuntu)" task was read as
+  stonking.
+* **Fix (seb128's option B):**
+  - `supported_series_ordered` appends Launchpad's current series as devel
+    when distro-info doesn't list it, logging that the data is outdated.
+    distro-info stays the source otherwise (#83: it has the real EOL dates).
+  - Check 13 treats `DistroDataOutdated` like ubuntu-lint being absent:
+    silent, not inconclusive, so the rest of the review still happens.
+  - The unit status says "distro-info-data outdated (Check 13 silent)", so
+    an operator sees why and updates the package.
+* Tests: the devel series appended (and not duplicated, and a Launchpad
+  failure keeps the distro-info list), outdated data silent while other
+  ubuntu-lint failures stay inconclusive -- both behaviour tests fail
+  without the fix -- and the status note. Not deployed yet.

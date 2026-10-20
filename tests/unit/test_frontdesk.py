@@ -484,6 +484,23 @@ def test_pass_running_means_the_oneshot_is_activating(fd, monkeypatch, state, ru
     assert seen["cmd"][-1] == "frontdesk.service"
 
 
+@pytest.mark.parametrize(
+    "rc, err, outdated",
+    [
+        (1, "ubuntu-distro-info: Distribution data outdated.\n", True),
+        (0, "", False),
+        (1, "some other failure\n", False),
+    ],
+)
+def test_distro_info_outdated(fd, monkeypatch, rc, err, outdated):
+    monkeypatch.setattr(
+        frontdesk.subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, rc, "" if rc else "tenacious\n", err),
+    )
+    assert fd.distro_info_outdated is outdated
+
+
 def test_start_pass_does_not_block(fd, systemd):
     fd.start_pass()
 

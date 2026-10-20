@@ -108,6 +108,29 @@ def devel_codename(lp):
         return None
 
 
+# Launchpad's current development series as (codename, version), looked up
+# once per process -- a pass is one process, and it doesn't change mid-pass.
+_launchpad_devel = None
+
+
+def reset_cache():
+    """For tests."""
+    global _launchpad_devel
+    _launchpad_devel = None
+
+
+def _devel_series(lp):
+    global _launchpad_devel
+    if _launchpad_devel is None:
+        try:
+            series = lp.distributions["ubuntu"].current_series
+            _launchpad_devel = (series.name, series.version)
+        except Exception as e:
+            logger.warning("could not determine the Ubuntu devel series: %s", e)
+            return None
+    return _launchpad_devel
+
+
 def _distro_info(*args):
     """`ubuntu-distro-info <args>` stdout; raises on any failure. Kept as a
     seam so tests can pin the series table instead of spawning processes."""
@@ -135,9 +158,14 @@ def supported_series_ordered(lp):
     series (rclone MP #508341) -- and ESM-only series report 'Supported'
     forever. distro-info excludes both, and its output is already
     chronological with the devel series last. None on failure (tri-state;
-    a failure must not read as 'no newer series exist'). The `lp` argument
-    is unused but kept so callers don't care about the source."""
-    del lp
+    a failure must not read as 'no newer series exist').
+
+    #161: a new devel series opens before distro-info-data is updated (it
+    arrives later as an SRU), and until then distro-info doesn't list it
+    -- tenacious was missing for its first week, so Check 7 didn't ask
+    about it and its debdiffs were dropped as unsupported (#157). When
+    `lp` is given and Launchpad's current series isn't in the list, it is
+    appended as the devel series."""
     try:
         names = _distro_info("--supported").split()
         # --release aligns line-by-line with the codename list; drop the
@@ -146,10 +174,19 @@ def supported_series_ordered(lp):
         versions = [line.split()[0] for line in releases if line.strip()]
         if len(names) != len(versions) or not names:
             raise ValueError(f"unexpected output: {names!r} vs {versions!r}")
-        return list(zip(names, versions))
+        series = list(zip(names, versions))
     except Exception as e:
         logger.warning("distro-info lookup failed (supported Ubuntu series): %s", e)
         return None
+    devel = _devel_series(lp) if lp is not None else None
+    if devel and devel[0] not in names:
+        logger.warning(
+            "distro-info-data doesn't know the devel series %s yet; using "
+            "Launchpad's. Update distro-info-data on this host.",
+            devel[0],
+        )
+        series.append(devel)
+    return series
 
 
 def ubuntu_versions(lp, package, series_names=None):

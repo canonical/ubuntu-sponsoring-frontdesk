@@ -3019,7 +3019,7 @@ class ReviewTarget(NamedTuple):
     version: str | None
 
 
-def bug_review_targets(bug):
+def bug_review_targets(bug, lp=None):
     """
     #154: the debdiffs a sponsor would review on `bug`, one per target
     series -- the newest one whose new changelog stanza names that series
@@ -3078,7 +3078,7 @@ def bug_review_targets(bug):
                 header.group("version") if header else None,
             ),
         )
-    supported = archive_lookup.supported_series_ordered(None)
+    supported = archive_lookup.supported_series_ordered(lp)
     order = [name for name, _version in supported or []]
     dropped = _closed_or_eol_series(
         bug, {name for kind, name in by_key if kind == "series"}, order
@@ -4217,6 +4217,19 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
         )
         return None
     except Exception as e:
+        if type(e).__name__ == "DistroDataOutdated":
+            # #161: ubuntu-lint asks distro-info for the devel series, and a
+            # new one opens before distro-info-data is updated. Not a lookup
+            # that succeeds on retry -- treating it as "can't determine"
+            # made every SRU item inconclusive, nothing posted, until the
+            # data package was updated. Same as ubuntu-lint being absent:
+            # this check stays silent.
+            logger.warning(
+                "_sru_version_convention_verdict: distro-info-data is outdated "
+                "on this host (%s); skipping the SRU version-suffix check.",
+                e,
+            )
+            return False
         # Malformed changelog text doesn't necessarily raise inside
         # python-debian's parser (it logs and produces a best-effort,
         # possibly-garbage entry instead) -- fail safe against any other
