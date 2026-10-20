@@ -3839,7 +3839,12 @@ each action reaching Launchpad.
 * Tests: the devel series appended (and not duplicated, and a Launchpad
   failure keeps the distro-info list), outdated data silent while other
   ubuntu-lint failures stay inconclusive -- both behaviour tests fail
-  without the fix -- and the status note. Not deployed yet.
+  without the fix -- and the status note. Live-verified: redeployed to
+  production and re-triaged bug #2161717 (`juju run ... triage`,
+  dry-run) -- no "distro-info-data outdated" note, item no longer
+  inconclusive. Not yet exercised with `--interactive`/`--yes` against a
+  real item (dry-run only, per the write-gate rule for Launchpad-posting
+  checks).
 
 ## 162. #129's Dotted-Revision Skip Tested the Wrong Part
 
@@ -3860,9 +3865,11 @@ each action reaching Launchpad.
   new behaviour.
 * Tests: the live trigger shape is no longer skipped (the real check runs),
   a genuine dotted Debian revision (with and without an Ubuntu suffix)
-  still is -- all three fail against the pre-fix code. Live-verified on the
+  still is -- all three fail against the pre-fix code. Live-verified: the
   trigger MP/bug shape with a fake ubuntu_lint (the real package isn't
-  installed on this host); not yet re-triaged live.
+  installed on this host); re-triaged live in production (bug #2161717,
+  dry-run) -- jammy's debdiff no longer logs the dotted-Debian-revision
+  skip, confirming Check 13 runs on it again.
 
 ## 163. Check 7: the Archive Can Already Show a Series Is Fixed
 
@@ -3887,7 +3894,11 @@ each action reaching Launchpad.
 * Tests: the live trigger shape resolved without an LLM call, an older
   archive version still reaching the LLM, and a lookup failure falling
   through rather than going inconclusive -- the first fails against the
-  pre-fix code. Not yet re-triaged live.
+  pre-fix code. Live-verified: re-triaged bug #2161717 in production
+  (dry-run) -- `check_sru_newer_series` now logs `unhandled=[]` for
+  jammy's `newer=['noble', 'resolute', 'stonking', 'tenacious']`, where
+  stonking previously had no task/MP/attachment and was flagged
+  unhandled.
 
 ## 164. An Identical Finding Across Series Is Shortened, Not Repeated
 
