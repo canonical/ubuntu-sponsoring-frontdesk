@@ -4184,7 +4184,15 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
         # PPA. See STATUS.md's backlog note.
         previous = parsed[1].version if len(parsed) > 1 else None
         revision = getattr(previous, "debian_revision", None) or ""
-        if "." in revision:
+        # #162 (live, tigervnc bug #2161717): a dot anywhere in the WHOLE
+        # revision was tested, so an ordinary SRU revision like
+        # `4ubuntu0.22.04.1` -- dots only in its Ubuntu part -- was wrongly
+        # read as the dotted-Debian-revision case, skipping Check 13 on
+        # most re-SRUs of an already-SRUed package. #129 is specifically
+        # about the DEBIAN part (the bare NMU revision before any `ubuntuN`
+        # suffix); only that part is tested now.
+        debian_part = revision.split("ubuntu", 1)[0]
+        if "." in debian_part:
             if lint_handles_dotted_revisions():
                 # The reason for this skip is gone: say so loudly once per
                 # run rather than leaving dead caution in place for years.
@@ -4196,9 +4204,10 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
                 )
             logger.debug(
                 "_sru_version_convention_verdict: previous version %s has a "
-                "dotted Debian revision; ubuntu-lint miscomputes the expected "
-                "version, skipping.",
+                "dotted Debian revision (%r); ubuntu-lint miscomputes the "
+                "expected version, skipping.",
                 previous,
+                debian_part,
             )
             return False
         context = ubuntu_lint.Context(debian_changelog=parsed)

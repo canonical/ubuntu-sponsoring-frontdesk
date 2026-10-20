@@ -3840,3 +3840,27 @@ each action reaching Launchpad.
   failure keeps the distro-info list), outdated data silent while other
   ubuntu-lint failures stay inconclusive -- both behaviour tests fail
   without the fix -- and the status note. Not deployed yet.
+
+## 162. #129's Dotted-Revision Skip Tested the Wrong Part
+
+* **Found in production** (tigervnc bug #2161717, jammy debdiff): Check 13
+  skipped with "previous version `1.12.0+dfsg-4ubuntu0.22.04.1` has a
+  dotted Debian revision". It doesn't: `4ubuntu0.22.04.1` is an ordinary
+  re-SRU revision, and its only dots are in the **Ubuntu** part
+  (`ubuntu0.22.04.1`), not the Debian one (`4`). #129's skip tested the
+  whole revision string for a dot, so Check 13 was silently skipped on
+  most re-SRUs of a package that had already had one -- seen earlier on
+  `testing` too (pipewire, `1ubuntu1.2`) without anyone noticing.
+* **Fix:** split the revision at `ubuntu` first and test only the part
+  before it -- the actual Debian/NMU revision #129 is about. A genuine
+  dotted Debian revision (`4.1`, with or without an Ubuntu suffix after
+  it) still skips, unchanged.
+* **Effect:** more SRU-version-convention advisories from now on, on
+  packages with a prior SRU -- that's the check doing its job again, not a
+  new behaviour.
+* Tests: the live trigger shape is no longer skipped (the real check runs),
+  a genuine dotted Debian revision (with and without an Ubuntu suffix)
+  still is -- all three fail against the pre-fix code. Live-verified on the
+  trigger MP/bug shape with a fake ubuntu_lint (the real package isn't
+  installed on this host); not yet re-triaged live.
+
