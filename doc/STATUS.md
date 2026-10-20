@@ -1390,9 +1390,16 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   copies off-host, e.g. to S3, needs a discussion -- storage may be a lot of
   machinery for a small DB and a log. Losing `state.db` costs one full
   re-triage (LLM spend), not wrong behaviour.
-- **Backlog: drop the ubuntu-lint PPA** from `src/frontdesk.py` once
-  `python3-ubuntu-lint` is SRUed to 26.04 (planned), so the unit takes it
-  from the archive. The PPA currently has 0.2.3, without the #129 fix.
+- **Backlog: drop the ubuntu-lint PPA handling** once `python3-ubuntu-lint`
+  is SRUed to 26.04 (resolute; planned), so the unit takes it from the
+  archive like every other package. What goes, all in `src/frontdesk.py`:
+  `UBUNTU_LINT_PPA` and `_install_ubuntu_lint`'s `add-apt-repository` call
+  (`python3-ubuntu-lint` simply joins `PACKAGES`), and `_proxy_environ`,
+  which exists only for that call (#160) -- plus their unit tests, and the
+  `ppa.launchpadcontent.net` row in CHARM.md's firewall table. Keep the
+  best-effort behaviour only if the package can still be absent; once it's
+  in the archive, a missing package is an install failure like any other.
+  The PPA currently has 0.2.3, without the #129 fix.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the

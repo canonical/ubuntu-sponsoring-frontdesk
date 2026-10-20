@@ -51,8 +51,10 @@ PACKAGES = [
 ]
 
 # Check 13 delegates to ubuntu-lint, not yet in the 26.04 archive. Optional:
-# without it the check degrades to silence. Drop the PPA once the package is
-# SRUed to 26.04 (doc/STATUS.md).
+# without it the check degrades to silence. Once the package is SRUed to
+# resolute, drop the PPA handling: this constant, _install_ubuntu_lint's
+# add-apt-repository call and _proxy_environ (#160) -- the package just
+# joins PACKAGES (doc/STATUS.md backlog).
 UBUNTU_LINT_PPA = "ppa:enr0n/ubuntu-lint"
 UBUNTU_LINT_PACKAGE = "python3-ubuntu-lint"
 
