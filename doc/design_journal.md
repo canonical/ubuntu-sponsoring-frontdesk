@@ -3704,7 +3704,10 @@ each action reaching Launchpad.
 * Tests: the trigger hunk with its exact message, a new entry alone,
   a whitespace-only edit, two entries named, an unnamed deep edit,
   UNRELEASED, no new entry, merge MP/bug, unreadable diff, bug debdiff --
-  all fail without the change. Dry-run verified on the trigger MP.
+  all fail without the change. Dry-run verified on the trigger MP; live
+  `--interactive` post confirmed on procps MP #510982 (2026-10-21) --
+  the "unnamed deep edit" path for real, a trailing blank line trimmed
+  after the 1996 entry, unrelated to the new stanza being added.
 
 ## 156. No Block for a Series With Nothing to Say
 
