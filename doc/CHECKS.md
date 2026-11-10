@@ -343,7 +343,7 @@ before upload."
 
 ### Check 13: SRU version convention
 
-`check_sru_version_suffix_convention`, design #109/#119/#122/#129. The
+`check_sru_version_suffix_convention`, design #109/#119/#122/#129/#173. The
 reason comes from `ubuntu-lint`.
 
 > The proposed version doesn't follow Ubuntu's recommended SRU
@@ -351,6 +351,12 @@ reason comes from `ubuntu-lint`.
 > actually matters is that the version sorts ahead of the archive and
 > doesn't collide with anything), but following the convention avoids
 > surprises
+
+Not raised on a multi-release SRU (#173) that uses the per-release
+`ubuntu0.YY.MM.N` form for every series when `ubuntu-lint` itself expects
+that form for at least one of them -- its base version is in several
+releases. The documented rule requires it only there, but one consistent
+scheme across the update is harmless.
 
 ### Check 14: SRU version precedence
 

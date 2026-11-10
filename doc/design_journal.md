@@ -4309,3 +4309,49 @@ each action reaching Launchpad.
   item skipped with no comment, no saved state, no LLM call and
   `skipped-backports` recorded -- which fails without the `main.py`
   gate. Flow chart and CHECKS.md updated. Not yet deployed.
+
+## 173. A Consistent Per-Release Version Across a Multi-Release SRU Is Fine
+
+* **Found live in seb128's first production `--interactive` pass**
+  (lua-bitop bug #2173901, a security update, declined at `[y/N]`):
+  debdiffs for jammy (`1.0.2-5ubuntu0.22.04.1`) and noble
+  (`1.0.2-7ubuntu0.24.04.1`). Check 13 flagged noble: ubuntu-lint
+  expected `1.0.2-7ubuntu0.1`.
+* **The bot followed the document:**
+  - The version-strings page requires the per-release `YY.MM` only when
+    "the same fix is applied to a package that has the same version in
+    several releases" -- its multi-release table row is that case, not
+    "an SRU covering several releases".
+  - madison: `1.0.2-5` is in bionic, focal and jammy, so jammy needs the
+    per-release form (and Check 13 was rightly silent there); `1.0.2-7`
+    is only in noble, so `ubuntu0.1` is what the rule gives there.
+* **But the advisory is noise there (seb128).** One scheme across a
+  multi-release update is a consistent, harmless choice: the noble
+  version still sorts ahead and can't collide, which the advisory itself
+  says is what actually matters. It may also be the security team's
+  habit for multi-release updates -- not confirmed, and not why this
+  changed.
+* **Change:** on a bug, before Check 13 posts its finding for a debdiff
+  using the per-release form for its own series, it looks at the bug's
+  other series (as `bug_review_targets` picks them). It stays silent only
+  if both hold:
+  - every one of them also uses the per-release form;
+  - for at least one of them, ubuntu-lint itself *expects* that form,
+    i.e. its base version really is in several releases.
+  The second part reuses ubuntu-lint's verdict on the other series rather
+  than re-deriving the rule. That's more than convenience: jammy's case
+  depends on bionic and focal, which the bot's own supported-series list
+  doesn't include and madison does. `_sru_version_convention_verdict`'s
+  core now tells "ubuntu-lint ran and accepted it" apart from "not
+  applicable / skipped". Only an explicit acceptance counts, so a skip --
+  ubuntu-lint absent, the dotted-revision workaround -- never vouches for
+  anything. A failed lookup for another series makes the item
+  inconclusive (retried), not "accepted".
+* Unchanged: single-series bugs and MPs, mixed schemes, and a
+  per-release form needed nowhere are flagged as before.
+* Tests (fake ubuntu-lint applying the documented rule): the live shape
+  not flagged, jammy still accepted; the per-release form needed nowhere,
+  an inconsistent scheme, and a single-series bug still flagged; a failed
+  lookup for the other series inconclusive. The live-shape and
+  inconclusive tests fail without the change. CHECKS.md updated. Not yet
+  deployed.

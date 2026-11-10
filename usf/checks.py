@@ -4263,7 +4263,20 @@ def _sru_version_convention_finding(url, reason):
     )
 
 
+# #173: what _sru_version_convention_result returns when ubuntu-lint ran
+# and the proposed version matches its expected one -- distinct from the
+# False of "not applicable / skipped".
+_LINT_ACCEPTED = "accepted"
+
+
 def _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry):
+    """_sru_version_convention_result with "ubuntu-lint accepted it" folded
+    into False, the contract every check-facing caller wants."""
+    result = _sru_version_convention_result(url, lp_client, package, target_series, proposed_entry)
+    return False if result == _LINT_ACCEPTED else result
+
+
+def _sru_version_convention_result(url, lp_client, package, target_series, proposed_entry):
     """Shared core of check_sru_version_suffix_convention (#109): given the
     new (top) changelog stanza a proposal adds, fetch the currently
     published changelog for `target_series` and hand both to ubuntu-lint's
@@ -4271,11 +4284,12 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
     convention, https://github.com/ubuntu/ubuntu-lint) rather than
     reimplementing its version-suffix logic here.
 
-    Returns a Finding (incomplete -- convention violation), False (not
-    applicable: nothing published yet for this series, ubuntu-lint judged
-    this not an SRU/native package, the string already matches, or
-    ubuntu_lint isn't installed on this host), or None (any lookup/parse
-    failure -- retriable, not a guess).
+    Returns a Finding (incomplete -- convention violation), _LINT_ACCEPTED
+    (ubuntu-lint ran and the string matches what it expects, #173), False
+    (not applicable: nothing published yet for this series, ubuntu-lint
+    judged this not an SRU/native package or skipped it, or ubuntu_lint
+    isn't installed on this host), or None (any lookup/parse failure --
+    retriable, not a guess).
 
     ubuntu_lint (python3-ubuntu-lint) is absent on this host False rather
     than None -- this is a stable fact about the host, not a transient
@@ -4399,7 +4413,7 @@ def _sru_version_convention_verdict(url, lp_client, package, target_series, prop
             e,
         )
         return None
-    return False
+    return _LINT_ACCEPTED
 
 
 # A buildN revision at the end of a version: '1.2.16-1.1build1'.
@@ -4619,7 +4633,76 @@ def check_sru_version_suffix_convention(url, lp_obj, lp_client):
         )
         return False
 
-    return _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry)
+    verdict = _sru_version_convention_verdict(
+        url, lp_client, package, target_series, proposed_entry
+    )
+    if not isinstance(verdict, Finding) or not release:
+        return verdict
+    if not re.search(rf"ubuntu0\.{re.escape(release)}\.\d+$", proposed_version):
+        return verdict
+    consistent = _per_release_versions_needed_elsewhere(
+        url, lp_obj, lp_client, target_series, dict(series_order)
+    )
+    if consistent is None:
+        return None
+    if consistent:
+        logger.info(
+            "[%s] %r uses the per-release ubuntu0.%s.N form like this bug's "
+            "other series, where it's required; not flagging (#173).",
+            url,
+            proposed_version,
+            release,
+        )
+        return False
+    return verdict
+
+
+def _per_release_versions_needed_elsewhere(url, lp_obj, lp_client, target_series, releases):
+    """#173: True when every other series' debdiff on this bug uses the
+    per-release `ubuntu0.YY.MM.N` form, and for at least one of them
+    ubuntu-lint itself expects that form -- its base version is shared
+    with another release, the documented case for it
+    (version-strings, "same version in several releases").
+
+    Trigger: lua-bitop bug #2173901, a security update for jammy
+    (`1.0.2-5`, also in bionic and focal) and noble (`1.0.2-7`, only in
+    noble), both with the per-release form. The doc requires it for jammy
+    and expects `ubuntu0.1` for noble, so Check 13 flagged noble. But one
+    scheme across a multi-release update is a consistent, harmless choice
+    -- the version still sorts ahead and can't collide, which the
+    advisory itself says is what matters -- and nagging about it is noise
+    (seb128).
+
+    Bugs only: an MP is one series. False when the bug has no other series
+    or any of them doesn't use the per-release form; None when a lookup
+    for another series failed (retriable -- not "accepted")."""
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return False
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    targets = bug_review_targets(bug, getattr(lp_client, "lp", None))
+    if targets is None:
+        return None
+    others = [t for t in targets or [] if t.series and t.series != target_series]
+    if not others:
+        return False
+    for other in others:
+        release = releases.get(other.series)
+        if not release or not re.search(
+            rf"ubuntu0\.{re.escape(release)}\.\d+$", other.version or ""
+        ):
+            return False
+    needed = False
+    for other in others:
+        stanza = llm_reviewer._new_changelog_stanza(other.text)
+        result = _sru_version_convention_result(
+            url, lp_client, other.package, other.series, stanza
+        )
+        if result is None:
+            return None
+        if result == _LINT_ACCEPTED:
+            needed = True
+    return needed
 
 
 def _sru_proposal_inputs(lp_obj, lp_client):
