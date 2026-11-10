@@ -722,6 +722,57 @@ def is_kernel_item(lp_obj, source_package=None):
     return any(_KERNEL_SOURCE_RE.match(name.lower()) for name in names if name)
 
 
+def _new_entry_suite(text):
+    """The suite of the new changelog entry a diff adds, lower-cased, or
+    None when it adds no complete entry."""
+    stanza = llm_reviewer._new_changelog_stanza(text)
+    header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0]) if stanza else None
+    return header.group("suite").lower() if header else None
+
+
+def is_backports_upload(lp_obj):
+    """#172: True when the upload under review targets a `-backports`
+    pocket -- the new changelog entry's suite is e.g. `noble-backports`.
+
+    Backports follow their own process
+    (https://ubuntu.com/project/docs/how-ubuntu-is-made/processes/backports/)
+    that the checks don't model: their `~YY.MM.N` versions aren't no-change
+    rebuilds (Check 15), they aren't SRUs (the template review, Check 7),
+    and the rest of the per-series logic assumes the release/updates
+    pockets. Trigger: git-diff-html bug #2173887, three no-change
+    backport debdiffs each bounced by Check 15. Until the process is
+    documented well enough to check, the bot stays out (seb128).
+
+    Bugs: the newest debdiff per series, as bug_review_targets picks them
+    (an older iteration a contributor since replaced doesn't count); any
+    one targeting -backports puts the whole item out of scope, mixed ones
+    included. MPs: the preview diff's new entry. An attachment or diff that
+    can't be read doesn't count -- the checks that follow read the same
+    content and go inconclusive on their own -- so this never returns None.
+    Metadata and memoized content only: the same fetches the checks use.
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type == "branch_merge_proposal":
+        text = diff_text(lp_obj)
+        suite = _new_entry_suite(text) if isinstance(text, str) else None
+        return bool(suite and suite.endswith("-backports"))
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    try:
+        candidates = attachments.patch_attachments(bug)
+    except Exception as e:
+        logger.debug("is_backports_upload: couldn't list attachments (%s).", e)
+        return False
+    newest = {}
+    for attachment in candidates:  # Launchpad lists them oldest first
+        text = attachments.attachment_text(attachment)
+        if not isinstance(text, str):
+            continue
+        suite = _new_entry_suite(text)
+        if suite:
+            newest[_POCKET_SUFFIX_RE.sub("", suite)] = suite
+    return any(suite.endswith("-backports") for suite in newest.values())
+
+
 def is_packaging_mp(lp_obj):
     """False when a merge proposal isn't about an Ubuntu source package at
     all, so the pass can stop before any check runs (#139).

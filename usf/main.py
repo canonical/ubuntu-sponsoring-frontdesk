@@ -366,6 +366,21 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # Same for the bug-attachment content memo (#62).
     attachments.reset_cache()
 
+    # #172: uploads targeting a -backports pocket follow the backports
+    # process, which the checks don't model (Check 15 read the ~YY.MM.N
+    # versions of git-diff-html bug #2173887 as botched no-change
+    # rebuilds). Stay out, before any check -- closing ones included.
+    # After the facts gate so unchanged items never pay for the attachment
+    # reads; nothing is persisted, like the kernel skip, so a backport
+    # later re-targeted as a regular upload still gets reviewed.
+    if checks.is_backports_upload(lp_obj):
+        logger.info(
+            "Targets a -backports pocket -- the backports process isn't "
+            "modelled by these checks. Skipping (nothing persisted)."
+        )
+        report.outcome = "skipped-backports"
+        return
+
     def persistable_facts():
         if inconclusive_reasons or not lp_client.all_writes_effective():
             if not lp_client.all_writes_effective():

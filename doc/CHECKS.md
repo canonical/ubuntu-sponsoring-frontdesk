@@ -472,6 +472,13 @@ Silence is usually deliberate. In rough order of when it happens:
   open (#165): one marked Invalid/Won't Fix/etc. is a ruled-out guess, not
   a live ask, and doesn't put the bug's other, still-open tasks out of
   scope.
+- **Uploads to a `-backports` pocket** (#172). When the new changelog entry
+  targets e.g. `noble-backports`, the item follows the
+  [backports process](https://ubuntu.com/project/docs/how-ubuntu-is-made/processes/backports/),
+  which these checks don't model -- a `~24.04.1` version isn't a botched
+  no-change rebuild, and a backport isn't an SRU. Skipped before any check,
+  for now, nothing persisted. On a bug, the newest debdiff per series
+  counts, and one backport among them is enough.
 - **The merge proposal isn't about an Ubuntu source package** (#139). The
   sponsoring report lists a proposal whenever any uploading team is a
   requested reviewer, which in September 2026 briefly pulled in two decades

@@ -1429,6 +1429,14 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   - *Token access level* (3): `allowed_access_levels=["WRITE_PUBLIC"]` in
     `tools/lp-credentials.py`, enforced at the next token rotation. The
     tokens are already public-only by hand; only if seb128 asks.
+- **Backlog: backports are skipped, not reviewed** (#172). Revisit once
+  the backports process is documented well enough to check -- what a
+  `~YY.MM.N` version must look like, whether the newer-series rule
+  applies, whether `~ubuntu-sponsors` is even the right team for them
+  (seb128 asked on git-diff-html bug #2173887). Also seen there: Check
+  15's message explains an `ubuntuN` revision even when the proposed
+  version has none (`~24.04.1`); moot while backports are skipped, worth
+  rewording if Check 15 ever meets another non-`ubuntuN` shape.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the

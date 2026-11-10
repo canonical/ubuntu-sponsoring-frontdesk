@@ -4261,3 +4261,51 @@ each action reaching Launchpad.
   other reviews have no fallback; the three prompts ask for a quoted
   single-line reason. The live-reply and prompt tests fail without the
   change. Not yet deployed.
+
+## 172. Uploads to a `-backports` Pocket Are Skipped, For Now
+
+* **Found live in seb128's first production `--interactive` pass**
+  (git-diff-html bug #2173887, declined at `[y/N]`): no-change backports
+  of a tenacious-only package to noble, resolute and stonking, suites
+  `<series>-backports`, versions `1.2.1-1~24.04.1` and so on. Everything
+  per-series assumed a regular upload:
+  - the pocket is stripped to name the series, so each debdiff read as a
+    plain noble/resolute/stonking upload;
+  - Check 15 bounced all three as no-change rebuilds that should be
+    `1.2.1-1build1`;
+  - the `[Impact]` section made it an SRU, so it also got Check 7's
+    newer-series question and the SRU-template review.
+  The backports process
+  (https://ubuntu.com/project/docs/how-ubuntu-is-made/processes/backports/)
+  has its own rules, and the doc doesn't say enough to check them.
+* **Change (seb128's call): stay out, for now.** `checks.is_backports_upload`
+  is true when the new changelog entry targets a `-backports` suite:
+  - bugs: the newest debdiff per series, picked the way
+    `bug_review_targets` picks them, so an iteration the contributor has
+    since replaced doesn't count. One backport among them is enough;
+    mixed bugs go to a human;
+  - MPs: the preview diff's new entry.
+  `main.py` checks this right after the facts gate and before Check 1:
+  nothing posted, nothing persisted, audit outcome `skipped-backports`.
+  - *After the facts gate*, so items that haven't changed never pay for
+    the attachment reads.
+  - *Before Check 1*, so no closing logic -- "already uploaded" and the
+    like, also written for the regular pockets -- runs on a backport
+    either.
+  - *Nothing persisted*, like the kernel skip, so a backport later
+    re-targeted as a regular upload still gets reviewed.
+  - *An unreadable attachment or diff doesn't count:* the checks that
+    follow read the same content and go inconclusive on their own.
+* Detecting by the suite, not the `[BPO]` title convention or the
+  `~YY.MM.N` version: the suite is what the upload actually targets.
+* Backlog in STATUS.md: real backports support once the process is
+  documented, including whether `~ubuntu-sponsors` is the right team for
+  them. Also noted there: Check 15's message explains an `ubuntuN`
+  revision even for a version with none.
+* Tests: the live shape (three backports debdiffs) detected; release,
+  proposed, updates and devel suites not; one backport among regular
+  debdiffs detected; a replaced backports iteration not; an unreadable
+  attachment not; an MP's new entry read both ways; and end to end, the
+  item skipped with no comment, no saved state, no LLM call and
+  `skipped-backports` recorded -- which fails without the `main.py`
+  gate. Flow chart and CHECKS.md updated. Not yet deployed.
