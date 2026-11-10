@@ -55,6 +55,75 @@ def test_interactive_with_tty_and_yes_writes(tmp_path, monkeypatch):
     assert bug.new_messages == [f"hello\n\n{FOOTNOTE}"]
 
 
+# ---- #174: the [y/N] prompt --------------------------------------------
+
+
+def _answering(monkeypatch, *answers):
+    """Interactive mode on a TTY, input() returning `answers` in turn; the
+    type-ahead flush is recorded instead of touching the real terminal."""
+    import launchpad_client
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    queue = list(answers)
+    asked = []
+
+    def fake_input(prompt=""):
+        asked.append(prompt)
+        return queue.pop(0)
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    flushed = []
+    monkeypatch.setattr(launchpad_client, "_discard_typeahead", lambda: flushed.append(1))
+    return asked, flushed
+
+
+def test_an_unrecognised_answer_is_asked_again(tmp_path, monkeypatch, capsys):
+    """hwloc bug #2171267: a key typed early made the answer "yy", which
+    read as a decline. Now it's asked again."""
+    asked, _ = _answering(monkeypatch, "yy", "y")
+    c = _client(tmp_path, "interactive")
+    bug = FakeBug()
+    c.comment(bug, "hello")
+    assert len(asked) == 2
+    assert bug.new_messages == [f"hello\n\n{FOOTNOTE}"]
+    assert "Please answer y or n" in capsys.readouterr().out
+
+
+def test_enter_alone_is_still_no(tmp_path, monkeypatch):
+    asked, _ = _answering(monkeypatch, "")
+    c = _client(tmp_path, "interactive")
+    bug = FakeBug()
+    c.comment(bug, "hello")
+    assert len(asked) == 1
+    assert bug.new_messages == []
+    assert _entries(c)[-1]["outcome"] == "declined"
+
+
+def test_yes_and_no_in_any_case(tmp_path, monkeypatch):
+    for answer, expected in (("Y", "performed"), ("Yes", "performed"), ("N", "declined")):
+        _answering(monkeypatch, answer)
+        c = _client(tmp_path, "interactive")
+        c.comment(FakeBug(), "hello")
+        assert _entries(c)[-1]["outcome"] == expected, answer
+
+
+def test_typeahead_is_discarded_before_each_prompt(tmp_path, monkeypatch):
+    _, flushed = _answering(monkeypatch, "n", "n")
+    c = _client(tmp_path, "interactive")
+    c.comment(FakeBug(), "one")
+    c.comment(FakeBug(), "two")
+    assert len(flushed) == 2
+
+
+def test_discarding_typeahead_tolerates_a_non_terminal(monkeypatch):
+    import io
+
+    import launchpad_client
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    launchpad_client._discard_typeahead()  # no fileno(): must not raise
+
+
 # ---- footnote (design #57) ---------------------------------------------
 
 

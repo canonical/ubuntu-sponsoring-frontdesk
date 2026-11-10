@@ -3,9 +3,28 @@ import os
 import subprocess
 import sys
 
+try:
+    import termios
+except ImportError:  # not a POSIX terminal host
+    termios = None
+
+
 from launchpadlib.launchpad import Launchpad
 
 from audit import AuditLog
+
+
+def _discard_typeahead():
+    """#174: drop keystrokes buffered on the terminal before a [y/N] prompt,
+    so only an answer typed after the prompt appeared counts. Best effort:
+    anything that isn't a real terminal is left alone."""
+    if termios is None:
+        return
+    try:
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (termios.error, OSError, ValueError):
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -176,11 +195,22 @@ class LPClient:
                 "Use --yes for unattended runs or --dry-run to preview."
             )
             return "no-tty"
-        ans = input("  Proceed? [y/N]: ")
-        if ans.strip().lower() == "y":
-            return "perform"
-        logger.info("  Skipped (declined).")
-        return "declined"
+        # #174 (live, hwloc bug #2171267): a key typed while the bot was
+        # still working sat in the terminal's buffer and joined the next
+        # answer -- "yy", read as a decline. Worse, a buffered "y" + Enter
+        # would approve a write before it was even shown. So whatever was
+        # typed before the prompt appeared is discarded, and an answer
+        # that's neither yes nor no is asked again. Enter alone is still
+        # the default, no.
+        _discard_typeahead()
+        while True:
+            ans = input("  Proceed? [y/N]: ").strip().lower()
+            if ans in ("y", "yes"):
+                return "perform"
+            if ans in ("", "n", "no"):
+                logger.info("  Skipped (declined).")
+                return "declined"
+            print("  Please answer y or n (Enter alone means no).")
 
     def load_url(self, url):
         """Loads a Launchpad object (Bug, BugTask, or Merge Proposal) from a URL."""

@@ -4355,3 +4355,29 @@ each action reaching Launchpad.
   lookup for the other series inconclusive. The live-shape and
   inconclusive tests fail without the change. CHECKS.md updated. Not yet
   deployed.
+
+## 174. The `[y/N]` Prompt Ignores Type-ahead and Re-asks on a Bad Answer
+
+* **Found live in seb128's first production `--interactive` pass**
+  (hwloc bug #2171267). A `y` typed while the bot was still working sat
+  in the terminal's buffer and joined the next answer: the prompt read
+  `yy`, which `_decide` counted as a decline. The comment and the first
+  task's Incomplete went through; the second task's didn't. Nothing was
+  saved, so the item is re-triaged next run: the identical comment is
+  deduplicated, and only the missing write is asked again.
+* The worse variant of the same thing: a buffered `y` *and Enter* is a
+  valid answer, and would approve the next write before it was even on
+  screen.
+* **Change (seb128):**
+  - Before each `[y/N]` prompt, keystrokes already buffered on the
+    terminal are discarded (`termios.tcflush`, best effort -- a
+    non-terminal stdin is left alone). Only an answer typed after the
+    prompt appeared counts.
+  - An answer that's neither yes (`y`, `yes`) nor no (`n`, `no`, or Enter
+    alone) is asked again instead of being read as no. Case doesn't
+    matter.
+  - Enter alone stays "no", the `[y/N]` default (seb128).
+* Tests: `yy` then `y` re-asks and writes; Enter alone declines without
+  re-asking; `Y`/`Yes`/`N` in any case; the flush runs before every
+  prompt; a non-terminal stdin doesn't break it. They fail without the
+  change. Not yet deployed.
