@@ -4015,4 +4015,7 @@ each action reaching Launchpad.
   once. The three wiring tests fail without the change. Checked by hand
   against the real opencode 1.19.5 binary: agent undefined, pinned,
   pinned over a hostile project config, and defined without tool
-  restrictions all gave the expected verdicts. Not yet deployed.
+  restrictions all gave the expected verdicts. Not yet deployed, and
+  `make charm-integration` wasn't run locally (seb128: left to CI, then
+  a staging deploy): the charm now loads `usf/opencode_agent.py` from
+  the packed charm, which the unit tests only exercise against the repo.
