@@ -4175,3 +4175,48 @@ each action reaching Launchpad.
   are listed; the per-item budget, a missing opencode and an unparseable
   reply are not; the list resets per item and names each review once.
   Flow chart and CHECKS.md updated. Not yet deployed.
+
+## 170. Every Green Commit on `main` Goes to `latest/edge`
+
+* **Noticed by seb128** comparing with his other charms: langpacks,
+  packages, transition-tracker, manpages and desktop-versions all publish
+  to `latest/edge` from CI. This one had only `ci.yml` (lint and unit
+  tests) and `promote.yml`. Uploads were by hand, so `edge` lagged `main`
+  -- it still had #158-era code while #161-#169 were committed. Checking
+  this also showed that CI **doesn't run `make charm-integration`**: #166
+  had assumed it would, so the staging deploy is the only real-model check
+  #166/#167 get.
+* **Change:** `.github/workflows/publish.yml`, a separate workflow as in
+  the house charms, with their steps: pack,
+  `canonical/charming-actions/channel`, then
+  `canonical/charming-actions/upload-charm` with `built-charm-path`, both
+  pinned to the same commit the house charms use. The action is the
+  standard (seb128), and besides uploading it creates a `rev<N>` tag and
+  GitHub release on the commit, mapping each Charmhub revision to its
+  source. The `channel` action maps a push to the default branch to
+  `latest/edge` (read in its source).
+* **One difference from most house workflows: it's gated on the tests.**
+  - langpacks, packages and transition-tracker publish every push to
+    `main`, red or not. Here that matters more, because production tracks
+    `latest/edge`.
+  - Following manpages' `release.yaml`, `publish.yml` first runs `ci.yml`
+    as a reusable workflow (which gains a `workflow_call:` trigger) and
+    publishes only if it passes. The cost: on a push to `main` the tests
+    run twice, once for CI and once here, about a minute.
+  - Two other shapes were tried and dropped. A separate workflow triggered
+    by `workflow_run` after CI: under that trigger `GITHUB_SHA` is
+    wherever `main` points by then, and the action tags `GITHUB_SHA` (read
+    in its source), so a push during CI would tag the wrong commit. A job
+    inside `ci.yml`: correct, but unlike the house layout, where
+    publishing is its own file.
+  - Triggered by the push itself, `GITHUB_SHA` here is the commit that was
+    tested and packed. The same gate would suit the other charms,
+    optionally.
+* Uploads queue rather than cancel each other (a cancelled upload can
+  leave a revision uploaded but not released). The job needs `contents:
+  write` for the tag and release; the rest of the workflow, the test run
+  included, is read-only.
+* Not verifiable before it runs on GitHub: the YAML parses and the
+  artifact name matches a local `charmcraft pack`. The first push to
+  `main` is its test -- check the Actions tab, `charmcraft status
+  ubuntu-sponsoring-frontdesk`, and the new `rev<N>` release.

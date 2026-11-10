@@ -1,0 +1,62 @@
+# Publish every commit on main that passes the tests to Charmhub's
+# latest/edge (#170).
+#
+# The house charms' "Publish to edge" workflow (langpacks, packages, ...)
+# with one change, following manpages' release.yaml: it first runs ci.yml
+# as a reusable workflow and publishes only if that passes, so a red commit
+# never reaches edge -- which production tracks. Running in this workflow,
+# triggered by the push itself, GITHUB_SHA is the commit that was tested
+# and packed, and that's the one upload-charm tags `rev<N>` with a GitHub
+# release.
+#
+# Promotion to beta/stable stays manual (promote.yml). Actions are pinned
+# by commit, like ci.yml's: a tag can move, a commit can't.
+name: Publish to edge
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write  # the rev<N> tag and GitHub release
+    # Uploads queue rather than cancel each other: a cancelled upload can
+    # leave a revision uploaded but not released.
+    concurrency:
+      group: publish-edge
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # charmcraft.yaml records `git describe` as the charm's version.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+
+      - name: Install charmcraft
+        run: sudo snap install charmcraft --classic
+
+      - name: Pack charm
+        run: charmcraft pack -v
+
+      - name: Select charmhub channel
+        id: channel
+        uses: canonical/charming-actions/channel@1753e0803f70445132e92acd45c905aba6473225 # 2.7.0
+
+      - name: Upload charm to charmhub
+        uses: canonical/charming-actions/upload-charm@1753e0803f70445132e92acd45c905aba6473225 # 2.7.0
+        with:
+          credentials: "${{ secrets.CHARMHUB_TOKEN }}"
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          channel: "${{ steps.channel.outputs.name }}"
+          built-charm-path: ubuntu-sponsoring-frontdesk_amd64.charm

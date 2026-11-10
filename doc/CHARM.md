@@ -183,11 +183,16 @@ juju deploy ubuntu-sponsoring-frontdesk frontdesk --channel latest/edge
 juju refresh frontdesk                      # later: pick up a new revision
 ```
 
-Uploads are by hand for now (`charmcraft pack` from a clean checkout of
-`main`, then `charmcraft upload ... --release latest/edge`); the revision's
-`version` is `git describe --dirty`, so a `-dirty` suffix means it wasn't
-built from a commit. `.github/workflows/promote.yml` promotes an uploaded
-revision to beta/stable (manual trigger only). To try local changes instead:
+Every commit on `main` that passes CI is packed and released to
+`latest/edge` by `.github/workflows/publish.yml` (#170), which runs the CI
+jobs first and also tags the commit `rev<N>` with a GitHub release. By hand, it's
+`charmcraft pack` from a clean checkout of `main`, then `charmcraft upload
+... --release latest/edge`. The revision's `version` is `git describe
+--dirty`, so a `-dirty` suffix means it wasn't built from a commit.
+`.github/workflows/promote.yml` promotes an uploaded revision to
+beta/stable (manual trigger only). CI doesn't run `make charm-integration`:
+a real-model check is a staging deploy, or that target by hand. To try
+local changes instead:
 
 ```
 charmcraft pack

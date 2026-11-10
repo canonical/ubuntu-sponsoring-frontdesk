@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  # publish.yml runs these jobs first and publishes only if they pass (#170).
+  workflow_call:
 
 jobs:
   # The bot (usf/): system python3, see the Makefile for why the two halves

@@ -1381,8 +1381,8 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   production.
 - **Charmhub:** published as `ubuntu-sponsoring-frontdesk`, `latest/edge`
   (revision 1, uploaded by hand from `d0a2597-dirty` -- before #158/#159).
-  Next upload from a clean `main`. Later, maybe a publish-on-push workflow;
-  `promote.yml` handles edge -> beta/stable.
+  Since #170, `publish.yml` releases every green commit on `main` to
+  edge; `promote.yml` handles edge -> beta/stable.
 - **Later:** live output for the `triage` action.
 - **Backlog: where state lives.** `state.db` and `audit.jsonl` sit on the
   unit's rootfs; seb128 handles backups by hand for now. Juju storage
