@@ -4460,3 +4460,32 @@ each action reaching Launchpad.
   changelog section, and not called a plain patch; path normalisation
   across the prefixed, debdiff, prefix-less and top-dir-named-`debian`
   shapes. They fail without the fix. Not yet deployed.
+
+## 177. The MP Review Doesn't Flag How a File Is Named
+
+* **Found live in seb128's first production `--interactive` pass**
+  (golang-github-googleapis-gax-go MP #514148, declined at `[y/N]`). The
+  MP content review (#47, question 2) flagged a "please verify"
+  mismatch: the stanza says it dropped `d/p/go1.27-jsonschema-more.patch`,
+  while the diff deletes `debian/patches/go1.27-jsonstream-more.patch`. A
+  one-word typo -- the file meant was obvious, the only patch the diff
+  deletes. Technically right, but a misspelt name in a changelog isn't
+  worth asking a contributor about (seb128). The prompt said nothing about
+  how strictly names should match, so the model compared them exactly.
+  `d/`/`d/p/` abbreviations, very common in Ubuntu changelogs, were at the
+  same risk.
+* **Change (prompt wording reviewed by seb128):** question 2 now says not
+  to flag how the stanza names a file when the file it means is
+  unambiguous -- `d/` for `debian/`, `d/p/` for `debian/patches/`, or a
+  small typo in a name that clearly refers to a file the diff does
+  change -- and to flag a name only when it points at a change the diff
+  doesn't contain and no file in the diff plausibly matches. A stanza
+  claiming a patch that isn't there, or a real unmentioned change, is
+  still flagged.
+* Prompt-only: the reply format and every mapping are unchanged. The
+  template's `prompt_sha` changes, so `llm_call` records from here on are
+  distinguishable from earlier ones (#168).
+* Tests: the guidance is in the prompt; fails without the change. Not
+  yet deployed, and not yet seen on a live reply -- worth watching that
+  the model doesn't now wave through a stanza naming a patch that's
+  genuinely absent.

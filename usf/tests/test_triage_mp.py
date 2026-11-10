@@ -176,6 +176,19 @@ def test_prompt_carries_stanza_and_debian_diff_not_upstream_content():
     assert "TRUNCATED" not in prompt
 
 
+def test_prompt_tolerates_abbreviated_or_misspelt_file_names():
+    """#177 (live, golang-github-googleapis-gax-go MP #514148): the stanza
+    said `d/p/go1.27-jsonschema-more.patch`, the diff deleted
+    `go1.27-jsonstream-more.patch` -- flagged as a mismatch, though the
+    file meant was obvious."""
+    r = ScriptedReviewer(_reply())
+    r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
+    prompt = r.prompts[0]
+    assert "Do NOT flag how the stanza names a file when the" in prompt
+    assert "`d/p/` for `debian/patches/`" in prompt
+    assert "no file\n   in the diff plausibly matches" in prompt
+
+
 def test_advisory_returns_observation_list():
     r = ScriptedReviewer(_reply(verdict="fail", observations=["Vague bullet."]))
     status, payload = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)

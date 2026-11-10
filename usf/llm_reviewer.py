@@ -1491,7 +1491,12 @@ debian/. Review ONLY these two questions:
    preserve the previous maintainer -- this is Ubuntu's standard,
    automated maintainer-update convention (update-maintainer), applied to
    every first Ubuntu delta, and is never expected to get its own
-   changelog mention. Report
+   changelog mention. Do NOT flag how the stanza names a file when the
+   file it means is unambiguous: abbreviations such as `d/` for `debian/`
+   or `d/p/` for `debian/patches/`, or a small typo in a file or patch
+   name that clearly refers to a file the diff does change. Flag a name
+   only when it points at a change the diff doesn't contain and no file
+   in the diff plausibly matches. Report
    any real mismatch here under `mismatches`, not `observations` -- it is
    a different kind of finding (see below). Phrase it affirmatively,
    stating the mismatch as a fact and asking for verification -- e.g. "The
