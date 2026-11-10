@@ -486,7 +486,10 @@ Silence is usually deliberate. In rough order of when it happens:
   read, the pass persists nothing and the item is retried later, rather than
   acting on a guess. Since #138 the audit trail names the check whose lookup
   failed, so `stats.py` can tell a real failure from a healthy skip -- each
-  of these reasons records its own outcome rather than one catch-all.
+  of these reasons records its own outcome rather than one catch-all. The
+  same goes for an LLM review whose call failed (an outage, a timeout, the
+  run's call budget running out) since #169: nothing is posted and the item
+  is retried, recorded as `llm-failed:<review>`.
 - **A human reviewer is already engaged** (#94/#106). Non-blocking
   question-tier findings are dropped entirely -- a reviewer in the
   conversation doesn't need the bot's suggestions -- while real blockers are

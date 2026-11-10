@@ -817,6 +817,24 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         new_status, comment = "READY_FOR_HUMAN", "Unknown resource type for LLM"
     checkpoint("llm_reviewer")
 
+    # #169: an LLM review whose call failed (outage, timeout, run budget,
+    # refused agent) isn't a review. Its fail-safe default -- "ready for a
+    # human", or silence -- used to be saved like a real result, so the
+    # facts gate skipped the item until its contributor changed something
+    # and the review never happened. Same treatment as Check 7's None:
+    # post nothing, persist nothing, retry next run. Before any posting,
+    # so the retried pass posts the whole aggregate once.
+    failed_reviews = llm_reviewer.failed_checks()
+    if failed_reviews:
+        for review in failed_reviews:
+            mark_inconclusive(f"llm-failed:{review}")
+        logger.info(
+            "LLM review(s) couldn't be completed (%s). Posting nothing this "
+            "run -- facts won't be persisted, so this URL is retried next run.",
+            ", ".join(failed_reviews),
+        )
+        return
+
     if new_status == "INCOMPLETE":
         add_finding("llm_review", checks.Finding("incomplete", comment))
     elif new_status == "ADVISORY":

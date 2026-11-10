@@ -422,6 +422,12 @@ class FakeLLM:
     def triage_mp(self, obj, diff_text=None):
         return self.mp_result
 
+    # #169: reviews whose LLM call failed this item (retried next run).
+    failed = ()
+
+    def failed_checks(self):
+        return list(self.failed)
+
     # Check 7's escape hatch (#58): default False = "the bug text doesn't
     # say it's fixed in newer series", the full-advisory path.
     fixed_in_newer = False

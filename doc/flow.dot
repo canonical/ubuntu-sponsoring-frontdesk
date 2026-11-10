@@ -127,8 +127,11 @@ digraph SponsoringBot {
     kind -> rev [label="SRU / sync"];
     kind -> agg [label="neither"];
     rev -> verd;
-    tmp -> agg;
-    verd -> agg;
+    llmfail [label="an LLM call failed? (#169)\noutage, timeout, run budget,\nrefused agent -- not the per-item\nbudget or a missing opencode", shape=diamond, fillcolor="#FFF9C4"];
+    tmp -> llmfail;
+    verd -> llmfail;
+    llmfail -> agg [label="no"];
+    llmfail -> silent [label="yes: post nothing,\npersist nothing, retry\n(llm-failed:<review>)"];
 
     // ---- findings aggregation + human-engaged gate (#44/#45) ----
     agg     [label="any findings collected?", shape=diamond, fillcolor="#FFF9C4"];

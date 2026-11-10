@@ -4129,3 +4129,49 @@ each action reaching Launchpad.
   mapping for both unparseable and failed calls; the structured record
   (same `prompt_sha` across inputs, different `input_sha`); per-item
   unparseable list; stats aggregation and `--json`. Not yet deployed.
+
+## 169. A Failed LLM Call Is Retried, Not Saved as Reviewed
+
+* **Found while working out #168's fail-safe mappings**, and behind the
+  wording #167 corrected in #166's notification. When an LLM *call* failed
+  (an outage, a timeout, the run budget, #166's refused agent), only
+  Check 7 turned that into an inconclusive pass. The SRU template and
+  sync reviews read it as "pass, ready for a human"; the MP review as
+  silence. Both were saved like real results, so the facts gate skipped
+  the item until its contributor changed something, and the review never
+  happened. Under `mode=yes`, one OpenRouter outage mid-pass would
+  silently cost every SRU item in that pass its template review. seb128
+  chose this as its own change after #168.
+* **Change:** `_ask` lists each review whose call failed in a way worth
+  retrying, per item. Right after the LLM phase, before anything is
+  posted, `main.py` checks that list. If any review failed:
+  - the item is marked inconclusive as `llm-failed:<review>`;
+  - nothing is posted, and facts aren't saved;
+  - it's retried next run, as Check 7's `None` already was.
+  Because this happens before posting, the retried pass posts the whole
+  aggregate once rather than stacking a second comment.
+* **Two failures are deliberately *not* retried**, and keep each check's
+  fail-safe default as before:
+  - *The per-item call budget.* It trips the same way on the same item
+    every run, so a retry would spend the budget again on every pass,
+    forever.
+  - *opencode not installed.* That's the documented checks-only mode,
+    warned about at startup and used by developers without opencode.
+    Retrying there would stop deterministic findings ever posting on any
+    item that reaches the LLM.
+  Every other failure, including ones the code doesn't know, is retried --
+  the safe side.
+* **Not touched:** #106's findings-covered call runs after the decision
+  to post, and its contract on failure is "post every finding unchanged"
+  -- a possibly redundant post, not a lost review. Rule B's sweep already
+  treated a failed call as inconclusive. And an *unparseable* reply isn't
+  a failed call: that's #168's visibility-only path.
+* #100's run-budget notification ("the remaining items this pass are
+  deferred") and #166's are now true. The latter says items are left
+  untouched and retried next run.
+* Tests: a failed MP review posts nothing, saves no facts and records
+  `llm-failed:mp_review` -- it fails without the `main.py` gate -- while
+  a completed one still posts and saves; transient and unknown failures
+  are listed; the per-item budget, a missing opencode and an unparseable
+  reply are not; the list resets per item and names each review once.
+  Flow chart and CHECKS.md updated. Not yet deployed.

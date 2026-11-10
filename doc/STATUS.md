@@ -1429,8 +1429,6 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   - *Token access level* (3): `allowed_access_levels=["WRITE_PUBLIC"]` in
     `tools/lp-credentials.py`, enforced at the next token rotation. The
     tokens are already public-only by hand; only if seb128 asks.
-  - A failed LLM call is cached as reviewed by every check but Check 7:
-    #169, next.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the

@@ -228,6 +228,18 @@ _LLM_TIMEOUT_SECONDS = 300
 _ITEM_LLM_CALL_BUDGET = 6
 _RUN_LLM_CALL_BUDGET = 100
 
+_FAIL_ITEM_BUDGET = "FAIL: LLM per-item call budget exhausted."
+_FAIL_NO_OPENCODE = "FAIL: opencode is not installed in the environment."
+
+# #169: a failed LLM call makes the item inconclusive -- nothing posted,
+# facts not saved, retried next run -- EXCEPT these two, where a retry
+# can't help: the per-item budget trips the same way every run on the same
+# item (retrying would spend the budget again on every pass, forever), and
+# a missing opencode is the documented checks-only mode, warned about at
+# startup. Those keep each check's fail-safe default. Any other failure,
+# known or not, is retried.
+_FINAL_FAILURES = (_FAIL_ITEM_BUDGET, _FAIL_NO_OPENCODE)
+
 # #100: cap on each untrusted free-text prompt source (bug descriptions,
 # comment threads). The MP diff has its own cap (_MP_DIFF_CAP below).
 _PROMPT_TEXT_CAP = 20_000
@@ -320,9 +332,9 @@ class LLMReviewer:
         self._current_url = ""
         # #100: call budgets. The per-item counter resets in start_item();
         # the per-run counters live for the LLMReviewer's lifetime (one
-        # instance per run). Both exhaust into the FAIL -> inconclusive
-        # path, so a budgeted-out item defers to the next run/a human
-        # rather than being judged on partial review.
+        # instance per run). The run budget's FAIL makes every remaining
+        # item inconclusive, retried next run (#169); the per-item budget's
+        # takes each check's fail-safe default, since it would trip again.
         self._item_calls = 0
         self._run_calls = 0
         self._run_budget_notified = False
@@ -338,6 +350,8 @@ class LLMReviewer:
         # record; and the checks whose reply couldn't be read this item.
         self._last_usage = None
         self._item_unparseable = []
+        # #169: checks whose LLM call failed in a way worth retrying.
+        self._item_failed = []
 
     def start_item(self, url=""):
         """Reset per-item LLM state (#100). Called by main/sweep at the
@@ -345,6 +359,7 @@ class LLMReviewer:
         self._item_calls = 0
         self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
         self._item_unparseable = []
+        self._item_failed = []
         self._current_url = url or ""
 
     def item_usage(self):
@@ -357,6 +372,13 @@ class LLMReviewer:
         if self._item_unparseable:
             usage["unparseable"] = list(self._item_unparseable)
         return usage
+
+    def failed_checks(self):
+        """#169: the reviews whose LLM call failed this item and are worth
+        retrying. main.py makes the item inconclusive when any did, so it
+        is retried next run instead of being saved as reviewed on a
+        fail-safe default."""
+        return list(self._item_failed)
 
     def log_run_summary(self):
         """One end-of-run line: LLM calls made and tokens/cost consumed."""
@@ -379,12 +401,11 @@ class LLMReviewer:
             self._agent_problem = inspection.problem or ""
             self._agent_model = inspection.model
             if self._agent_problem:
-                # Not "deferred": until #169, only Check 7 retries a failed
-                # LLM call; the other reviews take their fail-safe default.
                 message = (
                     "ubuntu-sponsoring-frontdesk: LLM phases disabled for this "
-                    f"run -- {self._agent_problem}. Every LLM review this run "
-                    "takes its fail-safe path (design_journal.md #166)."
+                    f"run -- {self._agent_problem}. Items needing an LLM review "
+                    "are left untouched and retried next run "
+                    "(design_journal.md #166, #169)."
                 )
                 logger.warning(message)
                 notify.notify(message)
@@ -447,7 +468,7 @@ class LLMReviewer:
                 _ITEM_LLM_CALL_BUDGET,
                 self._current_url or "<no url>",
             )
-            return "FAIL: LLM per-item call budget exhausted."
+            return _FAIL_ITEM_BUDGET
         self._item_calls += 1
         self._run_calls += 1
 
@@ -537,7 +558,7 @@ class LLMReviewer:
             return "FAIL: LLM invocation timed out."
         except FileNotFoundError:
             logger.warning("'opencode' command not found. Is the snap installed?")
-            return "FAIL: opencode is not installed in the environment."
+            return _FAIL_NO_OPENCODE
 
     @staticmethod
     def _parse_ndjson_reply(stdout):
@@ -614,10 +635,16 @@ class LLMReviewer:
         handling of that), otherwise llm_reply.Parsed or
         llm_reply.Unparseable, which each caller maps to its existing
         fail-safe default. Every reply that came back gets one `llm_call`
-        audit record."""
+        audit record. #169: a failure worth retrying also lands in
+        failed_checks(), which main.py turns into an inconclusive pass --
+        so a caller's fail-safe default for a failed call only stands
+        where main doesn't look (#106's findings-covered call, after the
+        decision to post) or when the failure is final."""
         prompt = template.format(**values)
         response = self._query_llm(prompt)
         if response.startswith("FAIL:"):
+            if response not in _FINAL_FAILURES and check not in self._item_failed:
+                self._item_failed.append(check)
             return None
         reply = llm_reply.parse_reply(response, validate)
         if isinstance(reply, llm_reply.Unparseable):

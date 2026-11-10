@@ -233,8 +233,8 @@ def test_a_refused_agent_disables_the_llm_for_the_run_and_notifies_once(monkeypa
     assert len(checked) == 1
     assert "OPENCODE_CONFIG_CONTENT" in checked[0]
     assert len(notifications) == 1 and "agent missing" in notifications[0]
-    # Not "deferred" -- only Check 7 retries a failed call so far.
-    assert "deferred" not in notifications[0]
+    # #169: true now -- every failed review makes its item inconclusive.
+    assert "retried next run" in notifications[0]
 
 
 def test_a_passing_preflight_is_checked_once_and_calls_proceed(monkeypatch):
