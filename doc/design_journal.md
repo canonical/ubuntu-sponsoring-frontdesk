@@ -4220,3 +4220,44 @@ each action reaching Launchpad.
   released revision 4 to `latest/edge` (Charmhub review approved
   automatically). The action still declares Node 20, so it warns like the
   old checkout/setup-uv pins until an upstream release moves to Node 24.
+
+## 171. A Template Reason Starting With "[" Is No Longer Lost
+
+* **Found live in seb128's first production `--interactive` pass**
+  (git-diff-html bug #2173887), visible only because #168 now logs
+  unreadable replies. The SRU-template review answered
+  `verdict: fail` with `reason: [Test Plan] and [Where problems could
+  occur] are missing, ...`. In YAML, a value starting with `[` is a flow
+  sequence, and this one never closes, so the block didn't parse and the
+  review fell back to "pass". The prompt invites exactly this, since it
+  asks the model to name the missing sections in brackets. It has been
+  that way since #9: whenever the model led with a section name, a real
+  template bounce was silently dropped. The audit trail can't say how
+  often it happened before -- replies were never recorded -- but
+  `stats.py` now can (see below).
+* **Two parts:**
+  - *The prompts* -- SRU template, sync delta, sync version -- now ask for
+    the reason on a single line inside double quotes, as the MP review
+    already does for its bullets.
+  - *A narrow fallback* for when the block still isn't valid YAML:
+    `llm_reply.verdict_lines` reads the block as exactly two plain lines,
+    `verdict: pass|fail` (optionally followed by a comment) and
+    `reason: <the rest of that line>`, removing one pair of enclosing
+    quotes. Anything else -- another key, an indented continuation, a
+    second verdict, no verdict -- is still unparseable, reported with the
+    original YAML error. Nothing is inferred: it accepts only replies
+    whose meaning is unambiguous when read as plain text. Only the
+    verdict reviews use it (the `verdict` validator names it); the other
+    reviews' answers are lists or booleans, where YAML is the only
+    reading.
+* A reply read this way records `verdict:<value>+lines` in its
+  `llm_call` record, so `stats.py`'s per-check table shows whether the
+  quoting instruction is being followed.
+* On this particular item the bounce would have been wrong anyway: it's
+  a backport, not an SRU (#172). The bug matters for real SRUs.
+* Tests: the exact live reply now rejects with its full reason, through
+  `review_sru_template`, and is recorded as `+lines`; the sync reviews
+  get the fallback too; what the fallback reads and what it refuses;
+  other reviews have no fallback; the three prompts ask for a quoted
+  single-line reason. The live-reply and prompt tests fail without the
+  change. Not yet deployed.

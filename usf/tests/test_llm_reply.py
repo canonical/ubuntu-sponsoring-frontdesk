@@ -309,3 +309,93 @@ def test_stats_break_llm_calls_down_per_check(tmp_path):
     assert "LLM calls per check (#168)" in text
     assert "no fenced block" in text
     json.dumps(stats._jsonable(data))  # --json must still serialize
+
+
+# --- #171: a reason starting with "[" ------------------------------------------
+
+# The SRU-template reply seen live on git-diff-html bug #2173887: the
+# reason names a section in brackets first, which YAML reads as a flow
+# sequence that never closes.
+LIVE_BRACKETED = (
+    "The description does not follow the SRU template.\n\n"
+    "```yaml\nverdict: fail\n"
+    "reason: [Test Plan] and [Where problems could occur] are missing, and [Impact] "
+    "doesn't describe a bug being fixed; the [Scope], [Other Info] and [Testing] "
+    "checklist content doesn't substitute for them.\n```"
+)
+
+
+def test_a_bracketed_reason_is_still_a_rejection(monkeypatch):
+    audit = _Audit()
+    r = _scripted(monkeypatch, LIVE_BRACKETED, audit=audit)
+    r.start_item("u")
+    passed, reason = r.review_sru_template("d")
+    assert passed is False
+    assert reason.startswith("[Test Plan] and [Where problems could occur] are missing")
+    # The audit trail shows the line fallback was needed.
+    assert audit.records[0]["extra"]["result"] == "verdict:fail+lines"
+    assert r.item_usage().get("unparseable") is None
+
+
+def test_the_sync_reviews_get_the_fallback_too(monkeypatch):
+    reply = "```yaml\nverdict: fail\nreason: [Ubuntu delta] isn't explained.\n```"
+    r = _scripted(monkeypatch, reply)
+    assert r.review_sync_request("d") == (False, "[Ubuntu delta] isn't explained.")
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (
+            'verdict: fail\nreason: "[Impact] is vague."',
+            {"verdict": "fail", "reason": "[Impact] is vague."},
+        ),
+        (
+            "verdict: FAIL   # a comment\nreason: [Impact] is vague.",
+            {"verdict": "fail", "reason": "[Impact] is vague."},
+        ),
+        ("verdict: pass\nreason:", {"verdict": "pass", "reason": ""}),
+    ],
+)
+def test_the_line_fallback_reads_two_plain_lines(body, expected):
+    data = llm_reply.verdict_lines(body)
+    assert {"verdict": data["verdict"].lower(), "reason": data["reason"]} == expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "verdict: fail\nreason: [Impact] is\n  vague over two lines.",  # continuation
+        "verdict: fail\nreason: [Impact]\nextra: [stuff",  # another key
+        "verdict: : fail\nreason: x",  # not a plain verdict
+        "reason: [Impact] only",  # no verdict
+        "verdict: fail\nverdict: pass\nreason: x",  # two verdicts
+    ],
+)
+def test_the_line_fallback_reads_nothing_else(body):
+    with pytest.raises(ValueError):
+        llm_reply.verdict_lines(body)
+
+
+def test_a_reply_neither_way_can_read_reports_the_yaml_error():
+    reply = "```yaml\nverdict: fail\nreason: [Impact]\n  continued\n```"
+    result = llm_reply.parse_reply(reply, llm_reply.verdict)
+    assert isinstance(result, llm_reply.Unparseable)
+    assert result.reason.startswith("malformed YAML")
+
+
+def test_other_checks_have_no_line_fallback():
+    reply = "```yaml\nverdict: fail\nobservations: [unclosed\n```"
+    assert isinstance(llm_reply.parse_reply(reply, llm_reply.mp_review), llm_reply.Unparseable)
+
+
+def test_the_verdict_prompts_ask_for_a_quoted_single_line_reason(monkeypatch):
+    prompts = []
+    r = LLMReviewer()
+    monkeypatch.setattr(r, "_query_llm", lambda prompt: prompts.append(prompt) or PASS)
+    r.review_sru_template("d")
+    r.review_sync_request("d")
+    r.review_sync_version_justification("d", "pkg", "1.0", "unstable", {})
+    for prompt in prompts:
+        assert 'reason: "<if fail' in prompt
+        assert "single line, inside double quotes" in prompt

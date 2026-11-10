@@ -53,21 +53,38 @@ def last_block(text):
     raise ValueError("no opening fence for the final block")
 
 
-def parse_reply(text, validate):
+def parse_reply(text, validate, fallback=None):
     """Parsed(data, summary) or Unparseable(reason), never an exception.
-    `validate(data)` returns (cleaned, summary) or raises ValueError."""
+    `validate(data)` returns (cleaned, summary) or raises ValueError.
+
+    `fallback(body)`, when given, is tried only if the block isn't valid
+    YAML: it returns a mapping read some stricter, narrower way, or raises
+    ValueError -- in which case the YAML error is the one reported. A reply
+    read that way has "+lines" on its summary, so the audit trail shows how
+    often it's needed (#171). Defaults to `validate.fallback` if the
+    validator names one."""
+    if fallback is None:
+        fallback = getattr(validate, "fallback", None)
     try:
         body = last_block(text)
+        via = ""
         try:
             data = yaml.safe_load(body)
         except yaml.YAMLError as exc:
-            raise ValueError(f"malformed YAML ({_first_line(exc)})") from None
+            error = f"malformed YAML ({_first_line(exc)})"
+            if fallback is None:
+                raise ValueError(error) from None
+            try:
+                data = fallback(body)
+            except ValueError:
+                raise ValueError(error) from None
+            via = "+lines"
         if not isinstance(data, dict):
             raise ValueError("block is not a mapping")
         cleaned, summary = validate(data)
     except ValueError as exc:
         return Unparseable(str(exc))
-    return Parsed(cleaned, summary)
+    return Parsed(cleaned, summary + via)
 
 
 def _first_line(exc):
@@ -84,6 +101,44 @@ def _choice(data, field, allowed):
     return value
 
 
+_VERDICT_LINE_RE = re.compile(r"^verdict:[ \t]*(?P<value>pass|fail)[ \t]*(?:#.*)?$", re.IGNORECASE)
+_REASON_LINE_RE = re.compile(r"^reason:[ \t]*(?P<value>.*?)[ \t]*$")
+
+
+def verdict_lines(body):
+    """#171: the verdict block read as two plain lines, for when it isn't
+    valid YAML. Seen live (git-diff-html bug #2173887): the SRU-template
+    prompt asks the model to name sections like [Test Plan], so a reason
+    starting with one -- `reason: [Test Plan] and ... are missing` -- is a
+    YAML flow sequence that never closes. Since #9 that parse failure
+    quietly became "pass", dropping a real template bounce.
+
+    Deliberately narrow, nothing inferred: exactly one top-level line
+    `verdict: pass|fail` (an optional trailing comment is fine), at most
+    one `reason:` line whose value is the rest of that line, and no other
+    content -- an indented continuation, another key, a multi-line value
+    all raise ValueError. One pair of enclosing quotes is removed."""
+    verdict = reason = None
+    for line in body.splitlines():
+        if not line.strip():
+            continue
+        match = _VERDICT_LINE_RE.match(line)
+        if match and verdict is None:
+            verdict = match.group("value")
+            continue
+        match = _REASON_LINE_RE.match(line)
+        if match and reason is None:
+            reason = match.group("value")
+            continue
+        raise ValueError(f"unexpected line {line.strip()[:40]!r}")
+    if verdict is None:
+        raise ValueError("no verdict line")
+    reason = reason or ""
+    if len(reason) >= 2 and reason[0] == reason[-1] and reason[0] in "\"'":
+        reason = reason[1:-1]
+    return {"verdict": verdict, "reason": reason}
+
+
 # --- per-check validators -----------------------------------------------------
 
 
@@ -95,6 +150,10 @@ def verdict(data):
     if value == "fail" and not reason:
         raise ValueError("fail without a reason")
     return {"verdict": value, "reason": reason}, value
+
+
+# #171: the verdict reviews' reason is free text that may start with "[".
+verdict.fallback = verdict_lines
 
 
 def fixed_in_newer_series(data):

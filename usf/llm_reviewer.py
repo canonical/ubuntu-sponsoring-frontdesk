@@ -740,13 +740,13 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` if the template is missing sections or is vague
-reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
-  [Where problems could occur] are missing or inadequately filled, and if
-  the description has other content that doesn't substitute for them (e.g.
-  a reproduction recipe, a reference to an upstream fix), say briefly what
-  and that it doesn't cover the missing section(s). Do not restate the
-  general SRU template requirement -- that's already said elsewhere. Leave
-  empty if pass.>
+reason: "<if fail, ONE short sentence on a single line, inside double quotes:
+  name which of [Impact]/[Test Plan]/[Where problems could occur] are
+  missing or inadequately filled, and if the description has other content
+  that doesn't substitute for them (e.g. a reproduction recipe, a reference
+  to an upstream fix), say briefly what and that it doesn't cover the
+  missing section(s). Do not restate the general SRU template requirement
+  -- that's already said elsewhere. Leave empty if pass.>"
 ```
 """
 
@@ -970,8 +970,9 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` if the Ubuntu delta is not addressed at all
-reason: <if fail, a polite comment asking the submitter to clarify whether there
-         is an Ubuntu delta and whether it can be safely dropped; empty if pass>
+reason: "<if fail, a polite comment on a single line, inside double quotes,
+         asking the submitter to clarify whether there is an Ubuntu delta
+         and whether it can be safely dropped; empty if pass>"
 ```
 """
 
@@ -1015,8 +1016,9 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` if there is no specific justification
-reason: <if fail, a polite comment pointing out the version wasn't found in
-         Debian {suite} and asking for clarification; empty if pass>
+reason: "<if fail, a polite comment on a single line, inside double quotes,
+         pointing out the version wasn't found in Debian {suite} and asking
+         for clarification; empty if pass>"
 ```
 """
 
