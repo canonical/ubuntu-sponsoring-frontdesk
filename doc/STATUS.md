@@ -1417,6 +1417,20 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   best-effort behaviour only if the package can still be absent; once it's
   in the archive, a missing package is an install failure like any other.
   The PPA currently has 0.2.3, without the #129 fix.
+- **Backlog: LLM-hardening follow-ups deferred by the 2026-11-08 review**
+  (#166-#168 did the rest):
+  - *Re-ask once on an unparseable reply*, quoting the validation error
+    (handover 2C). Decide from `stats.py`'s "LLM calls per check"
+    unparseable rate once production has a few weeks of #168 records.
+  - *Store each raw prompt and reply*, keyed by the `input_sha` already in
+    every `llm_call` record, with ~90-day retention (5B), and later a
+    replay tool on top (5C). History only starts the day storing does, so
+    raise this again soon.
+  - *Token access level* (3): `allowed_access_levels=["WRITE_PUBLIC"]` in
+    `tools/lp-credentials.py`, enforced at the next token rotation. The
+    tokens are already public-only by hand; only if seb128 asks.
+  - A failed LLM call is cached as reviewed by every check but Check 7:
+    #169, next.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the

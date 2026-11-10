@@ -99,6 +99,8 @@ def summarize(rows):
         for reason in extra.get("inconclusive") or []:
             inconclusive[reason] += 1
 
+    by_check, unparseable_reasons = _llm_by_check(llm_calls)
+
     tokens = sum((r.get("extra") or {}).get("llm", {}).get("tokens", 0) for r in items)
     cost = sum((r.get("extra") or {}).get("llm", {}).get("cost_usd", 0.0) for r in items)
     per_item_cost = sorted(
@@ -125,6 +127,8 @@ def summarize(rows):
             "tokens": tokens,
             "cost_usd": round(cost, 4),
             "top_cost": per_item_cost[:5],
+            "by_check": by_check,
+            "unparseable_reasons": unparseable_reasons,
         },
         "errors": [
             {
@@ -137,6 +141,53 @@ def summarize(rows):
             if r.get("outcome") == "error"
         ],
     }
+
+
+# Rows written before #168 have no `extra`: counted, under this name.
+_UNRECORDED_CHECK = "(before #168)"
+
+_CALL_FIELDS = ("tokens", "cache_read", "cache_write")
+
+
+def _llm_by_check(llm_calls):
+    """#168: per review method, from each llm_call row's `extra` -- calls,
+    replies that couldn't be read (each fell back to its check's fail-safe
+    default), tokens, cache read/write and cost -- plus why replies
+    couldn't be read."""
+    by_check = {}
+    reasons = collections.Counter()
+    for row in llm_calls:
+        extra = row.get("extra") or {}
+        stats = by_check.setdefault(
+            extra.get("check") or _UNRECORDED_CHECK,
+            {"calls": 0, "unparseable": 0, **dict.fromkeys(_CALL_FIELDS, 0), "cost_usd": 0.0},
+        )
+        stats["calls"] += 1
+        result = str(extra.get("result") or "")
+        if result.startswith("unparseable:"):
+            stats["unparseable"] += 1
+            reasons[result.split(":", 1)[1]] += 1
+        for field in _CALL_FIELDS:
+            stats[field] += extra.get(field) or 0
+        stats["cost_usd"] = round(stats["cost_usd"] + (extra.get("cost") or 0.0), 6)
+    return by_check, reasons
+
+
+def _llm_check_table(by_check, indent="  "):
+    if not by_check:
+        return f"{indent}(none)"
+    width = max(len(name) for name in by_check)
+    lines = [
+        f"{indent}{'check':<{width}}  calls  unparseable  tokens  cache r/w      cost",
+    ]
+    for name, s in sorted(by_check.items(), key=lambda kv: -kv[1]["calls"]):
+        rate = f"{s['unparseable'] / s['calls']:.0%}" if s["calls"] else "-"
+        lines.append(
+            f"{indent}{name:<{width}}  {s['calls']:>5}  {s['unparseable']:>4} {rate:>6}"
+            f"  {s['tokens']:>6}  {s['cache_read']}/{s['cache_write']:<6}"
+            f"  ${s['cost_usd']:.4f}"
+        )
+    return "\n".join(lines)
 
 
 def _tier_label(finding):
@@ -193,6 +244,12 @@ def report(data):
     for cost, url in data["llm"]["top_cost"]:
         if cost:
             out.append(f"    ${cost:.4f}  {url}")
+    out += ["", "LLM calls per check (#168)", _llm_check_table(data["llm"]["by_check"])]
+    if data["llm"]["unparseable_reasons"]:
+        out += [
+            "  unparseable replies, by reason:",
+            _table(data["llm"]["unparseable_reasons"], indent="    "),
+        ]
     if data["errors"]:
         out += ["", f"Errors ({len(data['errors'])})"]
         out += [f"  {e['ts']}  {e['action']}  {e['detail']}" for e in data["errors"][-10:]]

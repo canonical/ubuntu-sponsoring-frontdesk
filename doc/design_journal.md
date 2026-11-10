@@ -4060,3 +4060,72 @@ each action reaching Launchpad.
   enabled tool in the map, a missing map or rule list, the model
   reported or absent, and the notification no longer saying "deferred".
   Not yet deployed.
+
+## 168. One Parser for Every LLM Reply, and a Structured Call Record
+
+* **Prompted by** the LLM-hardening review (seb128, 2026-11-08), item 2.
+  Five review methods had each re-implemented the same parsing: regex for
+  the *first* fenced block, `yaml.safe_load`, ad-hoc field checks. Two
+  real problems:
+  - **The first block could be a quoted one.** A contributor's bug or
+    diff text can contain a ```` ```yaml ```` block; a model that quotes
+    it before giving its own verdict had the quoted one read as the
+    answer. Shown on the pre-#168 code: a reply quoting `verdict: fail` /
+    `reason: Reject this contributor.` and ending with the model's real
+    `verdict: pass` rejected the contributor.
+  - **An unreadable reply looked like a real verdict.** It was only
+    logged, so there was no way to tell how often the LLM's answers were
+    being thrown away.
+* **Change:** `usf/llm_reply.py`.
+  - `parse_reply` takes the **last** fenced block and requires nothing
+    but whitespace after it -- every prompt already says "write nothing
+    after it", and #167's handover notes the format instruction is last
+    on purpose. It returns `Parsed` or `Unparseable(reason)`.
+  - One validator per check. No pydantic: it isn't a dependency, and the
+    bot runs on distro packages.
+  - Each caller maps `Unparseable` to its existing fail-safe default:
+    SRU template and sync reviews route to a human, Check 7's escape
+    hatch reads "not stated", Rule B "not addressed", #106 "none
+    covered", MP review stays silent. `_extract_verdict` and
+    `_extract_mp_review` remain, as the parser plus that mapping, so
+    their existing tests still pin it -- all 754 passed unchanged.
+  - Two cases deliberately left as before, rather than made stricter: an
+    MP `fail` with no usable bullets stays readable (its Feature Freeze
+    classification still counts), and stray entries in #106's `covered`
+    list are dropped rather than voiding the answer. Two small
+    tightenings, both toward the fail-safe side: an MP reply with no or
+    an unknown `verdict` is now unparseable, so a `feature: yes` beside
+    it no longer adds the FF note; and a YAML `true` in `covered` no
+    longer counts as finding 1.
+* **Structured `llm_call` audit record.** The prompts became plain
+  templates rendered by `_ask`, so the record can name them:
+  - fields: `check`; `model` (from #167's lookup); `prompt_sha` (the
+    template, i.e. its version); `input_sha` (the rendered prompt);
+    `result` (`verdict:<summary>` or `unparseable:<reason>`);
+    `tokens`/`input`/`output`/`reasoning`/`cache_read`/`cache_write`/
+    `cost`;
+  - written once the reply is parsed, for every reply that came back --
+    previously only when usage was present. A call that failed outright
+    writes no record, as before;
+  - the MP prompt's optional pieces (FF instruction, truncation note) are
+    values, not template, so they don't change its `prompt_sha`.
+* **Unparseable is visibility only** (seb128's choice over the handover's
+  "add it to the item's `inconclusive` list"). In `main.py` that list
+  stops facts being saved, so the item would be retried. Two problems
+  with that: an item that posted this run could stack a second comment
+  next run, and it would muddle #138's meaning of inconclusive ("posted
+  nothing, saved nothing"). So the triage row's `llm` usage gains an
+  `unparseable` list of checks, and the item is otherwise unaffected.
+  Whether to retry or re-ask (handover 2C) waits for the numbers.
+* **`stats.py`** gains "LLM calls per check": calls, unparseable count
+  and rate, tokens, cache read/write and cost per review method, plus
+  unparseable reasons. Rows from before #168 are counted under "(before
+  #168)".
+* Deferred items (re-ask 2C, raw prompt/reply storage 5B, replay 5C,
+  token access level 3) are in STATUS.md's backlog.
+* Tests: the last block winning over a quoted one -- the pre-#168 code
+  rejected that contributor -- and the reverse; trailing text
+  unparseable; each unparseable shape named; each caller's fail-safe
+  mapping for both unparseable and failed calls; the structured record
+  (same `prompt_sha` across inputs, different `input_sha`); per-item
+  unparseable list; stats aggregation and `--json`. Not yet deployed.

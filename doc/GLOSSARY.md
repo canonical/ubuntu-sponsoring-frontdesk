@@ -332,9 +332,12 @@ terms specific to this bot's own design. Entries point at `design_journal.md`
   is never flagged for omitting that patch's internal implementation
   details (#54).
 - **Verdict block** — the fenced `yaml` block (`verdict: pass|fail`,
-  `reason:`) the LLM is asked to end its reply with; parsed by
-  `_extract_verdict`, fails safe to `READY_FOR_HUMAN` on anything missing or
-  malformed (#9).
+  `reason:`) the LLM is asked to end its reply with. Every review's reply
+  goes through `llm_reply.parse_reply` (#168): the *last* fenced block,
+  nothing after it, validated per check -- a block quoted earlier from the
+  untrusted text is never the answer. An unparseable reply takes the
+  check's fail-safe default (for `_extract_verdict`, `READY_FOR_HUMAN`,
+  #9) and is named in the `llm_call` audit record.
 - **`archive_lookup.py`** — module for archive-state queries: Ubuntu versions
   and devel series via the Launchpad API, Debian versions via the live
   ftp-master `madison` endpoint (not a mirror, no publish-run lag, #23),

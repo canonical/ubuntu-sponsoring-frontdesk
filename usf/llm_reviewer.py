@@ -1,12 +1,12 @@
+import hashlib
 import json
 import logging
 import re
 import subprocess
 
-import yaml
-
 import archive_lookup
 import attachments
+import llm_reply
 import notify
 import opencode_agent
 import release_schedule
@@ -211,6 +211,11 @@ def _check_agent(env):
     return opencode_agent.check(env=env)
 
 
+def _sha(text):
+    """Short content hash for the llm_call audit record (#168)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 # #99: a hung LLM call must not stall the whole queue pass; the longest
 # healthy calls observed live (large MP diffs) finish well under this.
 _LLM_TIMEOUT_SECONDS = 300
@@ -329,19 +334,29 @@ class LLMReviewer:
         self._agent_model = None
         self._run_usage_totals = {"total": 0, "cost": 0.0}
         self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
+        # #168: usage of the most recent _query_llm call, for _ask's audit
+        # record; and the checks whose reply couldn't be read this item.
+        self._last_usage = None
+        self._item_unparseable = []
 
     def start_item(self, url=""):
         """Reset per-item LLM state (#100). Called by main/sweep at the
         start of each URL, mirroring LPClient.start_item()."""
         self._item_calls = 0
         self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
+        self._item_unparseable = []
         self._current_url = url or ""
 
     def item_usage(self):
         """This item's LLM spend so far: calls, tokens, cost (#131). Used by
         main's per-item audit record, so cost can be attributed per item
-        rather than only per run."""
-        return dict(self._item_usage)
+        rather than only per run. #168: plus `unparseable`, the checks
+        whose reply couldn't be read (each fell back to its fail-safe
+        default) -- visibility only, the item is otherwise unaffected."""
+        usage = dict(self._item_usage)
+        if self._item_unparseable:
+            usage["unparseable"] = list(self._item_unparseable)
+        return usage
 
     def log_run_summary(self):
         """One end-of-run line: LLM calls made and tokens/cost consumed."""
@@ -405,6 +420,7 @@ class LLMReviewer:
         checked for that fallback; and a reply whose event stream contains
         any tool_use event is discarded outright.
         """
+        self._last_usage = None
         env = opencode_agent.environment()
         # #166: before the budgets, so a run with a refused agent spends
         # nothing and doesn't trip the budget alarm on top.
@@ -483,10 +499,10 @@ class LLMReviewer:
                 )
                 return "FAIL: LLM reply used tools."
             logger.debug("[llm] raw reply from opencode:\n%s", output)
+            self._last_usage = usage
             if usage is not None:
-                # #100: durable per-call usage record + run totals. Not a
-                # write, so recorded straight into the audit trail rather
-                # than via LPClient (which would gate facts persistence).
+                # #100: run and item totals. The per-call audit record is
+                # written by _ask once the reply is parsed (#168).
                 self._run_usage_totals["total"] += usage["total"]
                 self._run_usage_totals["cost"] += usage["cost"]
                 self._item_usage["calls"] += 1
@@ -494,20 +510,6 @@ class LLMReviewer:
                 self._item_usage["cost_usd"] = round(
                     self._item_usage["cost_usd"] + usage["cost"], 6
                 )
-                if self.audit is not None:
-                    self.audit.record(
-                        url=self._current_url,
-                        action="llm_call",
-                        target="opencode",
-                        mode="llm",
-                        outcome="performed",
-                        detail=(
-                            f"tokens={usage['total']} "
-                            f"cost=${usage['cost']:.4f} "
-                            f"item_call={self._item_calls} "
-                            f"run_call={self._run_calls}"
-                        ),
-                    )
                 logger.debug(
                     "[llm] token usage: total=%d input=%d output=%d "
                     "reasoning=%d cache_read=%d cache_write=%d cost=$%.4f",
@@ -603,50 +605,90 @@ class LLMReviewer:
         # anyway, but this preserves any diagnostic content for the logs.
         return stdout.strip(), usage, used_tools
 
-    def _extract_verdict(self, text):
-        """
-        Parse the trailing YAML verdict block from an opencode reply.
+    def _ask(self, check, template, validate, **values):
+        """#168: render `template` with `values`, query the LLM, and parse
+        the reply with `validate` (an llm_reply validator).
 
-        Expected block:
-            ```yaml
-            verdict: pass   # or: fail
-            reason: <explanation if fail>
-            ```
+        Returns None when the call itself failed (any "FAIL:" result --
+        budget, refused agent, timeout, ...; callers keep their existing
+        handling of that), otherwise llm_reply.Parsed or
+        llm_reply.Unparseable, which each caller maps to its existing
+        fail-safe default. Every reply that came back gets one `llm_call`
+        audit record."""
+        prompt = template.format(**values)
+        response = self._query_llm(prompt)
+        if response.startswith("FAIL:"):
+            return None
+        reply = llm_reply.parse_reply(response, validate)
+        if isinstance(reply, llm_reply.Unparseable):
+            logger.warning(
+                "[llm] %s: couldn't read the reply (%s); taking the fail-safe default.",
+                check,
+                reply.reason,
+            )
+            if check not in self._item_unparseable:
+                self._item_unparseable.append(check)
+        self._record_call(check, template, prompt, reply)
+        return reply
 
-        Returns (passed: bool, reason: str).
+    def _record_call(self, check, template, prompt, reply):
+        """One structured `llm_call` audit row (#100, #168). Not a write,
+        so recorded straight into the audit trail rather than via LPClient
+        (which would gate facts persistence)."""
+        if self.audit is None:
+            return
+        if isinstance(reply, llm_reply.Unparseable):
+            result = f"unparseable:{reply.reason}"
+        else:
+            result = f"verdict:{reply.summary}"
+        usage = self._last_usage or {}
+        extra = {
+            "check": check,
+            "model": self._agent_model,
+            # The template's hash is its version; the rendered prompt's
+            # identifies the exact input (e.g. to tell a re-ask from a new
+            # question, or to find a stored prompt later -- handover 5B).
+            "prompt_sha": _sha(template),
+            "input_sha": _sha(prompt),
+            "result": result,
+        }
+        for key in ("input", "output", "reasoning", "cache_read", "cache_write", "cost"):
+            if key in usage:
+                extra[key] = usage[key]
+        if "total" in usage:
+            extra["tokens"] = usage["total"]
+        detail = f"{check} {result}"
+        if usage:
+            detail += f" tokens={usage['total']} cost=${usage['cost']:.4f}"
+        detail += f" item_call={self._item_calls} run_call={self._run_calls}"
+        self.audit.record(
+            url=self._current_url,
+            action="llm_call",
+            target="opencode",
+            mode="llm",
+            outcome="performed",
+            detail=detail,
+            extra=extra,
+        )
 
-        Fail-safe: only an explicit, well-formed `verdict: fail` WITH a reason
-        triggers a rejection. Anything else -- a missing block, malformed YAML,
-        a non-mapping, a `pass`, an unknown verdict, or a `fail` with no reason
-        -- routes the request to a human (passed=True). We never auto-reject a
-        contributor on uncertainty.
-        """
-        match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", text, re.DOTALL)
-        if not match:
-            logger.warning("no YAML verdict block found; failing safe to human review.")
-            return True, ""
+    @staticmethod
+    def _verdict_outcome(reply):
+        """Map a verdict reply (llm_reply.verdict) to (passed, reason).
 
-        try:
-            data = yaml.safe_load(match.group(1))
-        except yaml.YAMLError as exc:
-            logger.warning("malformed YAML verdict (%s); failing safe to human review.", exc)
-            return True, ""
-
-        if not isinstance(data, dict):
-            logger.warning("YAML verdict was not a mapping; failing safe to human review.")
-            return True, ""
-
-        verdict = str(data.get("verdict", "")).strip().lower()
-        reason = str(data.get("reason", "") or "").strip()
-
-        if verdict == "fail":
-            if reason:
-                return False, reason
-            logger.warning("'fail' verdict without a reason; failing safe to human review.")
-            return True, ""
-
-        # pass / missing / unknown -> human review, no rejection.
+        Fail-safe: only an explicit, well-formed `verdict: fail` WITH a
+        reason triggers a rejection. Anything else -- a failed call (None),
+        an unparseable reply (no final block, malformed YAML, unknown
+        verdict, a `fail` with no reason), or a `pass` -- routes the
+        request to a human (passed=True). We never auto-reject a
+        contributor on uncertainty."""
+        if isinstance(reply, llm_reply.Parsed) and reply.data["verdict"] == "fail":
+            return False, reply.data["reason"]
         return True, ""
+
+    def _extract_verdict(self, text):
+        """Parse a verdict reply's text -- the #168 parser plus the mapping
+        above. Kept for callers/tests holding raw reply text."""
+        return self._verdict_outcome(llm_reply.parse_reply(text, llm_reply.verdict))
 
     def review_sru_template(self, bug_description):
         """
@@ -654,7 +696,7 @@ class LLMReviewer:
         Returns (True, "") if pass, or (False, "reason/comment") if fail.
         """
         bug_description = _cap_text(bug_description)
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 Review the bug description below and determine whether it follows the SRU
 (Stable Release Update) template. It must contain [Impact], [Test Plan], and
 [Where problems could occur] (or Regression Potential) sections, each
@@ -681,8 +723,10 @@ reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
 ```
 """
 
-        response = self._query_llm(prompt)
-        return self._extract_verdict(response)
+        reply = self._ask(
+            "sru_template", template, llm_reply.verdict, bug_description=bug_description
+        )
+        return self._verdict_outcome(reply)
 
     def review_fixed_in_newer_series(self, bug_text, series_names):
         """
@@ -705,7 +749,7 @@ reason: <if fail, ONE short sentence: name which of [Impact]/[Test Plan]/
         """
         bug_text = _cap_text(bug_text)
         series_list = ", ".join(series_names)
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This request is a Stable Release Update (SRU). SRU policy requires the fix to
 land in newer Ubuntu series first, but this bug's task table does not show
 that for the following series: {series_list}. Task tables are often stale, so
@@ -745,27 +789,17 @@ verdict: not-stated   # use `fixed` if the text implies already fixed/absent in:
 ```
 """
 
-        response = self._query_llm(prompt)
-        if response.startswith("FAIL:"):
+        reply = self._ask(
+            "fixed_in_newer_series",
+            template,
+            llm_reply.fixed_in_newer_series,
+            series_list=series_list,
+            bug_text=bug_text,
+        )
+        if reply is None:
             return None
-        match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
-        if not match:
-            logger.warning(
-                "review_fixed_in_newer_series: no YAML verdict block; treating as not-stated."
-            )
-            return False
-        try:
-            data = yaml.safe_load(match.group(1))
-        except yaml.YAMLError as exc:
-            logger.warning(
-                "review_fixed_in_newer_series: malformed YAML verdict (%s); "
-                "treating as not-stated.",
-                exc,
-            )
-            return False
-        if not isinstance(data, dict):
-            return False
-        return str(data.get("verdict", "")).strip().lower() == "fixed"
+        # Unparseable -> not-stated: the full (non-blocking) advisory fires.
+        return isinstance(reply, llm_reply.Parsed) and reply.data["fixed"]
 
     def review_bounce_response(self, bounce_reason, comments):
         """
@@ -784,7 +818,7 @@ verdict: not-stated   # use `fixed` if the text implies already fixed/absent in:
         # usually last), cap each one, and cap the feedback itself.
         bounce_reason = _cap_text(bounce_reason, limit=10_000)
         joined = "\n\n---\n\n".join(_cap_text(c, limit=4_000) for c in comments[-20:])
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This bug was earlier marked Incomplete with the review feedback quoted below,
 and the contributor (or someone else) has since commented. Decide whether the
 response actually addresses the feedback -- for example by providing what was
@@ -811,26 +845,17 @@ addressed: no   # `yes` if the response addresses the review feedback
 ```
 """
 
-        response = self._query_llm(prompt)
-        if response.startswith("FAIL:"):
+        reply = self._ask(
+            "bounce_response",
+            template,
+            llm_reply.bounce_response,
+            bounce_reason=bounce_reason,
+            joined=joined,
+        )
+        if reply is None:
             return None
-        match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
-        if not match:
-            logger.warning(
-                "review_bounce_response: no YAML verdict block; treating as not addressed."
-            )
-            return False
-        try:
-            data = yaml.safe_load(match.group(1))
-        except yaml.YAMLError as exc:
-            logger.warning(
-                "review_bounce_response: malformed YAML verdict (%s); treating as not addressed.",
-                exc,
-            )
-            return False
-        if not isinstance(data, dict):
-            return False
-        return data.get("addressed") is True
+        # Unparseable -> not addressed: falls back to the 30-day timer.
+        return isinstance(reply, llm_reply.Parsed) and reply.data["addressed"]
 
     def review_findings_already_covered(self, findings, reviewer_comments):
         """
@@ -859,7 +884,7 @@ addressed: no   # `yes` if the response addresses the review feedback
             f"{i}. {_cap_text(f.message, limit=2_000)}" for i, f in enumerate(findings, start=1)
         )
         joined = "\n\n---\n\n".join(_cap_text(c, limit=4_000) for c in reviewer_comments[-20:])
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 A human reviewer has already commented on this item. Below are the automated
 review's current findings and the reviewer's own comment(s). For each finding,
 decide whether the reviewer's comment(s) already substantively raise the SAME
@@ -885,36 +910,23 @@ covered: []   # list of finding numbers (integers) the reviewer already covered
 ```
 """
 
-        response = self._query_llm(prompt)
-        if response.startswith("FAIL:"):
+        reply = self._ask(
+            "findings_covered",
+            template,
+            llm_reply.findings_covered(len(findings)),
+            numbered=numbered,
+            joined=joined,
+        )
+        if reply is None:
             return None
-        match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", response, re.DOTALL)
-        if not match:
-            logger.warning(
-                "review_findings_already_covered: no YAML verdict block; treating as none covered."
-            )
-            return set()
-        try:
-            data = yaml.safe_load(match.group(1))
-        except yaml.YAMLError as exc:
-            logger.warning(
-                "review_findings_already_covered: malformed YAML verdict "
-                "(%s); treating as none covered.",
-                exc,
-            )
-            return set()
-        if not isinstance(data, dict):
-            return set()
-        covered = data.get("covered")
-        if not isinstance(covered, list):
-            return set()
-        return {n for n in covered if isinstance(n, int) and 1 <= n <= len(findings)}
+        # Unparseable -> none covered: every finding posts unchanged.
+        return reply.data["covered"] if isinstance(reply, llm_reply.Parsed) else set()
 
     def review_sync_request(self, bug_description):
         """
         Evaluates if a Sync request explains what is happening to the Ubuntu delta.
         """
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This request is for a package sync from Debian. Verify that the description
 explains what is happening to the existing Ubuntu delta (if any). It should
 contain a section such as 'Explanation of the Ubuntu delta and why it can be
@@ -936,8 +948,10 @@ reason: <if fail, a polite comment asking the submitter to clarify whether there
 ```
 """
 
-        response = self._query_llm(prompt)
-        return self._extract_verdict(response)
+        reply = self._ask(
+            "sync_delta", template, llm_reply.verdict, bug_description=bug_description
+        )
+        return self._verdict_outcome(reply)
 
     def review_sync_version_justification(
         self, bug_description, package, requested_version, suite, debian_versions
@@ -953,7 +967,7 @@ reason: <if fail, a polite comment asking the submitter to clarify whether there
             if debian_versions
             else "nothing found for this package in Debian"
         )
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 This is a request to sync package '{package}' version '{requested_version}' from
 Debian {suite}. We queried the Debian archive and did NOT find that
 version (or newer) in {suite}. What we found instead: {found_elsewhere}.
@@ -979,8 +993,17 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
 ```
 """
 
-        response = self._query_llm(prompt)
-        return self._extract_verdict(response)
+        reply = self._ask(
+            "sync_version",
+            template,
+            llm_reply.verdict,
+            package=package,
+            requested_version=requested_version,
+            suite=suite,
+            found_elsewhere=found_elsewhere,
+            bug_description=bug_description,
+        )
+        return self._verdict_outcome(reply)
 
     def _review_sync_delta_explanation(self, description):
         """Existing delta-explanation check, used only when there IS a
@@ -1181,88 +1204,28 @@ reason: <if fail, a polite comment pointing out the version wasn't found in
         )
 
     @staticmethod
-    def _clean_bullet_list(raw, label):
-        """
-        Normalize a YAML list field into list[str], dropping anything that
-        isn't a plain string.
+    def _mp_review_outcome(reply):
+        """Map an MP-review reply (llm_reply.mp_review) to (bullets,
+        feature): bullets is list[(kind, str)], `kind` "advisory" for
+        `observations` (genuinely optional nitpicks) or "verify" for
+        `mismatches` (a factual claim the LLM isn't confident enough about
+        to block on -- see checks.Finding.kind, seb128 2026-07-09:
+        "non-blocking" is for things we're confident really don't block;
+        "please verify" is for things that would block if true but we're
+        not sure). feature is True/False/None.
 
-        An unquoted bullet containing ": " followed by "#" (e.g. a bug
-        reference like "LP: #123") gets misparsed by YAML as a mapping key
-        with a trailing comment, silently truncating the rest of the text --
-        yaml.safe_load returns a dict, not a string, for that item. str()-ing
-        it would post garbage like "{'The stanza claims LP': None}", so drop
-        it instead; the prompt tells the model to quote bullets to avoid this
-        in the first place.
-        """
-        cleaned = []
-        if isinstance(raw, list):
-            for o in raw:
-                if isinstance(o, str) and o.strip():
-                    cleaned.append(o.strip())
-                elif o not in (None, ""):
-                    logger.warning(
-                        "MP review: %s item wasn't a plain string "
-                        "(likely unquoted ': #' confused YAML); dropping "
-                        "it: %r",
-                        label,
-                        o,
-                    )
-        elif isinstance(raw, str) and raw.strip():
-            cleaned = [raw.strip()]
-        return cleaned
+        Fail-safe differs from _verdict_outcome on purpose: MP findings are
+        advisory (`question` tier, #47), so a failed call or an unparseable
+        reply means SILENCE ([], None) -- an advisory tier must earn its
+        bullets, and there is no rejection here to guard against."""
+        if not isinstance(reply, llm_reply.Parsed):
+            return [], None
+        return list(reply.data["bullets"]), reply.data["feature"]
 
     def _extract_mp_review(self, text):
-        """
-        Parse the MP-review YAML block from an opencode reply:
-
-            ```yaml
-            verdict: pass       # or: fail
-            feature: no         # or: yes
-            observations:
-              - <stanza-quality bullet, "advisory" kind>
-            mismatches:
-              - <stanza/diff mismatch bullet, "verify" kind>
-            ```
-
-        Returns (bullets: list[(kind, str)], feature: bool|None). `kind` is
-        "advisory" for `observations` (genuinely optional nitpicks) or
-        "verify" for `mismatches` (a factual claim the LLM isn't confident
-        enough about to block on -- see checks.Finding.kind, seb128
-        2026-07-09: "non-blocking" is for things we're confident really
-        don't block; "please verify" is for things that would block if true
-        but we're not sure).
-
-        Fail-safe differs from _extract_verdict on purpose: MP findings are
-        advisory (`question` tier, #47), so anything missing or malformed
-        means SILENCE ([], None) -- an advisory tier must earn its bullets,
-        and there is no rejection here to guard against.
-        """
-        match = re.search(r"```(?:yaml)?\s*\n(.*?)\n```", text, re.DOTALL)
-        if not match:
-            logger.warning("MP review: no YAML block found; staying silent.")
-            return [], None
-        try:
-            data = yaml.safe_load(match.group(1))
-        except yaml.YAMLError as exc:
-            logger.warning("MP review: malformed YAML (%s); staying silent.", exc)
-            return [], None
-        if not isinstance(data, dict):
-            logger.warning("MP review: YAML was not a mapping; staying silent.")
-            return [], None
-
-        feature_raw = str(data.get("feature", "")).strip().lower()
-        feature = {"yes": True, "true": True, "no": False, "false": False}.get(feature_raw)
-
-        bullets = []
-        if str(data.get("verdict", "")).strip().lower() == "fail":
-            observations = self._clean_bullet_list(data.get("observations"), "observations")
-            mismatches = self._clean_bullet_list(data.get("mismatches"), "mismatches")
-            bullets = [("advisory", o) for o in observations] + [("verify", m) for m in mismatches]
-            if not bullets:
-                logger.warning(
-                    "MP review: 'fail' verdict without observations/mismatches; staying silent."
-                )
-        return bullets, feature
+        """Parse an MP-review reply's text -- the #168 parser plus the
+        mapping above. Kept for callers/tests holding raw reply text."""
+        return self._mp_review_outcome(llm_reply.parse_reply(text, llm_reply.mp_review))
 
     def _targets_stable_series(self, lp_obj):
         """
@@ -1474,7 +1437,7 @@ unless it is a pure bugfix release.
             else ""
         )
 
-        prompt = f"""You are an Ubuntu Patch Pilot triaging a sponsorship request.
+        template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
 A contributor proposed a merge proposal for an Ubuntu package. Below are the
 new debian/changelog stanza it adds, and the diff of its changes under
 debian/. Review ONLY these two questions:
@@ -1541,8 +1504,18 @@ mismatches:     # question 2 only: stanza/diff mismatches -- would matter if rea
 ```
 """
 
-        response = self._query_llm(prompt)
-        bullets, feature = self._extract_mp_review(response)
+        reply = self._ask(
+            "mp_review",
+            template,
+            llm_reply.mp_review,
+            ff_instruction=ff_instruction,
+            stanza=stanza,
+            truncation_note=truncation_note,
+            debian_diff=debian_diff,
+            other_note=other_note,
+            ff_yaml_field=ff_yaml_field,
+        )
+        bullets, feature = self._mp_review_outcome(reply)
 
         if feature:
             logger.info("MP review: LLM classified this change as a feature.")

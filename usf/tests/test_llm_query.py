@@ -268,7 +268,15 @@ def test_run_budget_defers_and_notifies_once(monkeypatch, caplog):
 
 
 def test_usage_is_recorded_in_the_audit_trail(monkeypatch):
-    _ok_run(monkeypatch)
+    # #168: written once the reply is parsed, so it can say what came back.
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
+        stdout = _ndjson(
+            _text_event("```yaml\nverdict: pass\nreason:\n```"),
+            _step_finish_event(total=10, cost=0.001),
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     class _Audit:
         records = []
@@ -279,13 +287,16 @@ def test_usage_is_recorded_in_the_audit_trail(monkeypatch):
     audit = _Audit()
     r = LLMReviewer(audit=audit)
     r.start_item("https://bugs.launchpad.net/bugs/7")
-    r._query_llm("p")
+    r.review_sru_template("desc")
     assert len(audit.records) == 1
     entry = audit.records[0]
     assert entry["action"] == "llm_call"
     assert entry["url"] == "https://bugs.launchpad.net/bugs/7"
     assert "tokens=10" in entry["detail"]
     assert "cost=$0.0010" in entry["detail"]
+    assert entry["extra"]["check"] == "sru_template"
+    assert entry["extra"]["result"] == "verdict:pass"
+    assert entry["extra"]["tokens"] == 10
 
 
 def test_run_summary_totals_usage(monkeypatch, caplog):
