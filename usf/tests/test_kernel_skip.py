@@ -52,6 +52,30 @@ def test_bug_task_names_are_checked():
     assert checks.is_kernel_item(_bug("wireplumber (Ubuntu)")) is False
 
 
+def test_an_invalid_kernel_task_does_not_claim_an_unrelated_bug():
+    """#165, libnl3 bug #2169812: an FTBFS first suspected to be a kernel
+    header regression, confirmed and marked Invalid on the `linux` task,
+    the real fix a libnl3 debdiff. The still-open `libnl3` task is the
+    live ask; the closed `linux` one is just a ruled-out guess."""
+    bug = FakeBug(
+        tasks=[
+            FakeTask("libnl3 (Ubuntu)", "Confirmed"),
+            FakeTask("linux (Ubuntu)", "Invalid"),
+        ]
+    )
+    assert checks.is_kernel_item(bug) is False
+
+
+def test_a_still_open_kernel_task_still_claims_the_bug():
+    bug = FakeBug(
+        tasks=[
+            FakeTask("libnl3 (Ubuntu)", "Confirmed"),
+            FakeTask("linux (Ubuntu)", "New"),
+        ]
+    )
+    assert checks.is_kernel_item(bug) is True
+
+
 def test_queue_source_package_is_checked():
     # The queue JSON's own name counts even when the MP URL says otherwise
     # (a kernel MP proposed from an oddly-named repo).

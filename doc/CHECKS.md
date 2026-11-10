@@ -468,7 +468,10 @@ Silence is usually deliberate. In rough order of when it happens:
   per-cloud and flavour kernels, `linux-firmware`, ...) is skipped before any
   check runs: the kernel team has its own SRU and upload workflow. DKMS
   drivers such as `backport-iwlwifi-dkms` are *not* kernel packages here and
-  are triaged normally.
+  are triaged normally. A bug's `linux` task only counts while it's still
+  open (#165): one marked Invalid/Won't Fix/etc. is a ruled-out guess, not
+  a live ask, and doesn't put the bug's other, still-open tasks out of
+  scope.
 - **The merge proposal isn't about an Ubuntu source package** (#139). The
   sponsoring report lists a proposal whenever any uploading team is a
   requested reviewer, which in September 2026 briefly pulled in two decades

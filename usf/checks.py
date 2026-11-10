@@ -696,7 +696,14 @@ def is_kernel_item(lp_obj, source_package=None):
     per-flavour kernel (linux-<cloud>, linux-<vendor>) must be out of
     scope the day it appears, not the day we notice. DKMS drivers
     (backport-iwlwifi-dkms and friends) do NOT match and are triaged
-    normally -- they go through the regular sponsoring queue."""
+    normally -- they go through the regular sponsoring queue.
+
+    A bug task in `_CLOSED_TASK_STATUSES` doesn't count (#165): a `linux`
+    task marked Invalid/Won't Fix isn't a live ask of the kernel team, just
+    the record of someone ruling it out -- libnl3 bug #2169812 had exactly
+    that (an FTBFS wrongly first suspected to be a kernel header
+    regression, confirmed and marked Invalid, the real fix a libnl3
+    debdiff), and without this the bug's own package never got a look."""
     names = [source_package] if source_package else []
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type == "branch_merge_proposal":
@@ -705,6 +712,8 @@ def is_kernel_item(lp_obj, source_package=None):
         bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
         try:
             for task in bug.bug_tasks:
+                if task.status in _CLOSED_TASK_STATUSES:
+                    continue  # #165: a closed/invalid task isn't a live ask
                 match = re.match(r"(?P<pkg>\S+) \(Ubuntu", task.bug_target_name or "")
                 if match:
                     names.append(match.group("pkg"))

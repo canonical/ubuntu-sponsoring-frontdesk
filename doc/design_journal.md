@@ -3931,3 +3931,23 @@ each action reaching Launchpad.
   pointing at the first, different messages not merged, and a
   series-less (filename-only) label used whole as the reference -- the
   first three fail without the fix.
+
+## 165. A Closed Kernel Task Doesn't Put a Bug Out of Scope
+
+* **Found before a production pass** (libnl3 bug #2169812, an FTBFS):
+  seb128 first suspected a `linux-libc-dev` UAPI header regression, opened
+  a `linux (Ubuntu)` task, then found the real cause in libnl3 itself and
+  marked that task Invalid -- the record of a ruled-out guess, not a live
+  ask of the kernel team. `is_kernel_item` (#136) read every bug task's
+  package name regardless of status, so that one Invalid task alone put
+  the whole bug out of the bot's scope, including its own still-open
+  `libnl3` task.
+* **Fix:** a task in `_CLOSED_TASK_STATUSES` doesn't count. A kernel task
+  that's still open (New, Confirmed, Triaged, ...) still claims the bug,
+  unchanged -- #136's "stay out of the kernel team's way" is unaffected
+  when the kernel is genuinely still in play.
+* Tests: the libnl3 shape (Invalid `linux` task, open `libnl3` task) no
+  longer kernel, a still-open kernel task alongside another package still
+  is -- the first fails without the fix. Not yet live-verified (found by
+  manual review while preparing the production `--interactive` pass, not
+  from a triage run).
