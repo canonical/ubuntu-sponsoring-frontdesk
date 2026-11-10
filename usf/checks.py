@@ -4858,6 +4858,22 @@ def _mp_covered_series(lp_obj, series_names):
     return covered
 
 
+def _same_bug_debdiffs(lp_obj, lp):
+    """#175: the other series' debdiffs on the bug under review, as
+    bug_review_targets picks them (newest per series) -- [] for an MP or a
+    single-series bug, None when an attachment couldn't be read."""
+    if lp_obj is None:
+        return []
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return []
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    targets = bug_review_targets(bug, lp)
+    if targets is None:
+        return None
+    return [t for t in targets or [] if t.series and t.version]
+
+
 def _sru_version_precedence_verdict(
     url, lp_client, package, target_series, proposed_version, lp_obj=None
 ):
@@ -4921,6 +4937,22 @@ def _sru_version_precedence_verdict(
 
     not_landed = []
     mp_covered = _mp_covered_series(lp_obj, series_names) if lp_obj is not None else set()
+    same_bug = _same_bug_debdiffs(lp_obj, getattr(lp_client, "lp", None))
+    if same_bug is None:
+        logger.debug("_sru_version_precedence_verdict: a debdiff was unreadable; can't determine.")
+        return None
+    # #175 (live, tp-smapi bug #2173763): a newer series whose own debdiff
+    # is on this same bug, with a version sorting above the proposed one,
+    # is being fixed alongside -- like a linked MP in flight (#124). Which
+    # to upload first is the sponsor's call. A lower version there would
+    # still break the upgrade path, so that doesn't count. An equal one is
+    # the duplicate reported below, not also "not landed".
+    debdiff_covered = {
+        t.series
+        for t in same_bug
+        if t.series != target_series
+        and archive_lookup.version_compare(t.version, proposed_version) >= 0
+    }
 
     newer = series_names[series_names.index(target_series) + 1 :]
     for series_name in newer:
@@ -4950,6 +4982,15 @@ def _sru_version_precedence_verdict(
                 "_sru_version_precedence_verdict: %r has a linked MP in "
                 "flight; not claiming the fix hasn't landed (#124).",
                 series_name,
+            )
+            continue
+        if series_name in debdiff_covered:
+            logger.debug(
+                "_sru_version_precedence_verdict: %r has its own debdiff on "
+                "this bug, sorting above %r; not claiming the fix hasn't "
+                "landed (#175).",
+                series_name,
+                proposed_version,
             )
             continue
         if archive_lookup.version_compare(newer_version, proposed_version) < 0:
@@ -4984,6 +5025,17 @@ def _sru_version_precedence_verdict(
             f"{', '.join(sorted(set(elsewhere)))} -- Ubuntu's archive pool "
             "is shared across series, so this exact version can't be "
             "reused for a different upload"
+        )
+    # #175: the same bug proposing this exact version for another series
+    # too (tp-smapi bug #2173763: resolute and stonking both
+    # `0.45-1ubuntu2`) -- only one of them could ever be uploaded.
+    for other in sorted(
+        {t.series for t in same_bug if t.series != target_series and t.version == proposed_version}
+    ):
+        reused_elsewhere.append(
+            f"`{proposed_version}` is also proposed for `{other}` on this bug -- "
+            "a version can only be uploaded once across all series, so each "
+            "series' upload needs its own"
         )
 
     if not not_landed and not reused_elsewhere:

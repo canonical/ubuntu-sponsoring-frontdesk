@@ -4381,3 +4381,49 @@ each action reaching Launchpad.
   re-asking; `Y`/`Yes`/`N` in any case; the flush runs before every
   prompt; a non-terminal stdin doesn't break it. They fail without the
   change. Not yet deployed.
+
+## 175. Check 14 Reads the Other Series' Debdiffs on the Same Bug
+
+* **Found live in seb128's first production `--interactive` pass**
+  (tp-smapi bug #2173763, declined at `[y/N]`): debdiffs for resolute
+  and stonking (`0.45-1ubuntu2` each) and tenacious (`0.45-1.1ubuntu1`),
+  with all three series publishing `0.45-1ubuntu1`. Two problems:
+  - **A false bounce.** Check 14 said the fix hadn't landed in the newer
+    series ("tenacious is still at `0.45-1ubuntu1`"), but tenacious's own
+    debdiff was on the same bug, and `0.45-1.1ubuntu1` sorts above
+    `0.45-1ubuntu2` (checked with apt_pkg). A linked MP in flight already
+    counted (#124); a debdiff didn't, while Check 7 already counted it
+    (`unhandled=[]`). The contributor did what SRU policy asks; uploading
+    devel first is the sponsor's part.
+  - **A missed collision.** resolute and stonking proposed the *same*
+    version. A version can be uploaded only once across all series, so
+    one of them could never be uploaded. Check 14's "can't be used" part
+    only knew versions already published elsewhere. Check 13's advisories
+    hinted at it (expected `...ubuntu1.26.04.1`/`...26.10.1`) but call
+    themselves "not necessarily wrong" -- here it was.
+* **Change (wording reviewed by seb128 before building):**
+  - *Not landed:* a newer series is covered when the same bug carries its
+    debdiff (the newest per series, as `bug_review_targets` picks them)
+    with a version at or above the proposed one. A lower version there
+    would still break the upgrade path, so it doesn't count. An equal one
+    is the duplicate below, reported once rather than also as "not
+    landed".
+  - *Can't be used:* a new bullet when the bug proposes the identical
+    version for another series: "`{version}` is also proposed for
+    `{other}` on this bug -- a version can only be uploaded once across
+    all series, so each series' upload needs its own". It goes under the
+    existing heading and closing line, so it's blocking like the rest of
+    that part, and it appears in each affected series' block, naming the
+    other.
+  - An unreadable debdiff among them makes the item inconclusive
+    (retried), not a guess.
+* Also on this item: the SRU-template review answered `fail` ("Compile
+  test" isn't a test plan), but production was on revision 4, without
+  #171, so the reply was unreadable and became "pass". After the refresh
+  that bounce is read.
+* Tests (live shape): the duplicate reported exactly, with no "not
+  landed" alongside, in both series' blocks; newer debdiffs sorting above
+  cover their series; a devel debdiff sorting below still leaves it "not
+  landed"; without a devel debdiff, unchanged; an unreadable other debdiff
+  is inconclusive. The behaviour tests fail without the change.
+  CHECKS.md updated. Not yet deployed.

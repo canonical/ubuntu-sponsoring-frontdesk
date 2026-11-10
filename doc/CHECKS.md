@@ -360,15 +360,26 @@ scheme across the update is harmless.
 
 ### Check 14: SRU version precedence
 
-`check_sru_version_newer_series_precedence`, design #110/#116/#117/#124. Up
-to two parts, each with its own bullet list of findings:
+`check_sru_version_newer_series_precedence`, design #110/#116/#117/#124/#175.
+Up to two parts, each with its own bullet list of findings:
 
 > The fix doesn't appear to have landed in a newer series yet, which SRU
 > policy requires before it can land here:
 
+A newer series doesn't count as "not landed" while a fix for it is in
+flight: a linked merge proposal (#124), or its own debdiff on the same bug
+with a version sorting at or above the proposed one (#175).
+
 > The proposed version can't be used:
 > {bullets}
 > Please pick a different version.
+
+Besides a version already published in another series, a bullet there
+says when the same bug proposes the identical version for another series
+too (#175) -- only one of them could ever be uploaded:
+
+> is also proposed for `{other}` on this bug -- a version can only be
+> uploaded once across all series, so each series' upload needs its own
 
 ### Check 15: no-change rebuild version
 
