@@ -1436,6 +1436,21 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   `checks.lint_handles_dotted_revisions()` (#141) starts logging, once per
   run, that the #129 workaround can be deleted and Check 13 can cover NMU'd
   packages again.
+- **#96's engagement heuristic can't tell "reviewer asked for something,
+  submitter provided it" (resume) from "reviewer said wait on X, submitter
+  acknowledged" (still held)** -- both end with the submitter's comment
+  being the most recent one since the anchor. Found reading openssh bug
+  #2161129 by hand before a production pass (not live-triggered, caught
+  in review): Athos put the bug on hold pending upstream feedback
+  (2026-09-24); the submitter's "thanks" reply is the last comment, so
+  `check_human_engaged` would read this as resumed and review it fresh --
+  by now against a devel debdiff whose target series (stonking) has since
+  released, likely producing a confusing SRU-template bounce on an item a
+  human deliberately parked. Distinguishing "hold" from "resume" needs
+  reading the reviewer's comment's intent, not just its position --
+  likely an LLM judgment call, new surface area, not attempted here.
+  Handle occurrences by hand (decline the write in `--interactive`) for
+  now; revisit if this shows up more than rarely.
 - **Inconclusive rate after #140.** Confirmed low: 1 of 60 on the first
   charm dry-run (2026-10-05, a link attachment, fixed by #150), 0 in the
   following interactive pass. Keep an eye on it via `stats.py`.
