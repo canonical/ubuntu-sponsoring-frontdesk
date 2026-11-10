@@ -8,6 +8,7 @@ import yaml
 import archive_lookup
 import attachments
 import notify
+import opencode_agent
 import release_schedule
 
 logger = logging.getLogger(__name__)
@@ -193,12 +194,21 @@ def _parse_sync_title(title):
 # fits untruncated while a new-upstream-version MP (libdfx #507588: 69KB) does
 # not blow up the prompt.
 # #99: LLM prompts embed attacker-controlled bug/MP text, so opencode runs
-# under this dedicated agent, defined (outside VCS, like the notify webhook
-# config) in ~/.config/opencode/opencode.jsonc with every tool disabled and
-# permissions denying as a second layer. _query_llm refuses to trust a run
-# where the agent wasn't found (opencode silently falls back to its default
+# under this dedicated agent with every tool disabled and permissions
+# denying as a second layer. #166: its definition lives in opencode_agent.py
+# and is passed to every call in OPENCODE_CONFIG_CONTENT, and a pre-flight
+# (`opencode agent list`, once per run) refuses an agent whose effective
+# rules allow any tool. _query_llm also still refuses to trust a run where
+# the agent wasn't found (opencode silently falls back to its default
 # tool-capable agent, exit 0) or whose event stream contains a tool_use.
-_OPENCODE_AGENT = "sponsoring-reviewer"
+_OPENCODE_AGENT = opencode_agent.AGENT_NAME
+
+
+def _check_agent(env):
+    """The #166 pre-flight, behind a module-level name so tests can stub it
+    (conftest does, for every test) without stubbing opencode_agent itself."""
+    return opencode_agent.check(env=env)
+
 
 # #99: a hung LLM call must not stall the whole queue pass; the longest
 # healthy calls observed live (large MP diffs) finish well under this.
@@ -310,6 +320,11 @@ class LLMReviewer:
         self._item_calls = 0
         self._run_calls = 0
         self._run_budget_notified = False
+        # #166: the agent pre-flight's verdict, decided on the first LLM
+        # call and kept for the run (the instance's lifetime): None means
+        # not checked yet, "" checked and safe, otherwise the reason the
+        # LLM phases are off for this run.
+        self._agent_problem = None
         self._run_usage_totals = {"total": 0, "cost": 0.0}
         self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
 
@@ -335,6 +350,24 @@ class LLMReviewer:
             self._run_usage_totals["cost"],
         )
 
+    def _agent_unsafe(self, env):
+        """#166: the reason the LLM phases are off for this run, or "".
+        Checked once, on the first call; a failure notifies the operator
+        once and every later call this run fails the same way, into each
+        check's existing FAIL/inconclusive path -- nothing is judged on a
+        reply from an agent that might have tools."""
+        if self._agent_problem is None:
+            self._agent_problem = _check_agent(env) or ""
+            if self._agent_problem:
+                message = (
+                    "ubuntu-sponsoring-frontdesk: LLM phases disabled for this "
+                    f"run -- {self._agent_problem}. Items needing an LLM review "
+                    "are deferred (design_journal.md #166)."
+                )
+                logger.warning(message)
+                notify.notify(message)
+        return self._agent_problem
+
     def _query_llm(self, prompt):
         """
         Invokes the opencode CLI to query the LLM.
@@ -350,17 +383,26 @@ class LLMReviewer:
 
         Security (#99): the prompts embed attacker-controlled bug/MP text,
         so the call runs under a dedicated tool-less opencode agent
-        (_OPENCODE_AGENT, defined outside VCS in ~/.config/opencode/
-        opencode.jsonc with every tool disabled) and WITHOUT
+        (_OPENCODE_AGENT, defined in opencode_agent.py and pinned through
+        OPENCODE_CONFIG_CONTENT, #166) and WITHOUT
         --dangerously-skip-permissions -- if the tool config ever
         regresses, the permission gate is back as a backstop instead of
-        being explicitly bypassed. Two runtime tripwires on top, both
+        being explicitly bypassed. (Not much of one: opencode's default
+        agent allows everything, so the fallback below would run with
+        full permissions.) Before the first call of a run, a pre-flight
+        reads the agent's effective rules and refuses one that isn't
+        tool-less (#166). Two runtime tripwires stay as backups, both
         failing safe to the FAIL/inconclusive path: opencode silently
         falls back to the default (tool-capable!) agent with exit 0 when
         the agent isn't defined (verified live on 1.18.3), so stderr is
         checked for that fallback; and a reply whose event stream contains
         any tool_use event is discarded outright.
         """
+        env = opencode_agent.environment()
+        # #166: before the budgets, so a run with a refused agent spends
+        # nothing and doesn't trip the budget alarm on top.
+        if self._agent_unsafe(env):
+            return "FAIL: LLM agent misconfigured."
         # #100: budget checks before spending anything. Run budget first --
         # once it trips, every remaining item this run defers, and the
         # operator hears about it exactly once.
@@ -404,6 +446,7 @@ class LLMReviewer:
                 capture_output=True,
                 check=False,
                 timeout=_LLM_TIMEOUT_SECONDS,
+                env=env,
             )
 
             if proc.returncode != 0:
@@ -412,11 +455,12 @@ class LLMReviewer:
 
             if f'agent "{_OPENCODE_AGENT}" not found' in (proc.stderr or ""):
                 # opencode fell back to its default agent -- which has
-                # tools. Don't trust anything that run produced.
+                # tools. Don't trust anything that run produced. The
+                # pre-flight should have caught this first (#166).
                 logger.warning(
-                    "opencode agent %r is not defined (add it to "
-                    "~/.config/opencode/opencode.jsonc, see design_journal.md "
-                    "#99); discarding the reply from the fallback agent.",
+                    "opencode agent %r is not defined despite "
+                    "OPENCODE_CONFIG_CONTENT (design_journal.md #99, #166); "
+                    "discarding the reply from the fallback agent.",
                     _OPENCODE_AGENT,
                 )
                 return "FAIL: LLM agent misconfigured."

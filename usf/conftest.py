@@ -25,3 +25,15 @@ def _no_real_notify_config(monkeypatch, tmp_path):
     # switch -- and an enabled notify() would post to the real channel).
     monkeypatch.setenv("SPONSORING_BOT_CONFIG", str(tmp_path / "no-config.ini"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _agent_preflight_passes(monkeypatch):
+    # #166: the agent pre-flight runs the real `opencode agent list`; tests
+    # that exercise _query_llm fake subprocess.run for the call itself and
+    # must not hit it. Tests of the pre-flight override this or call
+    # opencode_agent directly.
+    import llm_reviewer
+
+    monkeypatch.setattr(llm_reviewer, "_check_agent", lambda env: None)
+    yield

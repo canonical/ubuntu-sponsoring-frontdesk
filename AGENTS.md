@@ -56,7 +56,9 @@ data, and never post on a lookup that didn't complete.
 
 Prompts embed contributor-written text, so LLM calls run under the tool-less
 `sponsoring-reviewer` agent and any reply containing tool use is discarded
-(design journal #99). Don't loosen that.
+(design journal #99). The agent is defined once, in `usf/opencode_agent.py`,
+pinned on every call and verified before the first one (#166). Don't loosen
+that.
 
 ## Before committing
 

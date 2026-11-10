@@ -122,26 +122,27 @@ Machine-local setup, none of it in the repository:
   (`python3 privileged_helper.py login`); the bot account itself must
   NOT be a member of `~ubuntu-sponsors`.
 - **LLM access**: the bot invokes the `opencode` CLI under a dedicated
-  **tool-less agent** named `sponsoring-reviewer`, which must be defined
-  in `~/.config/opencode/opencode.jsonc`:
+  **tool-less agent** named `sponsoring-reviewer`. Its definition lives in
+  `usf/opencode_agent.py` and the bot passes it to every call itself
+  (`OPENCODE_CONFIG_CONTENT`, which no home or project opencode config can
+  override), so nothing needs configuring by hand. The model comes from
+  your own opencode config -- set one on the agent to pin it:
 
   ```jsonc
+  // ~/.config/opencode/opencode.jsonc
   {
     "agent": {
-      "sponsoring-reviewer": {
-        "description": "Tool-less text reviewer for the Ubuntu sponsoring bot",
-        "mode": "primary",
-        "tools": { "*": false },
-        "permission": { "edit": "deny", "bash": "deny", "webfetch": "deny" }
-      }
+      "sponsoring-reviewer": { "model": "openrouter/anthropic/claude-sonnet-5.5" }
     }
   }
   ```
 
   This is a security boundary, not a preference: prompts embed
   contributor-controlled text, so the LLM must not be able to act (see
-  design_journal.md #99). If the agent is missing the bot fails safe --
-  every LLM-phase item defers to a human and a warning names this file.
+  design_journal.md #99). Before its first LLM call each run, the bot reads
+  the agent's effective permissions (`opencode agent list`) and, if they
+  could allow any tool, fails safe (#166): every LLM-phase item defers to
+  a human and the operator is notified once.
 - **Operator notifications** (optional): a Mattermost incoming-webhook
   URL in `~/.config/ubuntu-sponsoring-frontdesk/config.ini` (see `notify.py`);
   absent means notifications are simply disabled.

@@ -3951,3 +3951,68 @@ each action reaching Launchpad.
   is -- the first fails without the fix. Not yet live-verified (found by
   manual review while preparing the production `--interactive` pass, not
   from a triage run).
+
+## 166. The Tool-less Agent Is Pinned on Every Call and Verified First
+
+* **Prompted by** the LLM-hardening review (seb128, 2026-11-08, comparing
+  frontdesk with startriage's AI pipeline). #99 relied on opencode finding
+  `sponsoring-reviewer` in the home config, and caught the case where it
+  didn't only afterwards, by matching opencode's exact stderr warning. New
+  finding there: on opencode 1.19.5 the default `build` agent -- what
+  opencode silently falls back to -- has `"*": allow`. Not passing
+  `--dangerously-skip-permissions` was meant as #99's backstop, but on the
+  fallback path it does nothing. So one changed warning string would let a
+  full-permission agent read contributor-written prompts, and this gap
+  matters more once the bot runs unattended (`mode=yes`).
+* **Pinned, not just looked up.** The agent's definition now lives in
+  `usf/opencode_agent.py` (standard library only), and every call passes it
+  in `OPENCODE_CONFIG_CONTENT`. Checked on 1.19.5:
+  - opencode **merges** both `OPENCODE_CONFIG` and `OPENCODE_CONFIG_CONTENT`
+    with the home config. A home-only agent still shows up, and keys we
+    don't set (e.g. the model) still apply.
+  - A **project** `opencode.json` in the working directory overrode
+    `OPENCODE_CONFIG`: its `bash: allow` won. It did not override
+    `OPENCODE_CONFIG_CONTENT`, the highest-precedence source, where our
+    `bash: deny` held. Hence the inline variable.
+  - The model stays out of the pinned config, so it still merges in from
+    the home config: the charm's `llm-model`, or a developer's own.
+  The charm loads the same module by path to write the unit's
+  `opencode.jsonc` (definition plus model), and a unit test asserts the
+  two are identical.
+* **Verified before the first call.** Once per run, on the first LLM call,
+  the bot reads `opencode agent list` under the same environment. Observed
+  1.19.5 format: a `name (mode)` line at column 0, then the agent's
+  effective rules as an indented JSON array. The format isn't documented,
+  so it is parsed defensively and anything unreadable fails closed. The
+  safety test comes from opencode's source:
+  - Rules are evaluated last-match-wins.
+  - A tool is dropped only when the last rule matching its name is a
+    `*`-pattern deny.
+  - The effective list always starts with the defaults, `* * allow`
+    included, so "no allow anywhere" can't be the test.
+  The agent counts as tool-less when there is a catch-all `* * deny` and
+  every rule after it is a deny. The one exception is
+  `external_directory`: opencode appends it for its own tool-output
+  directory, and it is a path guard consulted by tools, not a tool itself.
+  This is stricter than opencode's own logic, so unknown future tool names
+  are covered. `ask` counts as unsafe, since an asked-for tool is still
+  offered to the model.
+* **Failure mode.** A missing agent, an unsafe one, an unreadable
+  listing, or opencode failing to run all have the same result:
+  - every LLM call for the rest of the run returns the existing
+    `FAIL: LLM agent misconfigured.`;
+  - each check takes its current fail-safe path, so verdicts defer to a
+    human and MP review stays silent;
+  - nothing is spent, and the per-run budget isn't counted;
+  - the operator is notified once, reusing #100's run-budget pattern.
+  The next run checks again. The stderr fallback check and the `tool_use`
+  discard stay as backups.
+* Tests: listing present and tool-less / missing / allow or ask rule after
+  the catch-all / no catch-all; allows before the catch-all overridden;
+  unreadable or failing listing and missing opencode fail closed; every
+  call carries the pinned config; a refused agent fails every call of the
+  run without invoking opencode or spending budget, checked and notified
+  once. The three wiring tests fail without the change. Checked by hand
+  against the real opencode 1.19.5 binary: agent undefined, pinned,
+  pinned over a hostile project config, and defined without tool
+  restrictions all gave the expected verdicts. Not yet deployed.

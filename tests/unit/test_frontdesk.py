@@ -274,9 +274,17 @@ def test_opencode_agent_is_tool_less(fd):
     assert "model" not in _agent(fd)
 
 
-def test_opencode_agent_name_matches_the_bot():
-    text = (REPO / "usf" / "llm_reviewer.py").read_text()
-    assert f'_OPENCODE_AGENT = "{frontdesk.OPENCODE_AGENT}"' in text
+def test_opencode_agent_is_the_one_the_bot_pins(fd, monkeypatch):
+    """#166: one definition, in usf/opencode_agent.py. The charm's file and
+    the bot's OPENCODE_CONFIG_CONTENT must not drift apart."""
+    monkeypatch.syspath_prepend(str(REPO / "usf"))
+    import opencode_agent
+
+    fd.configure("dry-run", 60, SECRETS, llm_model="openrouter/some-model")
+
+    pinned = json.loads(opencode_agent.environment({})["OPENCODE_CONFIG_CONTENT"])
+    expected = dict(pinned["agent"]["sponsoring-reviewer"], model="openrouter/some-model")
+    assert _agent(fd) == expected
 
 
 def test_opencode_auth_follows_the_secret_not_the_file(fd):

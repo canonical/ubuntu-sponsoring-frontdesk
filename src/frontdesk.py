@@ -22,6 +22,7 @@ Secrets and state are kept in separate trees on purpose: a backup of
 """
 
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -59,11 +60,12 @@ UBUNTU_LINT_PPA = "ppa:enr0n/ubuntu-lint"
 UBUNTU_LINT_PACKAGE = "python3-ubuntu-lint"
 
 OPENCODE_SNAP = "opencode"
-# The agent llm_reviewer.py runs every LLM call under. It is a security
-# control, not a preference: prompts embed contributor-written text, so the
-# model must not be able to act (design_journal.md #99). The charm owns the
-# file and rewrites it, so a hand edit can't quietly re-enable tools.
-OPENCODE_AGENT = "sponsoring-reviewer"
+# The agent llm_reviewer.py runs every LLM call under is a security control,
+# not a preference: prompts embed contributor-written text, so the model
+# must not be able to act (design_journal.md #99). Its definition lives in
+# the bot's usf/opencode_agent.py (#166), which the bot also pins on every
+# call; the charm writes the same definition plus the model, and rewrites
+# the file, so a hand edit can't quietly re-enable tools.
 
 MODES = ("off", "dry-run", "yes")
 
@@ -431,19 +433,18 @@ class Frontdesk:
         self._write(self.opencode_auth, content, 0o600, USER)
         self._write(self.opencode_auth_marker, digest + "\n", 0o600, "root", "root")
 
+    def _opencode_agent_module(self):
+        """The bot's usf/opencode_agent.py, loaded by path: usf/ isn't a
+        package and its other modules need the bot's dependencies, but this
+        one is standard-library only so the charm can share it (#166)."""
+        path = self.charm_dir / "usf" / "opencode_agent.py"
+        spec = importlib.util.spec_from_file_location("frontdesk_opencode_agent", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def opencode_config_text(self, llm_model=""):
-        agent = {
-            "description": "Tool-less text reviewer for the Ubuntu sponsoring bot",
-            "mode": "primary",
-            "tools": {"*": False},
-            "permission": {"edit": "deny", "bash": "deny", "webfetch": "deny"},
-        }
-        if llm_model:
-            agent["model"] = llm_model
-        config = {
-            "$schema": "https://opencode.ai/config.json",
-            "agent": {OPENCODE_AGENT: agent},
-        }
+        config = self._opencode_agent_module().config(llm_model)
         header = (
             "// Written by the ubuntu-sponsoring-frontdesk charm; edits are overwritten.\n"
             "// The tool-less agent is a security control (design_journal.md #99):\n"

@@ -78,10 +78,12 @@ workshop shell dev
   installed by its SDK, so just `opencode auth login` for your Copilot
   subscription and pick the model you want. `setup-project` writes
   `~/.config/opencode/opencode.jsonc` with the tool-less
-  `sponsoring-reviewer` agent the bot requires (see `doc/design_journal.md`
-  #99) -- add a `"model"` line to that agent to pin one rather than use
-  opencode's default. Your edits are kept: the hook only writes the file
-  when it's missing.
+  `sponsoring-reviewer` agent (see `doc/design_journal.md` #99) -- add a
+  `"model"` line to that agent to pin one rather than use opencode's
+  default. Your edits are kept: the hook only writes the file when it's
+  missing. Only the model matters there now: since #166 the bot pins the
+  agent's tool-less definition itself, from `usf/opencode_agent.py`, on
+  every call.
 
 Two things to know:
 

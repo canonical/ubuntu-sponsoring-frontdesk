@@ -65,10 +65,13 @@ concurrent pass would just duplicate work and double the Launchpad calls.
   but the check is dead weight without it. See `.workshop/frontdesk-dev/`
   for the exact install sequence, which is known to work on 26.04.
 - **`opencode`** for the LLM phases, plus the tool-less `sponsoring-reviewer`
-  agent in `~/.config/opencode/opencode.jsonc`. Without it the LLM phases
-  fail safe (the item is left for a human) and the deterministic checks
-  still run. The agent config is a security control, not a preference:
-  prompts embed contributor-written text (design journal #99).
+  agent. The bot pins its definition on every call (#166); the charm also
+  writes it, with the `llm-model`, to `~/.config/opencode/opencode.jsonc`.
+  Without opencode, or if the agent's effective permissions could allow a
+  tool, the LLM phases fail safe (the item is left for a human, the
+  operator is notified once per run) and the deterministic checks still
+  run. The agent config is a security control, not a preference: prompts
+  embed contributor-written text (design journal #99).
 
 ## State and configuration the charm must provide
 

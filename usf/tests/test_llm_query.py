@@ -115,7 +115,7 @@ def test_parse_ndjson_reply_flags_tool_use_events():
 def test_query_llm_invokes_opencode_with_json_format(monkeypatch):
     captured = {}
 
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         captured["cmd"] = cmd
         captured["input"] = input
         captured["timeout"] = timeout
@@ -142,7 +142,7 @@ def test_query_llm_invokes_opencode_with_json_format(monkeypatch):
 def test_query_llm_logs_prompt_reply_and_usage(monkeypatch, caplog):
     import logging
 
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         stdout = _ndjson(
             _text_event("the reply"),
             _step_finish_event(total=42, cost=0.007),
@@ -160,7 +160,7 @@ def test_query_llm_logs_prompt_reply_and_usage(monkeypatch, caplog):
 
 
 def test_query_llm_nonzero_exit_still_fails_safe(monkeypatch):
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -169,7 +169,7 @@ def test_query_llm_nonzero_exit_still_fails_safe(monkeypatch):
 
 
 def test_query_llm_opencode_missing(monkeypatch):
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         raise FileNotFoundError("opencode not found")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -184,7 +184,7 @@ def test_query_llm_missing_agent_fallback_discards_the_reply(monkeypatch, caplog
     # Verified live on opencode 1.18.3: an undefined agent produces a
     # stderr warning and exit 0, silently falling back to the default
     # (tool-capable) agent. That run must never be trusted.
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         stdout = _ndjson(_text_event("verdict: pass"), _step_finish_event())
         stderr = (
             f'! agent "{llm_reviewer._OPENCODE_AGENT}" not found. Falling back to default agent'
@@ -196,11 +196,11 @@ def test_query_llm_missing_agent_fallback_discards_the_reply(monkeypatch, caplog
     with caplog.at_level("WARNING"):
         result = r._query_llm("prompt")
     assert result == "FAIL: LLM agent misconfigured."
-    assert "opencode.jsonc" in caplog.text
+    assert "OPENCODE_CONFIG_CONTENT" in caplog.text
 
 
 def test_query_llm_tool_use_in_reply_discards_it(monkeypatch, caplog):
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         stdout = _ndjson(_tool_use_event(), _text_event("verdict: pass"), _step_finish_event())
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
@@ -212,7 +212,7 @@ def test_query_llm_tool_use_in_reply_discards_it(monkeypatch, caplog):
 
 
 def test_query_llm_timeout_fails_safe(monkeypatch, caplog):
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         raise subprocess.TimeoutExpired(cmd, timeout)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -226,7 +226,7 @@ def test_query_llm_timeout_fails_safe(monkeypatch, caplog):
 
 
 def _ok_run(monkeypatch, calls=None):
-    def fake_run(cmd, input, text, capture_output, check, timeout):
+    def fake_run(cmd, input, text, capture_output, check, timeout, env=None):
         if calls is not None:
             calls.append(input)
         stdout = _ndjson(_text_event("reply"), _step_finish_event(total=10, cost=0.001))
