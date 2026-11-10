@@ -140,9 +140,10 @@ Machine-local setup, none of it in the repository:
   This is a security boundary, not a preference: prompts embed
   contributor-controlled text, so the LLM must not be able to act (see
   design_journal.md #99). Before its first LLM call each run, the bot reads
-  the agent's effective permissions (`opencode agent list`) and, if they
-  could allow any tool, fails safe (#166): every LLM-phase item defers to
-  a human and the operator is notified once.
+  the agent as opencode resolves it (`opencode debug agent`) and, if its
+  tools or permissions could allow any tool, fails safe (#166, #167):
+  every LLM review that run takes its fail-safe path and the operator is
+  notified once.
 - **Operator notifications** (optional): a Mattermost incoming-webhook
   URL in `~/.config/ubuntu-sponsoring-frontdesk/config.ini` (see `notify.py`);
   absent means notifications are simply disabled.

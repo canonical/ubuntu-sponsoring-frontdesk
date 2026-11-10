@@ -11,31 +11,32 @@ This module is the single definition of that agent, used by both halves:
   unit's ~/.config/opencode/opencode.jsonc (defence in depth, and where
   the model comes from -- opencode merges the two).
 
-`check()` is the pre-flight: it asks opencode for the agent's *effective*
-permission rules and refuses an agent that could use any tool. Standard
-library only: the charm loads this file by path, outside the bot's
-environment.
+`check()` is the pre-flight: it asks opencode for the agent as it will
+actually run it (`opencode debug agent`, #167) and refuses one that could
+use any tool. Standard library only: the charm loads this file by path,
+outside the bot's environment.
 """
 
+import collections
 import json
 import os
-import re
 import subprocess
 
 AGENT_NAME = "sponsoring-reviewer"
 
-_AGENT_LIST_TIMEOUT_SECONDS = 60
-
-# `opencode agent list` prints each agent as a "name (mode)" line at
-# column 0 followed by its effective rules as an indented JSON array
-# (opencode 1.19.5). Not a documented format: anything else fails closed.
-_AGENT_HEADER_RE = re.compile(r"^(?P<name>\S+) \((?P<mode>[^)]*)\)\s*$")
+_INSPECT_TIMEOUT_SECONDS = 60
 
 # The one permission allowed to stay non-deny after the catch-all: opencode
 # appends `external_directory <its tool-output dir> allow` to every agent.
 # It is a path guard consulted *by* tools, not a tool, so with every tool
 # denied it grants nothing.
 _PATH_GUARD_PERMISSIONS = ("external_directory",)
+
+# What the pre-flight found: `problem` is None when the agent is safe to
+# use, otherwise why not; `model` is the resolved "provider/model" or None
+# (recorded with each LLM call, #168 -- opencode's reply stream doesn't
+# say which model answered).
+Inspection = collections.namedtuple("Inspection", "problem model")
 
 
 def agent_definition(model=""):
@@ -68,22 +69,9 @@ def environment(base=None):
     return env
 
 
-def parse_agent_list(text):
-    """{agent name: raw text of its rules block} from `opencode agent list`."""
-    blocks = {}
-    name = None
-    for line in (text or "").splitlines():
-        header = _AGENT_HEADER_RE.match(line)
-        if header:
-            name = header.group("name")
-            blocks[name] = []
-        elif name is not None:
-            blocks[name].append(line)
-    return {name: "\n".join(lines) for name, lines in blocks.items()}
-
-
-def unsafe_reason(rules):
-    """Why these effective rules could let the agent use a tool, or None.
+def unsafe_rules_reason(rules):
+    """Why these effective permission rules could let the agent use a
+    tool, or None.
 
     opencode evaluates rules last-match-wins, and drops a tool from the
     agent only when the last rule matching its name is a `*`-pattern deny
@@ -110,36 +98,70 @@ def unsafe_reason(rules):
     return None
 
 
+def unsafe_tools_reason(tools):
+    """Why opencode's resolved tool map offers the agent a tool, or None.
+    Must be a non-empty map with every value exactly False."""
+    if not isinstance(tools, dict) or not tools:
+        return "its resolved tool map is missing"
+    enabled = sorted(name for name, on in tools.items() if on is not False)
+    if enabled:
+        return f"tools enabled: {', '.join(enabled)}"
+    return None
+
+
+def _model_name(model):
+    if isinstance(model, dict) and model.get("providerID") and model.get("modelID"):
+        return f"{model['providerID']}/{model['modelID']}"
+    return None
+
+
+def inspect(info):
+    """Judge `opencode debug agent`'s parsed JSON for the agent."""
+    if not isinstance(info, dict):
+        return Inspection("the agent description isn't a JSON object", None)
+    model = _model_name(info.get("model"))
+    for reason in (
+        unsafe_tools_reason(info.get("tools")),
+        unsafe_rules_reason(info.get("permission")),
+    ):
+        if reason:
+            return Inspection(f"agent {AGENT_NAME!r} isn't tool-less: {reason}", model)
+    return Inspection(None, model)
+
+
 def check(env=None, run=None):
-    """None when opencode resolves AGENT_NAME to a tool-less agent under
-    `env`, otherwise why not -- including when opencode can't be asked or
-    its answer can't be read (fail closed)."""
+    """Ask opencode how it resolves AGENT_NAME under `env`.
+
+    `opencode debug agent <name>` (opencode 1.19.5) prints the agent as
+    opencode will run it: JSON with the resolved `tools` map, the effective
+    `permission` rules and the `model`, and exits non-zero naming the agent
+    when it isn't defined. Both the tool map and the rules must say
+    tool-less (defence in depth -- neither format is documented). Anything
+    that can't be asked or read fails closed: the returned problem is set.
+    """
     run = run or subprocess.run
     try:
         proc = run(
-            ["opencode", "agent", "list"],
+            ["opencode", "debug", "agent", AGENT_NAME],
             text=True,
             capture_output=True,
             check=False,
-            timeout=_AGENT_LIST_TIMEOUT_SECONDS,
+            timeout=_INSPECT_TIMEOUT_SECONDS,
             env=env,
         )
     except FileNotFoundError:
-        return "opencode is not installed"
+        return Inspection("opencode is not installed", None)
     except subprocess.TimeoutExpired:
-        return "`opencode agent list` timed out"
+        return Inspection("`opencode debug agent` timed out", None)
     except OSError as e:
-        return f"`opencode agent list` couldn't run ({e})"
+        return Inspection(f"`opencode debug agent` couldn't run ({e})", None)
     if proc.returncode != 0:
-        return f"`opencode agent list` exited {proc.returncode}: {(proc.stderr or '').strip()}"
-    block = parse_agent_list(proc.stdout).get(AGENT_NAME)
-    if block is None:
-        return f"agent {AGENT_NAME!r} is not defined"
+        detail = (proc.stderr or "").strip()
+        if "not found" in detail:
+            return Inspection(f"agent {AGENT_NAME!r} is not defined", None)
+        return Inspection(f"`opencode debug agent` exited {proc.returncode}: {detail}", None)
     try:
-        rules = json.loads(block)
+        info = json.loads(proc.stdout)
     except ValueError:
-        return f"couldn't read agent {AGENT_NAME!r}'s permission rules"
-    reason = unsafe_reason(rules)
-    if reason:
-        return f"agent {AGENT_NAME!r} isn't tool-less: {reason}"
-    return None
+        return Inspection(f"couldn't read agent {AGENT_NAME!r}'s description", None)
+    return inspect(info)

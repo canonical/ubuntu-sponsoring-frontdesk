@@ -112,7 +112,7 @@ digraph SponsoringBot {
     llm -> notifnote [style=dotted, arrowhead=none];
     c6  -> notifnote [style=dotted, arrowhead=none];
 
-    agentnote [label="every opencode call (#99, #166):\ntool-less sponsoring-reviewer agent pinned\nvia OPENCODE_CONFIG_CONTENT; first call of a\nrun reads `opencode agent list` -- agent not\ntool-less -> every LLM call this run FAILs\n(each check's fail-safe), operator notified once.\nBackups: agent-not-found stderr, tool_use events", shape=note, fillcolor="#FFFDE7"];
+    agentnote [label="every opencode call (#99, #166):\ntool-less sponsoring-reviewer agent pinned\nvia OPENCODE_CONFIG_CONTENT; first call of a\nrun reads `opencode debug agent` (#167) -- agent\nnot tool-less -> every LLM call this run FAILs\n(each check's fail-safe), operator notified once.\nBackups: agent-not-found stderr, tool_use events", shape=note, fillcolor="#FFFDE7"];
     llm -> agentnote [style=dotted, arrowhead=none];
 
     c7 [label="Check 7: sru_newer_series (#58)\nSRU: fix landed in newer series first?\ntasks/MPs/patches; series without the\npackage exempt (#69); LLM escape hatch\n(bug text says fixed -> skip, #68)\nwording says the newer series must be\nfixed first (#134)\n→ question/verify Finding", shape=box, fillcolor="#FFFFFF"];

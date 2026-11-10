@@ -29,11 +29,14 @@ def _no_real_notify_config(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _agent_preflight_passes(monkeypatch):
-    # #166: the agent pre-flight runs the real `opencode agent list`; tests
+    # #166: the agent pre-flight runs the real `opencode debug agent`; tests
     # that exercise _query_llm fake subprocess.run for the call itself and
     # must not hit it. Tests of the pre-flight override this or call
     # opencode_agent directly.
     import llm_reviewer
+    import opencode_agent
 
-    monkeypatch.setattr(llm_reviewer, "_check_agent", lambda env: None)
+    monkeypatch.setattr(
+        llm_reviewer, "_check_agent", lambda env: opencode_agent.Inspection(None, None)
+    )
     yield

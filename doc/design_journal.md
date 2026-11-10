@@ -4019,3 +4019,44 @@ each action reaching Launchpad.
   `make charm-integration` wasn't run locally (seb128: left to CI, then
   a staging deploy): the charm now loads `usf/opencode_agent.py` from
   the packed charm, which the unit tests only exercise against the repo.
+
+## 167. The Agent Pre-flight Reads `opencode debug agent`
+
+* **Found while starting the LLM-hardening handover's item 2**, before
+  #166 was deployed. Item 2 wants each LLM call's audit record to name
+  the model. opencode's reply stream doesn't carry it (checked on 1.19.5:
+  `step_start`, `text` and `step_finish` events, no model field), and the
+  bot never chose the model -- it merges in from the home config.
+  `opencode debug agent <name>` reports it, along with more of the agent
+  than `opencode agent list` showed:
+  - it prints JSON, not a text listing that had to be cut into blocks;
+  - it exits non-zero, saying "Agent <name> not found", when the agent
+    isn't defined;
+  - besides the effective permission rules, it includes the *resolved
+    tool map* -- the tools opencode will actually offer the model, each
+    true or false.
+* **Change:** the pre-flight now runs `opencode debug agent
+  sponsoring-reviewer` instead of `opencode agent list`, and requires
+  both of these:
+  - the resolved tool map is non-empty with every tool false;
+  - the permission rules pass #166's catch-all-deny test.
+  Either format could change in a later opencode, so a mismatch between
+  them, or anything unreadable, still fails closed. It returns the
+  resolved model too (`provider/model`), kept for the run and recorded
+  with each LLM call (#168), so one lookup serves both.
+* **Checked against the real 1.19.5 binary:** pinned agent with a model
+  (safe, model reported), agent undefined (refused), agent defined
+  without tool limits (refused: all eleven tools enabled), `bash: allow`
+  on top of `tools: {"*": false}` (refused: bash enabled), and the pinned
+  agent with a hostile project `opencode.json` (safe -- the pin wins).
+* **Wording fix to #166's notification.** It said items needing an LLM
+  review "are deferred". That's true only for Check 7, which turns a
+  failed call into an inconclusive pass. The SRU template, sync and MP
+  reviews read a failed call as their fail-safe default and save the
+  item's facts, so the review isn't retried until the contributor
+  changes something. The message now says every LLM review takes its
+  fail-safe path. Retrying those is #169.
+* Tests: the #166 shapes rewritten for the JSON interface, plus an
+  enabled tool in the map, a missing map or rule list, the model
+  reported or absent, and the notification no longer saying "deferred".
+  Not yet deployed.

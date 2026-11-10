@@ -197,10 +197,11 @@ def _parse_sync_title(title):
 # under this dedicated agent with every tool disabled and permissions
 # denying as a second layer. #166: its definition lives in opencode_agent.py
 # and is passed to every call in OPENCODE_CONFIG_CONTENT, and a pre-flight
-# (`opencode agent list`, once per run) refuses an agent whose effective
-# rules allow any tool. _query_llm also still refuses to trust a run where
-# the agent wasn't found (opencode silently falls back to its default
-# tool-capable agent, exit 0) or whose event stream contains a tool_use.
+# (`opencode debug agent`, once per run, #167) refuses an agent whose
+# resolved tools or effective rules allow any tool. _query_llm also still
+# refuses to trust a run where the agent wasn't found (opencode silently
+# falls back to its default tool-capable agent, exit 0) or whose event
+# stream contains a tool_use.
 _OPENCODE_AGENT = opencode_agent.AGENT_NAME
 
 
@@ -325,6 +326,7 @@ class LLMReviewer:
         # not checked yet, "" checked and safe, otherwise the reason the
         # LLM phases are off for this run.
         self._agent_problem = None
+        self._agent_model = None
         self._run_usage_totals = {"total": 0, "cost": 0.0}
         self._item_usage = {"calls": 0, "tokens": 0, "cost_usd": 0.0}
 
@@ -355,14 +357,19 @@ class LLMReviewer:
         Checked once, on the first call; a failure notifies the operator
         once and every later call this run fails the same way, into each
         check's existing FAIL/inconclusive path -- nothing is judged on a
-        reply from an agent that might have tools."""
+        reply from an agent that might have tools. #167: the same lookup
+        gives the model the agent resolves to, kept for the audit trail."""
         if self._agent_problem is None:
-            self._agent_problem = _check_agent(env) or ""
+            inspection = _check_agent(env)
+            self._agent_problem = inspection.problem or ""
+            self._agent_model = inspection.model
             if self._agent_problem:
+                # Not "deferred": until #169, only Check 7 retries a failed
+                # LLM call; the other reviews take their fail-safe default.
                 message = (
                     "ubuntu-sponsoring-frontdesk: LLM phases disabled for this "
-                    f"run -- {self._agent_problem}. Items needing an LLM review "
-                    "are deferred (design_journal.md #166)."
+                    f"run -- {self._agent_problem}. Every LLM review this run "
+                    "takes its fail-safe path (design_journal.md #166)."
                 )
                 logger.warning(message)
                 notify.notify(message)
