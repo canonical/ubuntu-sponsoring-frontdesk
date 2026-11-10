@@ -4216,7 +4216,7 @@ each action reaching Launchpad.
   leave a revision uploaded but not released). The job needs `contents:
   write` for the tag and release; the rest of the workflow, the test run
   included, is read-only.
-* Not verifiable before it runs on GitHub: the YAML parses and the
-  artifact name matches a local `charmcraft pack`. The first push to
-  `main` is its test -- check the Actions tab, `charmcraft status
-  ubuntu-sponsoring-frontdesk`, and the new `rev<N>` release.
+* Verified on its first run: the push of #170 itself packed, uploaded and
+  released revision 4 to `latest/edge` (Charmhub review approved
+  automatically). The action still declares Node 20, so it warns like the
+  old checkout/setup-uv pins until an upstream release moves to Node 24.
