@@ -1437,6 +1437,19 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   15's message explains an `ubuntuN` revision even when the proposed
   version has none (`~24.04.1`); moot while backports are skipped, worth
   rewording if Check 15 ever meets another non-`ubuntuN` shape.
+- **Backlog: Check 7's escape hatch trusts a claimed devel version.**
+  pipewire MP #514335 (stonking SRU): the bug text said "the tenacious
+  upload (1.6.8-1ubuntu5) carries the same patch", but no such version
+  exists -- tenacious publishes `1.6.8-1ubuntu4` (Check 14 even logged
+  it); the contributor meant a tenacious MP they later dropped for a new
+  merge. The LLM, rightly told to trust the text over stale task tables,
+  answered `fixed`, so the "newer series first" advisory didn't fire.
+  Possible fix, not built (seb128: not urgent, the advisory is
+  non-blocking and a sponsor checks devel anyway): have the prompt also
+  return any concrete Ubuntu version the text claims a newer series
+  carries, and treat the claim as unproven when that series has nothing
+  at or above it published, in -proposed or in the upload queue. Build it
+  if this recurs; the prompt change needs proposing first.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the
