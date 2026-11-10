@@ -157,11 +157,20 @@ def _norm_path(path):
     -> 'debian/changelog'. None for /dev/null (added/deleted file side).
     The trailing debdiff timestamp is separated by a tab per POSIX, but
     spaces happen in the wild (seen live on bug #2158304), so cut at the
-    first whitespace -- source-package paths don't contain spaces."""
+    first whitespace -- source-package paths don't contain spaces.
+
+    #176 (live, nvidia-graphics-drivers-595 bug #2173513): a diff made with
+    `git diff --no-prefix` inside the package tree has no first component
+    to strip -- `debian/changelog` became `changelog`, so a real debdiff
+    read as a plain code patch and was bounced. A path already starting
+    `debian/` is kept as is, unless what follows is itself `debian/...`
+    (a top-level directory that happens to be named `debian`)."""
     path = path.split()[0] if path.split() else ""
     if path == "/dev/null":
         return None
     parts = path.split("/", 1)
+    if len(parts) == 2 and parts[0] == "debian" and not parts[1].startswith("debian/"):
+        return path
     return parts[1] if len(parts) == 2 else path
 
 

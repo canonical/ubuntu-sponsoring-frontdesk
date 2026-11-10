@@ -88,6 +88,54 @@ def test_classify_git_style_diff_too():
     assert info["other_paths"] == []
 
 
+# #176 (live, nvidia-graphics-drivers-595 bug #2173513): `git diff
+# --no-prefix` run inside the package tree -- no a/ b/, no version dir.
+NO_PREFIX_DEBDIFF = """\
+diff --git debian/changelog debian/changelog
+index dd9a630..c6fd2f6 100644
+--- debian/changelog
++++ debian/changelog
+@@ -1,3 +1,10 @@
++testpkg (1.2-3ubuntu2) stonking; urgency=medium
++
++  * Fix the shutdown hang (LP: #2000001).
++
++ -- Dev <dev@example.com>  Fri, 10 Jul 2026 10:00:00 +0200
++
+ testpkg (1.2-3ubuntu1) stonking; urgency=medium
+diff --git debian/dkms/patches/fix.patch debian/dkms/patches/fix.patch
+new file mode 100644
+--- /dev/null
++++ debian/dkms/patches/fix.patch
+@@ -0,0 +1 @@
++the patch content
+"""
+
+
+def test_classify_a_diff_without_any_path_prefix():
+    info = attachments.classify_diff(NO_PREFIX_DEBDIFF)
+    assert info["debian_paths"] == ["debian/changelog", "debian/dkms/patches/fix.patch"]
+    assert info["other_paths"] == []
+    assert any("testpkg (1.2-3ubuntu2)" in line for line in info["changelog_lines"])
+
+
+def test_a_no_prefix_debdiff_is_not_called_a_plain_patch():
+    bug = _bug([FakeAttachment("fix.debdiff", type="Patch", content=NO_PREFIX_DEBDIFF)])
+    assert checks.check_patch_not_debdiff(URL, bug, None) is False
+
+
+def test_path_normalisation():
+    for raw, expected in (
+        ("a/debian/changelog", "debian/changelog"),
+        ("testpkg-1.2/debian/changelog\t2026-07-11", "debian/changelog"),
+        ("debian/changelog", "debian/changelog"),  # #176: nothing to strip
+        ("debian/debian/changelog", "debian/changelog"),  # a top dir named debian
+        ("b/src/foo.c", "src/foo.c"),
+        ("/dev/null", None),
+    ):
+        assert attachments._norm_path(raw) == expected, raw
+
+
 def test_attachment_text_gunzips():
     att = FakeAttachment("fix.debdiff.gz", type="Patch", content=gzip.compress(DEBDIFF.encode()))
     assert attachments.attachment_text(att) == DEBDIFF

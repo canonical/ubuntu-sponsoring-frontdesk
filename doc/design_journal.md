@@ -4427,3 +4427,36 @@ each action reaching Launchpad.
   landed"; without a devel debdiff, unchanged; an unreadable other debdiff
   is inconclusive. The behaviour tests fail without the change.
   CHECKS.md updated. Not yet deployed.
+
+## 176. A Debdiff Without Path Prefixes Is Still a Debdiff
+
+* **Found live in seb128's first production `--interactive` pass, after
+  the write was approved** (nvidia-graphics-drivers-595 bug #2173513).
+  The attachment was a real debdiff -- new changelog entry plus patches
+  under `debian/dkms_nvidia/patches/` and `debian/open-kernel/patches/` --
+  made with `git diff --no-prefix` inside the package tree, so its headers
+  read `+++ debian/changelog`: no `a/`/`b/`, no version directory.
+  `attachments._norm_path` always stripped the first path component,
+  which turned `debian/changelog` into `changelog`. With no `debian/`
+  path left, Check 10 bounced it as "a plain code patch", the bug was set
+  Incomplete, and the contributor was told to build the debdiff they had
+  already attached. The log contradicted itself: Checks 5 and 6 read the
+  new changelog entry fine, because they find it by its `+` header lines,
+  not by path.
+* **Change:** a path that already starts with `debian/` is kept as is.
+  The exception is when what follows is itself `debian/...` -- a top-level
+  directory that happens to be named `debian` -- which still has its first
+  component stripped. Prefixed paths (`a/...`, `pkg-1.2/...`) behave as
+  before. Every bug-side consumer goes through this one function:
+  `classify_diff` (Checks 8, 10, 16, 17 and the changelog section) and
+  Check 15's per-path diff. MP diffs come from Launchpad with `a/`/`b/`
+  prefixes and were never affected.
+* The live attachment, re-classified with the fix: seven `debian/` files,
+  nothing else, and the changelog section found.
+* The posted comment and the Incomplete status were wrong: seb128 to
+  correct the bug by hand (status back to New, and a note to the
+  contributor).
+* Tests: a prefix-less debdiff classified with its `debian/` paths and
+  changelog section, and not called a plain patch; path normalisation
+  across the prefixed, debdiff, prefix-less and top-dir-named-`debian`
+  shapes. They fail without the fix. Not yet deployed.
