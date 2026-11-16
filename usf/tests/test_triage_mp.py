@@ -337,6 +337,7 @@ def test_devel_series_named_by_codename_still_gets_the_ff_question(monkeypatch):
     # current devel series -- not an SRU, the FF question still applies.
     import types
 
+    monkeypatch.setattr(release_schedule, "FEATURE_FREEZE_SERIES", "stonking")
     monkeypatch.setattr(
         release_schedule,
         "FEATURE_FREEZE",
