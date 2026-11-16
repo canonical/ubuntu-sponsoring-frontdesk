@@ -1177,6 +1177,19 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
         )
         return None
 
+    # #179: a fix pasted into a comment is a contribution, not "nothing to
+    # sponsor" -- Check 18 asks for it as a debdiff instead.
+    pasted = _comment_with_pasted_patch(bug)
+    if pasted is None:
+        return None
+    if pasted:
+        logger.info(
+            "[%s] no patch attached, but a comment carries a pasted patch; "
+            "leaving it to Check 18 instead of closing.",
+            url,
+        )
+        return False
+
     # An engaged reviewer contradicts "nothing is happening here" -- e.g.
     # security bug #2069291, where the fix was being worked out in the
     # comments (PPA links, patch lists) with a sponsor participating (#72).
@@ -1205,6 +1218,101 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
     )
     lp_client.unsubscribe_sponsors(bug)
     return "no_patch"
+
+
+# --- Check 18: a patch pasted into a comment (#179) --------------------------
+
+# A unified-diff hunk in comment text: `--- path`, `+++ path`, then an
+# `@@ -a,b +c,d @@` line. Leading whitespace allowed -- the live case
+# indented the whole patch like a Markdown code block.
+_PASTED_OLD_RE = re.compile(r"^\s*--- \S")
+_PASTED_NEW_RE = re.compile(r"^\s*\+\+\+ \S")
+_PASTED_HUNK_RE = re.compile(r"^\s*@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@")
+
+
+def _text_has_pasted_patch(text):
+    lines = (text or "").splitlines()
+    for i in range(len(lines) - 2):
+        if (
+            _PASTED_OLD_RE.match(lines[i])
+            and _PASTED_NEW_RE.match(lines[i + 1])
+            and _PASTED_HUNK_RE.match(lines[i + 2])
+        ):
+            return True
+    return False
+
+
+def _comment_with_pasted_patch(bug):
+    """#179: True when the bug's description or a comment carries a pasted
+    unified-diff hunk, False when none does, None when the comments
+    couldn't be read (retriable)."""
+    try:
+        texts = [getattr(bug, "description", "") or ""]
+        texts += [getattr(m, "content", "") or "" for m in bug.messages]
+    except Exception as e:
+        logger.debug("_comment_with_pasted_patch: couldn't read the comments (%s).", e)
+        return None
+    return any(_text_has_pasted_patch(text) for text in texts)
+
+
+def check_patch_in_comment(url, lp_obj, lp_client):
+    """
+    Check 18 (#179; trigger: gnome-remote-desktop bug #2174636): the fix is
+    pasted into a comment, with no patch attached and no merge proposal.
+    Check 1b used to close such a bug as "nothing to sponsor" and
+    unsubscribe the team, dropping a real contribution from the queue.
+    Like Check 10's plain patch, a pasted one isn't sponsorable as is, so
+    this asks for a debdiff or a merge proposal (incomplete: Incomplete,
+    the team stays subscribed).
+
+    Bugs only. Skipped when a patch is attached (Checks 8/10 handle it), a
+    live merge proposal is linked, the bug is a sync request, or a human
+    reviewer is engaged in the comments (as Check 1b's own no-patch path
+    does: the patch may be part of an ongoing conversation). Returns an
+    incomplete Finding, False, or None (a read failed -- retriable).
+    """
+    resource_type = lp_obj.resource_type_link.split("#")[-1]
+    if resource_type not in ("bug", "bug_task"):
+        return False
+    bug = lp_obj.bug if resource_type == "bug_task" else lp_obj
+    try:
+        if any(
+            mp.queue_status not in _INACTIVE_MP_STATUSES + ("Merged",)
+            for mp in bug.linked_merge_proposals
+        ):
+            return False
+        if any(
+            a.type == "Patch" or _PATCH_FILENAME_RE.search(a.title or "") for a in bug.attachments
+        ):
+            return False
+    except Exception as e:
+        logger.debug("check_patch_in_comment: couldn't read the bug (%s).", e)
+        return None
+    if llm_reviewer._is_sync(getattr(bug, "title", ""), getattr(bug, "description", "")):
+        return False
+    pasted = _comment_with_pasted_patch(bug)
+    if not pasted:
+        return pasted
+    engaged = check_human_engaged(bug, lp_client)
+    if engaged is None:
+        return None
+    if engaged:
+        logger.info(
+            "[%s] a patch is pasted in a comment, but a human is engaged; "
+            "leaving it to the conversation.",
+            url,
+        )
+        return False
+    logger.info("[%s] the fix is pasted in a comment. Adding an incomplete finding.", url)
+    return Finding(
+        "incomplete",
+        "The proposed fix appears to be pasted into a comment. Thank you for working "
+        "on it! To be ready for sponsoring it needs to be attached as a source package "
+        "update (debdiff) -- include the patch under `debian/patches` and add a new "
+        "`debian/changelog` entry with an incremented version number describing the "
+        "change -- or proposed as a merge proposal. See "
+        "https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/",
+    )
 
 
 _MISSING_DIFF_GRACE = datetime.timedelta(hours=1)

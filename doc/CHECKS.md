@@ -144,6 +144,7 @@ debdiffs all target one series gets the plain comment, without headings.
 | 15 | [No-change rebuild version](#check-15-no-change-rebuild-version) | MP + bug | A no-change rebuild (only `debian/changelog`, plus `update-maintainer`'s `debian/control` lines) using an `ubuntuN` instead of a `buildN` revision. | incomplete. |
 | 16 | [DEP-3 patch header](#check-16-dep-3-patch-header) | MP + bug | A newly added `debian/patches/` patch with no DEP-3 header (no `Description:`/`Subject:`). Merges skipped; modified patches not judged. | incomplete. |
 | 17 | [Released changelog entry edited](#check-17-released-changelog-entry-edited) | MP + bug | The diff adds a new changelog entry but also changes an older, already-uploaded one -- whitespace included. Merges and `UNRELEASED` entries skipped. | incomplete. |
+| 18 | [Patch pasted in a comment](#check-18-patch-pasted-in-a-comment) | bug | No patch attached and no merge proposal, but the description or a comment carries a pasted unified diff. Skipped for sync requests and when a human reviewer is engaged. | incomplete. |
 
 ## What the bot posts
 
@@ -175,6 +176,9 @@ When there's nothing attached at all:
 > yet, so there is nothing for the sponsors team to review at this point.
 > Cleaning up the queue by unsubscribing ~ubuntu-sponsors -- please
 > subscribe them again once a proposed fix is available.
+
+Not when a comment (or the description) carries a pasted patch: that's
+Check 18's case (#179).
 
 When a needs-packaging bug is already published or sitting in the queue:
 
@@ -411,6 +415,19 @@ https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/patches/
 `{what}` is "an existing `debian/changelog` entry (`{pkg} {version}`)" or
 "existing `debian/changelog` entries (...)", naming each entry whose header
 is visible in the diff; `{verb}` is "was"/"were".
+
+### Check 18: patch pasted in a comment
+
+`check_patch_in_comment`, design #179. Runs right after Check 1b, which no
+longer closes such a bug as "nothing to sponsor".
+
+> The proposed fix appears to be pasted into a comment. Thank you for
+> working on it! To be ready for sponsoring it needs to be attached as a
+> source package update (debdiff) -- include the patch under
+> `debian/patches` and add a new `debian/changelog` entry with an
+> incremented version number describing the change -- or proposed as a
+> merge proposal. See
+> https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/
 
 ## LLM-assisted reviews
 

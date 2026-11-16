@@ -72,7 +72,9 @@ digraph SponsoringBot {
     gate -> bpo [label="changed / forced"];
     bpo -> c1 [label="no"];
     c1 -> c1b [label="no / None"];
-    c1b -> c2 [label="no / None"];
+    c18 [label="Check 18: patch_in_comment (#179)\nbugs only: fix pasted in a comment,\nnothing attached, no MP\n(1b leaves it open for this)\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
+    c1b -> c18 [label="no / None"];
+    c18 -> c2;
     c2 -> c3 [label="always evaluated;\nfinding kept only if\nc2 didn't already fire"];
     c3 -> c4 [label="no / None"];
     c4 -> c5;

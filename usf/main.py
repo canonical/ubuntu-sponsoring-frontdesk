@@ -437,6 +437,16 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # nitpicking a change that already landed (seb128, 2026-07-06).
     findings = []
 
+    # Check 18: the fix pasted into a comment, nothing attached (#179;
+    # incomplete tier, bugs only) -- what Check 1b used to close.
+    result = checks.check_patch_in_comment(url, lp_obj, lp_client)
+    checkpoint("check_patch_in_comment")
+    logger.debug("check_patch_in_comment -> %s", result)
+    if result is None:
+        mark_inconclusive("check_patch_in_comment")
+    elif result:
+        add_finding("check_patch_in_comment", result)
+
     # Check 2: Target Branch (incomplete tier)
     result = checks.check_target_branch(url, lp_obj, lp_client)
     checkpoint("check_target_branch")

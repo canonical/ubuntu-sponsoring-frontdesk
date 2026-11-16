@@ -4513,3 +4513,41 @@ each action reaching Launchpad.
   gets no FF question and no note -- fails without the change; the
   date/series combinations in `test_release_schedule.py`. Not yet
   deployed.
+
+## 179. Check 18: a Fix Pasted Into a Comment Isn't "Nothing to Sponsor"
+
+* **Found live in seb128's production `--interactive` pass**
+  (gnome-remote-desktop bug #2174636, declined at `[y/N]`). The
+  submitter wrote a full SRU description and pasted the upstream patch
+  (c82b4ed4) into comment #2, indented like a Markdown code block, with
+  nothing attached and no merge proposal. Check 1b's no-patch path closed
+  the bug: "There doesn't seem to be a patch ... attached", and
+  unsubscribed ~ubuntu-sponsors. That's factually wrong, and it would
+  have dropped a real contribution from the queue. Unlike the
+  stale-base case (STATUS.md), this will keep happening with regular
+  runs: pasting a fix into a comment is a common newcomer pattern.
+* **Change (wording reviewed by seb128):**
+  - Detection: the description or any comment contains a unified-diff
+    hunk -- `--- path`, then `+++ path`, then an `@@ -a,b +c,d @@` line,
+    consecutive, leading whitespace allowed. Prose that merely uses
+    `---` or `@@` doesn't match all three in a row.
+  - Check 1b's no-patch path leaves such a bug open instead of closing it.
+  - **Check 18** (`check_patch_in_comment`, right after Check 1b, bugs
+    only) posts an incomplete finding asking for a debdiff or a merge
+    proposal, worded like Check 10's plain-patch bounce. The bug goes
+    Incomplete and the team stays subscribed, so the usual flow applies:
+    the contributor attaches a debdiff and sets it back to New, or Rule B's
+    sweep runs.
+* **Skipped** when a patch is attached (Checks 8/10 handle it), a live
+  merge proposal is linked, the bug is a sync request, or a human
+  reviewer is engaged in the comments. The last one matches Check 1b's
+  own no-patch path: a sponsor pasting a suggested fix is a conversation,
+  not a contribution waiting for review. Without that skip, #94 would
+  keep a blocking finding even with a reviewer engaged.
+* Tests: the live shape (indented) detected, in a comment or the
+  description; prose with dashes and a hunk without its `@@` line not;
+  Check 1b leaves it open but still closes a bug with no patch anywhere;
+  Check 18's exact wording; the skips; end to end, the bug bounced to
+  WAITING_ON_CONTRIBUTOR rather than unsubscribed. The behaviour tests
+  fail without the change. CHECKS.md and the flow chart updated. Not yet
+  deployed.
