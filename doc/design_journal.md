@@ -4589,3 +4589,25 @@ each action reaching Launchpad.
   unchanged; the reply parsed per series with labels and unknown names;
   the prompt carries the declined list. The behaviour tests fail without
   the change. CHECKS.md updated. Not yet deployed.
+
+## 181. A Reviewer Naming the Cause Covers Its Consequences
+
+* **Found live in seb128's production `--interactive` pass**
+  (network-manager bug #2174507, declined at `[y/N]`). The debdiff was
+  meant for the development release, but its changelog said `stonking`
+  (#182's case). seb128 had already commented "your changelog targets
+  stonking but that's targetting tenacious right?". The bot still
+  posted Check 14's blocking "the fix hasn't landed in tenacious", a
+  consequence of that same wrong target. #94 keeps blocking findings
+  when a human is engaged; #106's LLM call can drop the ones the
+  reviewer already covered, but its prompt asked for the SAME problem,
+  and the model correctly judged the root cause a different one.
+* **Change (wording reviewed by seb128):** the #106 prompt now also counts
+  a finding as covered when the reviewer raised its *direct cause* --
+  with the wrong-series target as its example. It still requires the
+  reviewer to actually name it, not merely touch a related topic.
+  Considered and rejected: going back to suppressing every finding when a
+  human is engaged (pre-#94), which would undo a deliberate choice.
+* Fail-safe unchanged: a failed or unreadable reply posts every finding.
+* Tests: the prompt carries the cause clause; fails without the change.
+  Not yet seen on a live reply.

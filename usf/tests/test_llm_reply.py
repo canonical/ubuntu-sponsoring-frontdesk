@@ -405,3 +405,18 @@ def test_the_verdict_prompts_ask_for_a_quoted_single_line_reason(monkeypatch):
     for prompt in prompts:
         assert 'reason: "<if fail' in prompt
         assert "single line, inside double quotes" in prompt
+
+
+def test_the_covered_prompt_counts_a_named_cause(monkeypatch):
+    """#181 (live, network-manager bug #2174507): the reviewer asked "your
+    changelog targets stonking but that's targetting tenacious right?";
+    the finding was its consequence (not landed in tenacious) and was
+    judged not covered."""
+    prompts = []
+    r = LLMReviewer()
+    monkeypatch.setattr(
+        r, "_query_llm", lambda p: prompts.append(p) or "```yaml\ncovered: []\n```"
+    )
+    r.review_findings_already_covered([Finding("incomplete", "x")], ["c"])
+    assert "problem, or its direct cause" in prompts[0]
+    assert "the upload targets\nthe wrong series" in prompts[0]
