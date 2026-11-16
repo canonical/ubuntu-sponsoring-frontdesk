@@ -145,6 +145,7 @@ debdiffs all target one series gets the plain comment, without headings.
 | 16 | [DEP-3 patch header](#check-16-dep-3-patch-header) | MP + bug | A newly added `debian/patches/` patch with no DEP-3 header (no `Description:`/`Subject:`). Merges skipped; modified patches not judged. | incomplete. |
 | 17 | [Released changelog entry edited](#check-17-released-changelog-entry-edited) | MP + bug | The diff adds a new changelog entry but also changes an older, already-uploaded one -- whitespace included. Merges and `UNRELEASED` entries skipped. | incomplete. |
 | 18 | [Patch pasted in a comment](#check-18-patch-pasted-in-a-comment) | bug | No patch attached and no merge proposal, but the description or a comment carries a pasted unified diff. Skipped for sync requests and when a human reviewer is engaged. | incomplete. |
+| 19 | [Development version for a released series](#check-19-development-version-for-a-released-series) | MP + bug | The new changelog entry targets a released series but the version is a plain `ubuntuN` -- numbered like a development-release upload. Checks 13/14 skipped for that target, Check 7 when every target fires. | incomplete. |
 
 ## What the bot posts
 
@@ -437,6 +438,20 @@ longer closes such a bug as "nothing to sponsor".
 > incremented version number describing the change -- or proposed as a
 > merge proposal. See
 > https://ubuntu.com/project/docs/contributors/updating/work-with-debian-patches/
+
+### Check 19: development version for a released series
+
+`check_devel_version_on_released_series`, design #182. Runs before Check 13;
+when it fires, Checks 13 and 14 are skipped for that target (they would only
+restate it from the SRU angle), and Check 7 when it fires on every target.
+
+> The changelog entry targets `{series}`, a released series, but
+> `{version}` is numbered like a development-release upload. If this is
+> meant for the development release, the changelog should target `{devel}`
+> instead (`dch` reuses the previous entry's series, an easy mistake to
+> make). If it's a stable release update for `{series}`, it needs an SRU
+> version and the SRU process. See
+> https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/
 
 ## LLM-assisted reviews
 

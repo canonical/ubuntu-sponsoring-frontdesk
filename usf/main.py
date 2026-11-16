@@ -486,6 +486,10 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         )
         return
 
+    # #182: how many review targets ran, and how many Check 19 fired on.
+    targets_reviewed = []
+    targets_misnumbered = []
+
     def run_target_checks(add):
         """Checks 5-16 against the item's review target: the MP's diff, or
         the bug's debdiff (attachments.review_target -- the newest one, or
@@ -563,9 +567,23 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         elif result:
             add("check_ppa_version_suffix", result)
 
+        # Check 19: a development-style version for a released series
+        # (#182). When it fires, Checks 13/14 would only restate it from the
+        # SRU angle -- skip them for this target.
+        targets_reviewed.append(1)
+        result = checks.check_devel_version_on_released_series(url, lp_obj, lp_client)
+        checkpoint("check_devel_version_on_released_series")
+        logger.debug("check_devel_version_on_released_series -> %s", result)
+        misnumbered = bool(result)
+        if result is None:
+            mark_inconclusive("check_devel_version_on_released_series")
+        elif result:
+            add("check_devel_version_on_released_series", result)
+            targets_misnumbered.append(1)
+
         # Check 13: SRU version-suffix convention (#109), via ubuntu-lint --
         # skipped when Check 6 already bounced the version itself (#122).
-        if not version_bounced:
+        if not version_bounced and not misnumbered:
             result = checks.check_sru_version_suffix_convention(url, lp_obj, lp_client)
             checkpoint("check_sru_version_suffix_convention")
             logger.debug("check_sru_version_suffix_convention -> %s", result)
@@ -575,14 +593,15 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                 add("check_sru_version_suffix_convention", result)
 
         # Check 14: SRU version-precedence correctness (#110). Deterministic,
-        # pre-gate.
-        result = checks.check_sru_version_newer_series_precedence(url, lp_obj, lp_client)
-        checkpoint("check_sru_version_newer_series_precedence")
-        logger.debug("check_sru_version_newer_series_precedence -> %s", result)
-        if result is None:
-            mark_inconclusive("check_sru_version_newer_series_precedence")
-        elif result:
-            add("check_sru_version_newer_series_precedence", result)
+        # pre-gate. Skipped with Check 19 (#182).
+        if not misnumbered:
+            result = checks.check_sru_version_newer_series_precedence(url, lp_obj, lp_client)
+            checkpoint("check_sru_version_newer_series_precedence")
+            logger.debug("check_sru_version_newer_series_precedence -> %s", result)
+            if result is None:
+                mark_inconclusive("check_sru_version_newer_series_precedence")
+            elif result:
+                add("check_sru_version_newer_series_precedence", result)
 
         # Check 15: a no-change rebuild must use a buildN revision (#132).
         # Deterministic, pre-gate; unrelated to the SRU version checks (a
@@ -791,7 +810,13 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # LLM call, which would be wasted on a pass that can't act. Its own
     # None (a Launchpad or LLM failure) gets the same treatment as the
     # gate -- post nothing, persist nothing, retry next run.
-    result = checks.check_sru_newer_series(url, lp_obj, lp_client, llm_reviewer)
+    # #182: skipped when Check 19 fired on every review target -- the
+    # upload isn't really an SRU, or not one yet; Check 19 already says so.
+    if targets_reviewed and len(targets_misnumbered) == len(targets_reviewed):
+        logger.debug("check_sru_newer_series: skipped, Check 19 fired on every target.")
+        result = False
+    else:
+        result = checks.check_sru_newer_series(url, lp_obj, lp_client, llm_reviewer)
     checkpoint("check_sru_newer_series")
     logger.debug("check_sru_newer_series -> %s", result)
     if result is None:

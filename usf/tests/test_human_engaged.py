@@ -42,7 +42,10 @@ def _state(tmp_path):
 
 def _client(objects):
     # FakeRoot supplies lp.me so the bot's own comments are recognized.
-    return FakeTriageClient(objects=objects, lp=FakeRoot())
+    # The diffs here target stonking as the development release (#182:
+    # with noble as devel, their `ubuntu2` versions would read as
+    # development-style uploads to a released series).
+    return FakeTriageClient(objects=objects, lp=FakeRoot(devel_series_name="stonking"))
 
 
 def _mp(comments, **kwargs):

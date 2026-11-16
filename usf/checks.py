@@ -1220,6 +1220,69 @@ def check_nothing_to_sponsor(url, lp_obj, lp_client):
     return "no_patch"
 
 
+# --- Check 19: a development-style version for a released series (#182) -------
+
+# An Ubuntu revision with no dot after `ubuntu`: `1.2-3ubuntu4`, the shape of
+# a development-release upload. Every SRU form has one (`ubuntu0.1`,
+# `ubuntu3.1`, `ubuntu3.26.10.1`); backports (`~YY.MM.N`) are skipped
+# before any check (#172).
+_DEVEL_STYLE_UBUNTU_RE = re.compile(r"ubuntu\d+$")
+
+
+def check_devel_version_on_released_series(url, lp_obj, lp_client):
+    """
+    Check 19 (#182; trigger: network-manager bug #2174507): the new
+    changelog entry targets a released series, but the version is numbered
+    like a development-release upload (`1.58.1-1ubuntu4` for `stonking`).
+    That's always wrong: either the upload is meant for the development
+    release -- `dch` reuses the previous entry's series, an easy mistake
+    right after a release -- or it's an SRU without an SRU version. The
+    finding names both readings; main.py skips Checks 13/14 for the target
+    (and Check 7 when every target fired), which would only restate it.
+
+    MP or bug (the debdiff in focus), via _sru_proposal_inputs; the series
+    is read from the entry's own suite, the one the upload would go to.
+    Returns an incomplete Finding, False, or None (a lookup failed).
+    """
+    result = _sru_proposal_inputs(lp_obj, lp_client)
+    if result is None:
+        return None
+    if result is False:
+        return False
+    _package, _target, proposed_version, proposed_entry = result
+    header = _CHANGELOG_HEADER_RE.match(proposed_entry.splitlines()[0])
+    if not header:
+        return False
+    series = _POCKET_SUFFIX_RE.sub("", header.group("suite").lower())
+    devel = archive_lookup.devel_codename(lp_client.lp)
+    if devel is None:
+        return None
+    if series == devel or not _DEVEL_STYLE_UBUNTU_RE.search(proposed_version):
+        return False
+    supported = archive_lookup.supported_series_ordered(lp_client.lp)
+    if supported is None:
+        return None
+    if series not in (name for name, _version in supported):
+        return False
+    logger.info(
+        "[%s] %r targets the released series %s with a development-style "
+        "version. Adding an incomplete finding.",
+        url,
+        proposed_version,
+        series,
+    )
+    return Finding(
+        "incomplete",
+        f"The changelog entry targets `{series}`, a released series, but "
+        f"`{proposed_version}` is numbered like a development-release upload. "
+        "If this is meant for the development release, the changelog should "
+        f"target `{devel}` instead (`dch` reuses the previous entry's series, an "
+        "easy mistake to make). If it's a stable release update for "
+        f"`{series}`, it needs an SRU version and the SRU process. See "
+        "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/",
+    )
+
+
 # --- Check 18: a patch pasted into a comment (#179) --------------------------
 
 # A unified-diff hunk in comment text: `--- path`, `+++ path`, then an

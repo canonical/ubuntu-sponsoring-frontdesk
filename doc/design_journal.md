@@ -4611,3 +4611,37 @@ each action reaching Launchpad.
 * Fail-safe unchanged: a failed or unreadable reply posts every finding.
 * Tests: the prompt carries the cause clause; fails without the change.
   Not yet seen on a live reply.
+
+## 182. Check 19: a Development-Style Version for a Released Series
+
+* **Found live in seb128's production `--interactive` pass**
+  (network-manager bug #2174507, declined at `[y/N]`, same item as #181).
+  The debdiff -- titled "debdiff for devel" -- bumped `1.58.1-1ubuntu3` to
+  `1.58.1-1ubuntu4`, a development-release upload, but its changelog said
+  `stonking`: right after a release, `dch -i` reuses the previous entry's
+  series. The bot reviewed it as a stonking SRU, and three findings
+  restated that one mistake from different angles: Check 13's SRU
+  version convention, Check 14's "not landed in tenacious", and Check 7's
+  "no evidence in tenacious". The mistake will recur after every release.
+* **Change (wording and tier reviewed by seb128):** Check 19
+  (`check_devel_version_on_released_series`, deterministic, before Check
+  13). It fires when the new changelog entry's suite (pocket stripped)
+  is a supported series other than the development release, and the
+  version's Ubuntu part is a plain `ubuntuN`. Every SRU form has a dot
+  there (`ubuntu0.1`, `ubuntu3.1`, `ubuntu3.26.10.1`), and backports were
+  already skipped (#172). So the combination is always wrong: either a
+  development upload with the wrong series, or an SRU without an SRU
+  version. The finding is blocking and names both readings.
+  - When it fires, Checks 13 and 14 are skipped for that target, and Check
+    7 when it fires on every target.
+  - The expected SRU version isn't given: its form depends on whether the
+    base version is shared across series (#173), which only ubuntu-lint
+    works out, and that would mean running it just for the message.
+* Fixture note: `test_human_engaged`'s `FakeRoot` said noble was the
+  development release while its diffs targeted stonking with `ubuntuN`
+  versions -- exactly this shape. It now says stonking.
+* Tests: the live shape with its exact wording; the development release
+  itself, the SRU version forms, `buildN` and an unknown suite don't
+  fire; a pocket suffix is read as its series; end to end, the finding
+  replaces Checks 7/13/14. They fail without the change. CHECKS.md and
+  the flow chart updated. Not yet deployed.
