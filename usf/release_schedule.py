@@ -19,8 +19,9 @@ import datetime
 # claiming a freeze for the whole new cycle until someone edited it. Tied
 # to its series, a stale entry now stops applying the day the next series
 # becomes devel -- a forgotten update means no FF notes, not wrong ones.
-FEATURE_FREEZE_SERIES = "stonking"
-FEATURE_FREEZE = datetime.date(2026, 8, 20)  # confirmed by seb128, 2026-07-01
+FEATURE_FREEZE_SERIES = "tenacious"
+# https://documentation.ubuntu.com/release-notes/27.04/schedule/ (seb128)
+FEATURE_FREEZE = datetime.date(2027, 2, 25)
 
 
 def is_after_feature_freeze(devel_series, today=None):
