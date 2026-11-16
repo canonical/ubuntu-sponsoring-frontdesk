@@ -4551,3 +4551,41 @@ each action reaching Launchpad.
   WAITING_ON_CONTRIBUTOR rather than unsubscribed. The behaviour tests
   fail without the change. CHECKS.md and the flow chart updated. Not yet
   deployed.
+
+## 180. Check 7 Answers Per Series, and Names an Explicit Skip as Such
+
+* **Found live in seb128's production `--interactive` pass** (appstream
+  bug #2172814, an SRU to resolute, declined at `[y/N]`). The text said
+  "appstream 1.2.2-1 fixes the bug, it is in tenacious already" and, with
+  a reason, "I am not submitting anything for Stonking". The LLM read it
+  correctly: tenacious fixed, stonking not. But Check 7's escape hatch
+  asked whether ALL newer series were fixed, so its single `not-stated`
+  made the finding say "no evidence of it being resolved in stonking and
+  tenacious". That's wrong about tenacious, and it asks the contributor to
+  "check" a choice they had already explained.
+* **Change (wording reviewed by seb128):**
+  - The prompt asks per series. The reply lists `fixed` series and
+    `declined` ones -- those the text explicitly says won't get the fix,
+    giving a reason. A series the text doesn't mention is in neither. The
+    inheritance rule stays (a fix stated for a release covers the later
+    ones listed).
+  - Fixed series drop out of the finding entirely, as when all of them
+    were fixed before.
+  - Not-stated series keep today's wording, now naming only them.
+  - Declined series get a sentence of their own, same verify tier: "The
+    description explains why {series} won't get this fix. SRU policy
+    normally requires newer supported releases to be fixed first, so the
+    SRU team will need to agree to skipping {it/them}." seb128 chose to
+    post this over saying nothing: it tells a contributor this is an
+    exception someone has to approve.
+  - On appstream the comment becomes only the stonking sentence.
+* The validator keeps only names from the series asked about, with or
+  without the prompt's "(Ubuntu YY.MM)" label; a series in both lists
+  counts as fixed. An unreadable reply means nothing stated, which is
+  today's full advisory, and a failed call stays inconclusive (#169).
+* Tests: the live shape (fixed + declined -> only the declined sentence);
+  fixed + not stated -> only the uncovered series named; declined + not
+  stated -> both sentences; all fixed -> silent; nothing stated ->
+  unchanged; the reply parsed per series with labels and unknown names;
+  the prompt carries the declined list. The behaviour tests fail without
+  the change. CHECKS.md updated. Not yet deployed.

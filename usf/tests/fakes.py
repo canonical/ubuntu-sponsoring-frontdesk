@@ -439,10 +439,14 @@ class FakeLLM:
         self.bounce_queries.append((bounce_reason, list(comments)))
         return self.bounce_addressed
 
+    # #180: or a {"fixed": set, "declined": set} of codenames.
     def review_fixed_in_newer_series(self, bug_text, series_names):
         self.newer_series_queries = getattr(self, "newer_series_queries", [])
         self.newer_series_queries.append((bug_text, list(series_names)))
-        return self.fixed_in_newer
+        if self.fixed_in_newer is None or isinstance(self.fixed_in_newer, dict):
+            return self.fixed_in_newer
+        codenames = {name.split(" (")[0] for name in series_names}
+        return {"fixed": codenames if self.fixed_in_newer else set(), "declined": set()}
 
     # #106: which 1-based finding numbers the engaged reviewer's own
     # comments already cover -- default empty, matching pre-#106 behavior.

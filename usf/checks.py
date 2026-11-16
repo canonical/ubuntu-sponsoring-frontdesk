@@ -3719,53 +3719,77 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
     # as covering resolute if the prompt says resolute is Ubuntu 26.04
     # (found on design #58's live probe).
     labeled = [f"{name} (Ubuntu {series_versions[name]})" for name in unhandled]
-    stated_fixed = llm.review_fixed_in_newer_series(bug_text, labeled)
-    if stated_fixed is None:
+    stated = llm.review_fixed_in_newer_series(bug_text, labeled)
+    if stated is None:
         logger.debug("check_sru_newer_series: LLM invocation failed; can't determine.")
         return None
 
-    series_list = ", ".join(unhandled)
-    if stated_fixed:
-        # The bug text already documents the newer series as fixed/not
+    fixed = [s for s in unhandled if s in stated["fixed"]]
+    declined = [s for s in unhandled if s in stated["declined"]]
+    not_stated = [s for s in unhandled if s not in fixed and s not in declined]
+    if fixed:
+        # The bug text already documents these series as fixed/not
         # affected -- that's all a reviewer needs. Updating the task table
         # would require nominating series tasks, a restricted action most
         # contributors can't perform, so there is nothing useful to ask of
         # the submitter (seb128, live on bug #2148507).
         logger.info(
             "[%s] SRU to %s: bug text says %s already fixed; tasks don't "
-            "reflect it but fixing that needs nomination rights. Skipping.",
+            "reflect it but fixing that needs nomination rights.",
             url,
             target_series,
-            series_list,
+            ", ".join(fixed),
         )
+    if not not_stated and not declined:
         return False
 
-    logger.info(
-        "[%s] SRU to %s with no sign the fix landed in %s first. Adding a verify finding.",
-        url,
-        target_series,
-        series_list,
-    )
-    # #118 (live, python3-defaults MP #511350): state what we actually know
-    # -- no evidence -- rather than asserting the series isn't fixed.
-    plural = len(unhandled) > 1
-    series_words = f"{', '.join(unhandled[:-1])} and {unhandled[-1]}" if plural else unhandled[0]
-    # #134 (live, ubuntu-insights MP #512179): the old wording left the
-    # requirement itself implicit -- it only said the series was supported
-    # and pointed at the policy. Say why it matters: an SRU can't land
-    # before the newer series are fixed.
-    return Finding(
-        "question",
-        f"SRU policy requires the fix to land in newer supported series "
-        f"first, and there is no evidence of it being resolved in "
-        f"{series_words}. Please check: if it isn't fixed there yet, "
-        f"{'those series need' if plural else 'that series needs'} to be "
-        "updated "
-        "before this SRU can be sponsored; if it is, please reflect that "
-        "explicitly in the bug description or the bug status. See "
-        "https://ubuntu.com/project/docs/SRU/reference/requirements",
-        kind="verify",
-    )
+    def words(names):
+        return f"{', '.join(names[:-1])} and {names[-1]}" if len(names) > 1 else names[0]
+
+    parts = []
+    if not_stated:
+        logger.info(
+            "[%s] SRU to %s with no sign the fix landed in %s first.",
+            url,
+            target_series,
+            ", ".join(not_stated),
+        )
+        plural = len(not_stated) > 1
+        # #118 (live, python3-defaults MP #511350): state what we actually
+        # know -- no evidence -- rather than asserting the series isn't
+        # fixed. #134 (live, ubuntu-insights MP #512179): say why it
+        # matters: an SRU can't land before the newer series are fixed.
+        # #180: only the series the text doesn't account for.
+        parts.append(
+            f"SRU policy requires the fix to land in newer supported series "
+            f"first, and there is no evidence of it being resolved in "
+            f"{words(not_stated)}. Please check: if it isn't fixed there yet, "
+            f"{'those series need' if plural else 'that series needs'} to be "
+            "updated "
+            "before this SRU can be sponsored; if it is, please reflect that "
+            "explicitly in the bug description or the bug status. See "
+            "https://ubuntu.com/project/docs/SRU/reference/requirements"
+        )
+    if declined:
+        # #180 (live, appstream bug #2172814): the contributor explicitly
+        # skips a newer series and says why. Asking them to "check" is
+        # nagging about what they already addressed; the real point is that
+        # the exception needs the SRU team's agreement (seb128's wording).
+        logger.info(
+            "[%s] SRU to %s: the bug text explains why %s won't get the fix.",
+            url,
+            target_series,
+            ", ".join(declined),
+        )
+        plural = len(declined) > 1
+        parts.append(
+            f"The description explains why {words(declined)} won't get this fix. "
+            "SRU policy normally requires newer supported releases to be fixed "
+            f"first, so the SRU team will need to agree to skipping "
+            f"{'them' if plural else 'it'}. See "
+            "https://ubuntu.com/project/docs/SRU/reference/requirements"
+        )
+    return Finding("question", "\n\n".join(parts), kind="verify")
 
 
 def _upstream_component(version):

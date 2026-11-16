@@ -108,9 +108,15 @@ def test_sync_reviews_unparseable_route_to_a_human(monkeypatch):
 
 
 def test_fixed_in_newer_series_unparseable_is_not_stated(monkeypatch):
-    assert _scripted(monkeypatch, UNREADABLE).review_fixed_in_newer_series("t", ["x"]) is False
-    reply = "```yaml\nverdict: fixed\n```"
-    assert _scripted(monkeypatch, reply).review_fixed_in_newer_series("t", ["x"]) is True
+    nothing = {"fixed": set(), "declined": set()}
+    asked = ["stonking (Ubuntu 26.10)", "tenacious (Ubuntu 27.04)"]
+    assert _scripted(monkeypatch, UNREADABLE).review_fixed_in_newer_series("t", asked) == nothing
+    # #180: per series, labels tolerated, unknown names dropped.
+    reply = "```yaml\nfixed: [tenacious (Ubuntu 27.04), plucky]\ndeclined: [Stonking]\n```"
+    assert _scripted(monkeypatch, reply).review_fixed_in_newer_series("t", asked) == {
+        "fixed": {"tenacious"},
+        "declined": {"stonking"},
+    }
 
 
 def test_bounce_response_unparseable_is_not_addressed(monkeypatch):

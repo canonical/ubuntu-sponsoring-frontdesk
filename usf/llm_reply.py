@@ -156,10 +156,38 @@ def verdict(data):
 verdict.fallback = verdict_lines
 
 
-def fixed_in_newer_series(data):
-    """Check 7's escape hatch: `verdict: fixed|not-stated`."""
-    value = _choice(data, "verdict", ("fixed", "not-stated"))
-    return {"fixed": value == "fixed"}, value
+def fixed_in_newer_series(series_names):
+    """Check 7's escape hatch (#180): `fixed: [...]` and `declined: [...]`,
+    each a subset of `series_names` (codenames). An entry may carry the
+    prompt's "(Ubuntu YY.MM)" label; anything that isn't one of the series
+    asked about is dropped. Both lists empty is a normal "not stated". A
+    series in both counts as fixed."""
+    asked = {name.lower() for name in series_names}
+
+    def names(data, field):
+        value = data.get(field)
+        if value is None:
+            return set()
+        if not isinstance(value, list):
+            raise ValueError(f"{field} is not a list")
+        picked = set()
+        for item in value:
+            name = str(item).split("(")[0].strip().lower() if item is not None else ""
+            if name in asked:
+                picked.add(name)
+            else:
+                logger.warning("fixed_in_newer_series: ignoring %s entry %r.", field, item)
+        return picked
+
+    def validate(data):
+        if "fixed" not in data and "declined" not in data:
+            raise ValueError("no fixed/declined lists")
+        fixed = names(data, "fixed")
+        declined = names(data, "declined") - fixed
+        summary = f"fixed:{len(fixed)},declined:{len(declined)}"
+        return {"fixed": fixed, "declined": declined}, summary
+
+    return validate
 
 
 def bounce_response(data):

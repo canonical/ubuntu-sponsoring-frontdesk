@@ -291,13 +291,22 @@ Same version, different content -- in the archive:
 
 ### Check 7: newer series first
 
-`check_sru_newer_series`, design #58/#115/#118/#134.
+`check_sru_newer_series`, design #58/#115/#118/#134/#180. When the bug's
+tasks, MPs and attachments don't show a newer series handled, the LLM reads
+the bug text and answers per series: fixed there, explicitly declined with a
+reason, or neither. A fixed series isn't mentioned. For the others:
 
 > SRU policy requires the fix to land in newer supported series first, and
 > there is no evidence of it being resolved in {series_words}. Please check:
 > if it isn't fixed there yet, {those series need / that series needs} to be
 > updated before this SRU can be sponsored; if it is, please reflect that
 > explicitly in the bug description or the bug status.
+
+For a series the description explicitly skips, giving a reason (#180):
+
+> The description explains why {series_words} won't get this fix. SRU
+> policy normally requires newer supported releases to be fixed first, so
+> the SRU team will need to agree to skipping {it / them}.
 
 ### Check 8: direct source edit
 
