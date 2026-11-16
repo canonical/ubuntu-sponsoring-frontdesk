@@ -5,12 +5,25 @@ any parsing doubt means silence, not noise."""
 
 import datetime
 
+import pytest
 from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
 
+import archive_lookup
 import llm_reviewer
 import main
 import release_schedule
 from state import StateManager
+
+
+@pytest.fixture(autouse=True)
+def _devel_is_the_freeze_series(monkeypatch):
+    # #178: the FF date only counts while its series is devel. The fakes
+    # have no Launchpad, so give the reviewer one whose devel series is
+    # the one the (patched) freeze date belongs to.
+    monkeypatch.setattr(
+        archive_lookup, "devel_codename", lambda lp: release_schedule.FEATURE_FREEZE_SERIES
+    )
+
 
 URL = "https://code.launchpad.net/~marco/+merge/12345"
 
@@ -72,7 +85,7 @@ class ScriptedReviewer(llm_reviewer.LLMReviewer):
     """LLMReviewer with a canned _query_llm reply; records prompts sent."""
 
     def __init__(self, reply):
-        super().__init__()
+        super().__init__(lp=object())  # any truthy handle; lookups are faked
         self.reply = reply
         self.prompts = []
 
@@ -286,6 +299,21 @@ def test_feature_after_freeze_adds_ffe_bullet(monkeypatch):
     kind, message = payload[0]
     assert kind == "verify"
     assert "Feature Freeze Exception" in message
+
+
+def test_a_previous_cycles_freeze_date_does_not_apply_to_the_new_devel(monkeypatch):
+    """#178 (live, alsa-ucm-conf MP #514634): stonking's Feature Freeze
+    date was still set after tenacious opened, so a hardware-enablement
+    MP for tenacious got an FFe note. A date only counts for its series."""
+    monkeypatch.setattr(release_schedule, "FEATURE_FREEZE_SERIES", "stonking")
+    monkeypatch.setattr(
+        release_schedule, "FEATURE_FREEZE", datetime.date.today() - datetime.timedelta(days=80)
+    )
+    monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "tenacious")
+    r = ScriptedReviewer(_reply(feature="yes"))
+    status, _ = r.triage_mp(FakeMP(), diff_text=MERGE_DIFF)
+    assert status == "READY_FOR_HUMAN"
+    assert "Feature Freeze purposes" not in r.prompts[0]
 
 
 def test_sru_targeted_mp_skips_the_ff_question_even_after_freeze(monkeypatch):

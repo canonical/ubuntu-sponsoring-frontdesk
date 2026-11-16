@@ -4489,3 +4489,27 @@ each action reaching Launchpad.
   yet deployed, and not yet seen on a live reply -- worth watching that
   the model doesn't now wave through a stanza naming a patch that's
   genuinely absent.
+
+## 178. A Feature Freeze Date Only Applies to Its Own Series
+
+* **Found live in seb128's first production `--interactive` pass**
+  (alsa-ucm-conf MP #514634, a tenacious hardware-enablement MP, declined
+  at `[y/N]`). The MP review asked for the Feature Freeze classification
+  and, on "feature: yes", posted the FFe note -- in November, with
+  tenacious freshly opened. `release_schedule.FEATURE_FREEZE` was
+  stonking's date (2026-08-20). It is hand-maintained per cycle (#52), and
+  a stale entry is already in the past, so it claimed a freeze for the
+  whole of the next cycle until someone edited it.
+* **Change:** the date is stored with its series (`FEATURE_FREEZE_SERIES`),
+  and `is_after_feature_freeze(devel_series)` is true only while that
+  series is the development release (from Launchpad, as everywhere else).
+  A forgotten update now fails safe: no FF notes once the next series
+  opens, rather than wrong ones for a whole cycle. An unknown devel series
+  (lookup failed) also counts as "no freeze".
+* Still hand-maintained: seb128 sets tenacious's series and date once the
+  schedule is known. Sourcing them from Launchpad or the release schedule
+  stays the module's backlog note.
+* Tests: the live shape (stonking's date, tenacious devel, "feature: yes")
+  gets no FF question and no note -- fails without the change; the
+  date/series combinations in `test_release_schedule.py`. Not yet
+  deployed.

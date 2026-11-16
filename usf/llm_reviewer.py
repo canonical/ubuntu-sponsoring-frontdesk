@@ -1447,7 +1447,9 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         # devel-series concept: an SRU targets an already-released series
         # where Feature Freeze doesn't apply, so skip it for SRU-targeted
         # MPs regardless of date (design #59; #52's gate was date-only).
-        check_feature = release_schedule.is_after_feature_freeze() and (
+        # #178: the freeze date only counts for the series it was set for.
+        devel = archive_lookup.devel_codename(self.lp) if self.lp else None
+        check_feature = release_schedule.is_after_feature_freeze(devel) and (
             not self._targets_stable_series(lp_obj)
         )
         ff_instruction = (
