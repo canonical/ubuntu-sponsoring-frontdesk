@@ -1450,22 +1450,31 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   carries, and treat the claim as unproven when that series has nothing
   at or above it published, in -proposed or in the upload queue. Build it
   if this recurs; the prompt change needs proposing first.
-- **Backlog: debdiffs prepared for a series that has since released.**
-  apparmor bug #2171055: a debdiff for `stonking` built on the then-devel
-  `0ubuntu5`, left unsponsored across stonking's release. Three findings
-  described the one fact from different angles: Check 14 (`0ubuntu6` was
-  since used by tenacious), Check 7 (tenacious has no fix), Check 13
-  (the SRU version would be `0ubuntu4.2`). openssh bug #2161129 is the same
-  shape. A deterministic signal exists -- the debdiff's base (previous
-  changelog entry) sorts above everything the target series publishes --
-  and a single finding could replace the three ("prepared while
-  `{series}` was devel; land it in `{devel}` first and rebase on
-  `{target_version}` as an SRU", drafted, not reviewed). Not built
-  (seb128): mostly a cut-over backlog artifact. With regular runs the
-  contributor gets feedback while the upload is still right, and a bug's
-  facts don't track the archive, so an unchanged item isn't re-triaged
-  after a release -- it waits for a sponsor, who sees the release. Build
-  it if it keeps appearing on items re-triaged after a release.
+- **Backlog: debdiffs based on an upload the target series never kept.**
+  apparmor bug #2171055: a `stonking` debdiff (`0ubuntu6`, 2026-10-16)
+  built on `0ubuntu5`, then in stonking-proposed. That upload didn't
+  migrate before release, was deleted from stonking (released with
+  `0ubuntu4`, `0ubuntu4.1` now pending) and carried into tenacious, which
+  later used `0ubuntu6` too. Three findings described that one fact from
+  different angles: Check 14 (`0ubuntu6` used in tenacious), Check 7 (no
+  fix in tenacious), Check 13 (SRU version would be `0ubuntu4.2`). openssh
+  bug #2161129 is a similar shape.
+  - *Signal:* stable target; the debdiff's base (previous changelog entry)
+    is newer than everything the target has, any pocket and the upload
+    queue included; the base still exists in a newer series. The first
+    part is free (Check 6's lookup); one more lookup only when it holds.
+  - *Wording drafted, not approved:* "This debdiff is based on `{base}`,
+    which `{series}` no longer has: `{series}` was released with
+    `{released}`, and `{base}` was dropped from `{series}`-proposed and
+    carried into `{devel}`. The fix now needs to land in `{devel}` first,
+    and the `{series}` upload needs to be rebased on `{series}`'s current
+    version as an SRU." -- replacing Checks 7/13/14 for that target.
+  - *Not built (seb128, 2026-11-12):* it needs an item that targets a
+    series by name, waits unsponsored through that series' release, and
+    is touched afterwards -- MPs for devel target `ubuntu/devel`, which
+    follows the new series, and an untouched bug isn't re-triaged. So it's
+    mostly the cut-over backlog. Revisit if it shows up after the next
+    release with regular runs.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the
