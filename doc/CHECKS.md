@@ -482,7 +482,16 @@ opencode agent and a reply containing any tool use is discarded outright
 ### SRU template
 
 > This looks like an SRU, but the bug description doesn't follow the
-> official SRU bug template ({template_link}). {feedback}
+> official SRU bug template ({SRU_TEMPLATE_LINK}). {feedback}
+
+When every section is there but some are too thin (#184):
+
+> This looks like an SRU, and the bug description uses the SRU bug template
+> ({SRU_TEMPLATE_LINK}), but some sections need more detail. {feedback}
+
+The model says which case applies (`problem: missing|thin`); anything else
+reads as `missing`. For `thin`, `{feedback}` names each thin section and what
+it lacks.
 
 With several linked bugs:
 

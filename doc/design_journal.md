@@ -4681,3 +4681,30 @@ each action reaching Launchpad.
   a pin, since the old code reached the same message by another route.
   The live-shape test fails without the change. CHECKS.md and the flow
   chart updated. Not yet deployed.
+
+## 184. A Thin SRU Template Isn't "Not Following the Template"
+
+* **Found live in seb128's production `--interactive` pass** (tp-smapi bug
+  #2173763, declined at `[y/N]`). The description has every SRU section;
+  [Test Case] is just "Compile test" and [Regression potential] only says
+  no regression is expected. The posted bullet still opened with "the bug
+  description doesn't follow the official SRU bug template". That's
+  untrue, and it tells a contributor who did use the template that they
+  didn't. The reason also carried a clause meant for absent sections ("the
+  Fix/Discussion text ... don't cover these"), which is noise when every
+  section is there.
+* **Change** (wording agreed with seb128 before implementing): the reply
+  gains `problem: missing|thin`. `missing` keeps the existing bullet.
+  `thin` posts "This looks like an SRU, and the bug description uses the
+  SRU bug template (<link>), but some sections need more detail.
+  <reason>", and the prompt asks for a reason that names each thin
+  section and what it lacks, nothing else. A fail with no or an unknown
+  `problem` reads as `missing`, the long-standing wording; #171's line
+  fallback also reads the field.
+* Strictness unchanged: seb128 agreed a bare "no regression expected"
+  stays a thin section.
+* The multi-bug MP bullet ("the following don't follow the official SRU
+  bug template") is unchanged: its new wording hasn't been agreed yet.
+* Tests: the thin/missing bullets, the default, and the line fallback;
+  the thin and fallback tests fail without the change. Not yet deployed
+  or live-verified.

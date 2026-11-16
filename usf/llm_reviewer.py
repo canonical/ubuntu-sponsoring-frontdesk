@@ -317,6 +317,37 @@ def _cap_text(text, limit=_PROMPT_TEXT_CAP):
     return text[:limit] + "\n[... truncated by the bot: content exceeds the size cap]"
 
 
+SRU_TEMPLATE_LINK = (
+    "https://ubuntu.com/project/docs/SRU/reference/bug-template/#reference-sru-bug-template"
+)
+
+
+class SruTemplateReason(str):
+    """The SRU template review's fail reason, carrying `problem` (#184):
+    "missing" (a section absent) or "thin" (all present, some too thin)."""
+
+    def __new__(cls, reason, problem="missing"):
+        obj = super().__new__(cls, reason)
+        obj.problem = problem
+        return obj
+
+
+def sru_template_bullet(feedback):
+    """The posted SRU-template bullet. #184 (live, tp-smapi bug #2173763):
+    a description that uses the template but has thin sections isn't told
+    it doesn't follow the template."""
+    if getattr(feedback, "problem", "missing") == "thin":
+        return (
+            "This looks like an SRU, and the bug description uses the SRU "
+            f"bug template ({SRU_TEMPLATE_LINK}), but some sections need "
+            f"more detail. {feedback}"
+        )
+    return (
+        "This looks like an SRU, but the bug description doesn't follow "
+        f"the official SRU bug template ({SRU_TEMPLATE_LINK}). {feedback}"
+    )
+
+
 class LLMReviewer:
     def __init__(self, provider="placeholder", lp=None, audit=None):
         self.provider = provider
@@ -720,7 +751,8 @@ class LLMReviewer:
     def review_sru_template(self, bug_description):
         """
         Evaluates if an SRU bug description has adequately filled out the required sections.
-        Returns (True, "") if pass, or (False, "reason/comment") if fail.
+        Returns (True, "") if pass, or (False, reason) if fail; the reason is
+        a SruTemplateReason whose .problem is "missing" or "thin" (#184).
         """
         bug_description = _cap_text(bug_description)
         template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
@@ -740,20 +772,30 @@ End your reply with a fenced yaml block, and write nothing after it:
 
 ```yaml
 verdict: pass   # use `fail` if the template is missing sections or is vague
-reason: "<if fail, ONE short sentence on a single line, inside double quotes:
-  name which of [Impact]/[Test Plan]/[Where problems could occur] are
-  missing or inadequately filled, and if the description has other content
-  that doesn't substitute for them (e.g. a reproduction recipe, a reference
-  to an upstream fix), say briefly what and that it doesn't cover the
-  missing section(s). Do not restate the general SRU template requirement
-  -- that's already said elsewhere. Leave empty if pass.>"
+problem: missing   # if fail: `missing` if any of the three sections is absent,
+                   # `thin` if all three are present but some are too thin
+reason: "<if fail, ONE short sentence on a single line, inside double quotes.
+  If `missing`: name which of [Impact]/[Test Plan]/[Where problems could
+  occur] are missing or inadequately filled, and if the description has
+  other content that doesn't substitute for them (e.g. a reproduction
+  recipe, a reference to an upstream fix), say briefly what and that it
+  doesn't cover the missing section(s). If `thin`: name each section that
+  is too thin and say what it lacks, nothing else. Do not restate the
+  general SRU template requirement -- that's already said elsewhere.
+  Leave empty if pass.>"
 ```
 """
 
         reply = self._ask(
-            "sru_template", template, llm_reply.verdict, bug_description=bug_description
+            "sru_template",
+            template,
+            llm_reply.sru_template_verdict,
+            bug_description=bug_description,
         )
-        return self._verdict_outcome(reply)
+        passed, reason = self._verdict_outcome(reply)
+        if passed:
+            return passed, reason
+        return passed, SruTemplateReason(reason, reply.data["problem"])
 
     def review_fixed_in_newer_series(self, bug_text, series_names):
         """
@@ -1217,12 +1259,7 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
             if not passed:
                 # Bullet-style, no greeting/sign-off (design #31): the
                 # aggregated comment's template carries both.
-                comment = (
-                    "This looks like an SRU, but the bug description "
-                    "doesn't follow the official SRU bug template "
-                    "(https://ubuntu.com/project/docs/SRU/reference/"
-                    f"bug-template/#reference-sru-bug-template). {feedback}"
-                )
+                comment = sru_template_bullet(feedback)
                 return "INCOMPLETE", comment
             else:
                 return (
@@ -1357,11 +1394,7 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         )
         if len(bugs) == 1:
             _bug, feedback = failures[0]
-            return (
-                "This looks like an SRU, but the bug description doesn't "
-                f"follow the official SRU bug template ({template_link}). "
-                f"{feedback}"
-            )
+            return sru_template_bullet(feedback)
         detail = "\n\n".join(f"Bug #{bug.id}: {feedback}" for bug, feedback in failures)
         return (
             "This looks like an SRU with multiple linked bugs, but the "

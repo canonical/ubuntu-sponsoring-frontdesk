@@ -103,6 +103,7 @@ def _choice(data, field, allowed):
 
 _VERDICT_LINE_RE = re.compile(r"^verdict:[ \t]*(?P<value>pass|fail)[ \t]*(?:#.*)?$", re.IGNORECASE)
 _REASON_LINE_RE = re.compile(r"^reason:[ \t]*(?P<value>.*?)[ \t]*$")
+_PROBLEM_LINE_RE = re.compile(r"^problem:[ \t]*(?P<value>\w+)[ \t]*(?:#.*)?$", re.IGNORECASE)
 
 
 def verdict_lines(body):
@@ -118,7 +119,7 @@ def verdict_lines(body):
     one `reason:` line whose value is the rest of that line, and no other
     content -- an indented continuation, another key, a multi-line value
     all raise ValueError. One pair of enclosing quotes is removed."""
-    verdict = reason = None
+    verdict = reason = problem = None
     for line in body.splitlines():
         if not line.strip():
             continue
@@ -130,13 +131,20 @@ def verdict_lines(body):
         if match and reason is None:
             reason = match.group("value")
             continue
+        match = _PROBLEM_LINE_RE.match(line)
+        if match and problem is None:
+            problem = match.group("value").lower()
+            continue
         raise ValueError(f"unexpected line {line.strip()[:40]!r}")
     if verdict is None:
         raise ValueError("no verdict line")
     reason = reason or ""
     if len(reason) >= 2 and reason[0] == reason[-1] and reason[0] in "\"'":
         reason = reason[1:-1]
-    return {"verdict": verdict, "reason": reason}
+    result = {"verdict": verdict, "reason": reason}
+    if problem is not None:
+        result["problem"] = problem
+    return result
 
 
 # --- per-check validators -----------------------------------------------------
@@ -154,6 +162,19 @@ def verdict(data):
 
 # #171: the verdict reviews' reason is free text that may start with "[".
 verdict.fallback = verdict_lines
+
+
+def sru_template_verdict(data):
+    """The SRU template review (#184): `verdict` as above, plus on a fail
+    `problem: missing|thin` -- a section absent, or all present but some
+    too thin. Anything else reads as `missing`, the long-standing wording."""
+    result, value = verdict(data)
+    problem = str(data.get("problem") or "").strip().lower()
+    result["problem"] = "thin" if value == "fail" and problem == "thin" else "missing"
+    return result, value
+
+
+sru_template_verdict.fallback = verdict_lines
 
 
 def fixed_in_newer_series(series_names):

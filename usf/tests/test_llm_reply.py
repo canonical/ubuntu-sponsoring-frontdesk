@@ -420,3 +420,48 @@ def test_the_covered_prompt_counts_a_named_cause(monkeypatch):
     r.review_findings_already_covered([Finding("incomplete", "x")], ["c"])
     assert "problem, or its direct cause" in prompts[0]
     assert "the upload targets\nthe wrong series" in prompts[0]
+
+
+# --- #184: a thin template isn't told it doesn't follow the template -----------
+
+# Live shape (tp-smapi bug #2173763): every section present, two too thin.
+LIVE_THIN = (
+    "The description uses the SRU headings, but two sections are thin.\n\n"
+    "```yaml\nverdict: fail\nproblem: thin\n"
+    "reason: \"[Test Plan] is just 'Compile test', with no steps or expected result.\"\n```"
+)
+
+
+def test_a_thin_template_gets_the_uses_the_template_wording(monkeypatch):
+    passed, reason = _scripted(monkeypatch, LIVE_THIN).review_sru_template("d")
+    assert passed is False and reason.problem == "thin"
+    bullet = llm_reviewer.sru_template_bullet(reason)
+    assert bullet.startswith(
+        "This looks like an SRU, and the bug description uses the SRU bug template ("
+    )
+    assert "but some sections need more detail. [Test Plan] is just" in bullet
+    assert "doesn't follow" not in bullet
+
+
+def test_a_missing_section_keeps_the_doesnt_follow_wording(monkeypatch):
+    reply = LIVE_THIN.replace("problem: thin", "problem: missing")
+    passed, reason = _scripted(monkeypatch, reply).review_sru_template("d")
+    assert reason.problem == "missing"
+    assert "doesn't follow the official SRU bug template" in llm_reviewer.sru_template_bullet(
+        reason
+    )
+
+
+@pytest.mark.parametrize("line", ["", "problem: vague\n"])
+def test_no_or_unknown_problem_reads_as_missing(monkeypatch, line):
+    reply = LIVE_THIN.replace("problem: thin\n", line)
+    passed, reason = _scripted(monkeypatch, reply).review_sru_template("d")
+    assert passed is False and reason.problem == "missing"
+
+
+def test_the_line_fallback_reads_the_problem(monkeypatch):
+    # A bracketed reason needs #171's line fallback; `problem` survives it.
+    reply = LIVE_THIN.replace('reason: "[Test Plan] is just', "reason: [Test Plan] is just")
+    reply = reply.replace('expected result."', "expected result.")
+    passed, reason = _scripted(monkeypatch, reply).review_sru_template("d")
+    assert reason.problem == "thin" and reason.startswith("[Test Plan]")
