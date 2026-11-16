@@ -292,7 +292,11 @@ Same version, different content -- in the archive:
 
 ### Check 7: newer series first
 
-`check_sru_newer_series`, design #58/#115/#118/#134/#180. When the bug's
+`check_sru_newer_series`, design #58/#115/#118/#134/#180/#183. On a bug,
+the SRU target is the oldest stable series among the attached debdiffs; only
+when no debdiff names a supported series do the bug's tasks decide (#183). A
+bug whose debdiffs all target the development release isn't an SRU yet, even
+with stable-series tasks open for a planned one. When the bug's
 tasks, MPs and attachments don't show a newer series handled, the LLM reads
 the bug text and answers per series: fixed there, explicitly declined with a
 reason, or neither. A fixed series isn't mentioned. For the others:

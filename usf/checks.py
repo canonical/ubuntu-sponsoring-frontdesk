@@ -3612,8 +3612,33 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
         # empty below.)
         open_series = []
         package = None
+        # #183 (live, hwloc bug #2171267): what's attached says which series
+        # this round of sponsoring is for -- the tasks can also carry a
+        # planned SRU (a Noble task, while only the tenacious debdiff is
+        # attached). Only debdiffs naming a supported series count; with
+        # none, the task table decides as before.
+        attached = _attached_debdiff_series(bug)
+        if attached is None:
+            return None
+        if attached:
+            series_order = archive_lookup.supported_series_ordered(lp_client.lp)
+            devel_name = archive_lookup.devel_codename(lp_client.lp)
+            if series_order is None or devel_name is None:
+                return None
+            known = {s: pkg for s, pkg in attached.items() if s in dict(series_order)}
+            if known:
+                stable = [s for s in known if s != devel_name]
+                if not stable:
+                    logger.debug(
+                        "check_sru_newer_series: the attached debdiffs only target "
+                        "%s, the development release; not an SRU in this round.",
+                        devel_name,
+                    )
+                    return False
+                open_series = stable
+                package = known[stable[0]]
         try:
-            for task in bug.bug_tasks:
+            for task in [] if open_series else bug.bug_tasks:
                 match = _SERIES_TASK_RE.match(task.bug_target_name or "")
                 if not match:
                     continue
@@ -3627,7 +3652,7 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
                 e,
             )
             return None
-        if not open_series:
+        if not open_series and not attached:
             # No series-specific task -- but the bug can still carry an
             # SRU-shaped debdiff whose changelog stanza names a stable
             # series directly, even though the bug itself was never
@@ -3853,6 +3878,29 @@ def check_sru_newer_series(url, lp_obj, lp_client, llm):
             "https://ubuntu.com/project/docs/SRU/reference/requirements"
         )
     return Finding("question", "\n\n".join(parts), kind="verify")
+
+
+def _attached_debdiff_series(bug):
+    """#183: {series: package} for the bug's patch attachments whose new
+    changelog entry names a series (pocket stripped). {} when none does;
+    None when an attachment couldn't be read (retriable)."""
+    try:
+        candidates = attachments.patch_attachments(bug)
+    except Exception as e:
+        logger.debug("_attached_debdiff_series: couldn't list attachments (%s).", e)
+        return None
+    found = {}
+    for attachment in candidates:
+        text = attachments.attachment_text(attachment)
+        if text is None:
+            return None
+        if not isinstance(text, str):
+            continue
+        stanza = llm_reviewer._new_changelog_stanza(text)
+        header = _CHANGELOG_HEADER_RE.match(stanza.splitlines()[0]) if stanza else None
+        if header:
+            found[_POCKET_SUFFIX_RE.sub("", header.group("suite").lower())] = header.group("pkg")
+    return found
 
 
 def _upstream_component(version):

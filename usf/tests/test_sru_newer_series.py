@@ -182,9 +182,12 @@ def test_series_attachment_without_a_series_named_filename_still_counts():
     assert checks.check_sru_newer_series("url", bug, _LP(), FakeLLM()) is False
 
 
-def test_series_attachment_content_does_not_match_the_wrong_series():
-    # Control: the stonking debdiff above doesn't also cover a still-open
-    # noble ask that nothing addresses.
+def test_a_planned_sru_task_with_only_a_devel_debdiff_is_not_an_sru_yet():
+    # Was a control for "the stonking debdiff doesn't cover the noble ask"
+    # (it flagged resolute). #183 (live, hwloc bug #2171267): with only the
+    # development release's debdiff attached, this round of sponsoring is a
+    # devel upload; the Noble task is a planned SRU, asked about once its
+    # debdiff arrives.
     bug = _bug(
         [FakeTask("testpkg (Ubuntu Noble)", "In Progress")],
         attachments=[
@@ -195,9 +198,24 @@ def test_series_attachment_content_does_not_match_the_wrong_series():
             ),
         ],
     )
+    llm = FakeLLM()
+    assert checks.check_sru_newer_series("url", bug, _LP(), llm) is False
+    assert not getattr(llm, "newer_series_queries", [])
+
+
+def test_the_oldest_attached_stable_series_is_the_sru_target():
+    # #183: the attachments, not the tasks, say which series this round is
+    # for -- a resolute debdiff asks about stonking only, even with a
+    # (planned) Noble task open.
+    bug = _bug(
+        [FakeTask("testpkg (Ubuntu Noble)", "In Progress")],
+        attachments=[
+            FakeAttachment("resolute.debdiff", type="Patch", content=_RESOLUTE_DEBDIFF),
+        ],
+    )
     finding = checks.check_sru_newer_series("url", bug, _LP(), FakeLLM())
-    assert finding and "resolute" in finding.message
-    assert "stonking" not in finding.message
+    assert finding and "stonking" in finding.message
+    assert "resolute" not in finding.message.split("resolved in")[1]
 
 
 _RESOLUTE_DEBDIFF = """\

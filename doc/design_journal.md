@@ -4645,3 +4645,39 @@ each action reaching Launchpad.
   fire; a pocket suffix is read as its series; end to end, the finding
   replaces Checks 7/13/14. They fail without the change. CHECKS.md and
   the flow chart updated. Not yet deployed.
+
+## 183. Check 7 Takes the SRU Target From What's Attached
+
+* **Found live in seb128's production `--interactive` pass** (hwloc bug
+  #2171267, declined at `[y/N]`). The bug has Noble/Resolute/Stonking/
+  Tenacious tasks and an SRU-style description ("tested with a patched
+  build of the Noble source"), but the only debdiff under review targets
+  tenacious (`2.15.0-2ubuntu1`), the development release. The other
+  checks rightly treated it as a devel upload (ubuntu-lint: "applies to
+  SRUs only"). Check 7 still took the oldest open series task, noble, as
+  the SRU target, and asked for resolute and stonking "before this SRU can
+  be sponsored" -- about an SRU that isn't in the queue yet.
+* That rule (#58) predates per-series debdiff review (#154): back then the
+  task table was the only signal of intent. Now the bot knows which series
+  each attached debdiff is for.
+* **Change:** on a bug, Check 7 first reads the series of the attached
+  debdiffs (each patch attachment's new changelog entry, pocket stripped).
+  - If any names a supported series, the SRU target is the oldest *stable*
+    one among them.
+  - If they all target the development release, this round of sponsoring
+    isn't an SRU and Check 7 says nothing; the planned SRU gets asked about
+    once its debdiff arrives.
+  - With no such debdiff, the task table decides, as before -- including
+    #115's fallback.
+  - An unreadable attachment makes the item inconclusive (retried).
+  MPs are unchanged (their target branch decides).
+* The SRU-template review still runs on such bugs (stable tasks plus
+  `[Impact]` sections): it reviews the description for the planned SRU,
+  which is harmless and passed here. Left as is.
+* `test_series_attachment_content_does_not_match_the_wrong_series` pinned
+  the old behaviour on exactly this shape (a Noble task, only a devel
+  debdiff, resolute flagged); it now expects silence. New: the oldest
+  attached stable debdiff sets the target even with an older task open --
+  a pin, since the old code reached the same message by another route.
+  The live-shape test fails without the change. CHECKS.md and the flow
+  chart updated. Not yet deployed.
