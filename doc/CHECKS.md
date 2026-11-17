@@ -482,18 +482,26 @@ opencode agent and a reply containing any tool use is discarded outright
 ### SRU template
 
 > This looks like an SRU, but the bug description doesn't follow the
-> official SRU bug template ({SRU_TEMPLATE_LINK}). {feedback}
+> official SRU bug template ({SRU_TEMPLATE_LINK}):
 
 When every section is there but some are too thin (#184):
 
 > This looks like an SRU, and the bug description uses the SRU bug template
-> ({SRU_TEMPLATE_LINK}), but some sections need more detail. {feedback}
+> ({SRU_TEMPLATE_LINK}), but some sections need more detail:
+
+Either is followed by one line per section that needs work (#185), the label
+written by the bot and the rest by the model, e.g.:
+
+```
+- [Test Plan]: just 'Compile test', with no steps or expected result
+```
 
 The model says which case applies (`problem: missing|thin`); anything else
-reads as `missing`. For `thin`, `{feedback}` names each thin section and what
-it lacks.
+reads as `missing`. When deciding whether the bot already posted the same
+comment, the text after each `- [Section]:` is ignored, so a re-triage that
+words the same points differently doesn't post again.
 
-With several linked bugs:
+With several linked bugs, one sub-list per failing bug (`Bug #N:`):
 
 > This looks like an SRU with multiple linked bugs, but the following don't
 > follow the official SRU bug template ({template_link}):

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import subprocess
 import sys
 
@@ -104,6 +105,19 @@ def _helper_configured():
 _EFFECTIVE_WRITE_OUTCOMES = ("performed", "skipped-duplicate")
 
 
+# #185: a "- [Section]: <text>" point (the SRU template review's list);
+# the text is LLM-written and varies between runs.
+_POINT_DETAIL_RE = re.compile(r"^(?P<head>[ \t]*- \[[^\]\n]+\]:).*$", re.MULTILINE)
+
+
+def _dedup_key(text):
+    """What the duplicate-comment check compares (#185): the comment with
+    each point's LLM-written detail dropped, so a re-triage's reworded
+    reason for the same sections counts as already posted (live:
+    ezurio-qcacld-2.0-dkms bug #2173882 got two)."""
+    return _POINT_DETAIL_RE.sub(r"\g<head>", (text or "").strip())
+
+
 class LPClient:
     def __init__(
         self,
@@ -164,6 +178,27 @@ class LPClient:
     def _record_write(self, **kwargs):
         self.write_outcomes.append(kwargs["outcome"])
         self.audit.record(**kwargs)
+
+    @staticmethod
+    def _save_status(task, status):
+        """Set and save a task's status (#185). Launchpad conjoins the
+        development series' task with the plain '(Ubuntu)' one, so saving
+        one changes the other on the server, and our copy of the second
+        is stale: its save fails with 412 Precondition Failed (live:
+        ezurio-qcacld-2.0-dkms bug #2173882, Tenacious after '(Ubuntu)').
+        On a 412, refresh; already at `status` means done, otherwise
+        retry once."""
+        task.status = status
+        try:
+            task.lp_save()
+        except Exception as e:
+            if getattr(getattr(e, "response", None), "status", None) != 412:
+                raise
+            task.lp_refresh()
+            if task.status == status:
+                return
+            task.status = status
+            task.lp_save()
 
     def _decide(self, description):
         """
@@ -249,15 +284,15 @@ class LPClient:
         unpersisted per #36), rather than risking a double-post.
         """
         me = self.lp.me.self_link
-        target = message.strip()
+        target = _dedup_key(message)
         try:
             if resource_type == "bug":
                 for msg in lp_obj.messages:
-                    if msg.owner_link == me and (msg.content or "").strip() == target:
+                    if msg.owner_link == me and _dedup_key(msg.content) == target:
                         return True
             elif resource_type == "branch_merge_proposal":
                 for c in lp_obj.all_comments:
-                    if c.author_link == me and (c.message_body or "").strip() == target:
+                    if c.author_link == me and _dedup_key(c.message_body) == target:
                         return True
         except Exception as e:
             logger.warning(
@@ -512,6 +547,9 @@ class LPClient:
                 continue
             if only_targets is not None and name not in only_targets:
                 continue
+            if task.status == "Incomplete":
+                # #185: nothing to change; asking to set it was noise.
+                continue
             decision = self._decide(f"Set '{name}' status to Incomplete (was {task.status}).")
             if decision != "perform":
                 self._record_write(
@@ -524,8 +562,7 @@ class LPClient:
                 )
                 continue
             try:
-                task.status = "Incomplete"
-                task.lp_save()
+                self._save_status(task, "Incomplete")
                 changed[name] = "Incomplete"
                 self._record_write(
                     url=target,
@@ -583,8 +620,7 @@ class LPClient:
                 )
                 continue
             try:
-                task.status = "New"
-                task.lp_save()
+                self._save_status(task, "New")
                 changed[name] = "New"
                 self._record_write(
                     url=target,
@@ -662,8 +698,7 @@ class LPClient:
                 )
                 continue
             try:
-                task.status = "Fix Released"
-                task.lp_save()
+                self._save_status(task, "Fix Released")
                 changed[name] = "Fix Released"
                 self._record_write(
                     url=target,

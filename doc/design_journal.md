@@ -4708,3 +4708,51 @@ each action reaching Launchpad.
 * Tests: the thin/missing bullets, the default, and the line fallback;
   the thin and fallback tests fail without the change. Not yet deployed
   or live-verified.
+
+## 185. SRU Template Points One Per Line; Re-triage Doesn't Re-post Them
+
+* **Found live in seb128's production `--interactive` pass**
+  (ezurio-qcacld-2.0-dkms bug #2173882), three problems in one item:
+  - **412 on a conjoined task.** Every status write was approved, but
+    the Tenacious one failed with HTTP 412 Precondition Failed.
+    Tenacious is the development release, and Launchpad conjoins its
+    task with the plain `(Ubuntu)` one: setting `(Ubuntu)` already
+    moved Tenacious on the server, so our copy was stale. The failure
+    counted as an ineffective write, so the facts weren't persisted
+    and the bug was triaged again on the next pass.
+  - **Reworded duplicate.** That re-triage asked the LLM again: same
+    verdict, same sections, different sentence. The dedup only
+    suppresses an exact match, so a second comment went up (09:12 and
+    11:10 the same day). Any LLM-written bullet could do this before;
+    #184's fixed lead-in only made it visible.
+  - **No-op prompts.** The next pass asked "Set ... to Incomplete (was
+    Incomplete)" for every task: the status loop skipped closed tasks
+    but not ones already at the target status (its docstring claimed it
+    did).
+* **Changes:**
+  - Status writes go through `_save_status`: on a 412, refresh the task;
+    already at the target status means done (an effective write),
+    otherwise retry once. Tasks already Incomplete are skipped without a
+    prompt or a write.
+  - seb128 suggested the SRU template bullet list its points rather than
+    one sentence, and dedup ignore the points' details. The reply now
+    has one field per template section (`impact`, `test_plan`,
+    `where_problems_could_occur`, empty when fine), and the bullet ends
+    in `:` followed by one `- [Section]: <what it lacks>` line each. The
+    bot writes the labels; the model only writes the text after them. A
+    fail naming no section is unparseable (routed to a human, as a fail
+    without a reason was). The MP bullet for several linked bugs gets a
+    `Bug #N:` sub-list per failing bug; its lead-in is unchanged.
+  - The duplicate check compares comments with the text after each
+    `- [Section]:` dropped. The same sections flagged is the same
+    comment; a different set, or missing vs thin, is posted.
+* **Limits:** other LLM-written bullets (the MP changelog reviews) still
+  dedup on exact text; they don't post blocking bounces, but a
+  re-triage after a partial write could repeat them. And comments
+  already posted in the one-sentence shape won't match the list shape:
+  a bug the bot already bounced gets one more comment on its next
+  re-triage.
+* Tests: the 412 refresh/retry, the already-Incomplete skip, the live
+  reworded pair counting as a duplicate (each fails without the change),
+  plus the rendered bullets and pins for what still posts. Not yet
+  deployed or live-verified.

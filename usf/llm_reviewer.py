@@ -323,28 +323,32 @@ SRU_TEMPLATE_LINK = (
 
 
 class SruTemplateReason(str):
-    """The SRU template review's fail reason, carrying `problem` (#184):
-    "missing" (a section absent) or "thin" (all present, some too thin)."""
+    """The SRU template review's fail reason: the per-section list (#185),
+    carrying `problem` (#184: "missing" -- a section absent -- or "thin",
+    all present, some too thin) and `points`, (label, text) pairs."""
 
-    def __new__(cls, reason, problem="missing"):
-        obj = super().__new__(cls, reason)
+    def __new__(cls, points, problem="missing"):
+        obj = super().__new__(cls, "\n".join(f"- {label}: {text}" for label, text in points))
         obj.problem = problem
+        obj.points = list(points)
         return obj
 
 
 def sru_template_bullet(feedback):
     """The posted SRU-template bullet. #184 (live, tp-smapi bug #2173763):
     a description that uses the template but has thin sections isn't told
-    it doesn't follow the template."""
+    it doesn't follow the template. #185: one line per section, so a
+    re-triage's differently worded LLM text still dedups (see
+    launchpad_client._dedup_key)."""
     if getattr(feedback, "problem", "missing") == "thin":
         return (
             "This looks like an SRU, and the bug description uses the SRU "
             f"bug template ({SRU_TEMPLATE_LINK}), but some sections need "
-            f"more detail. {feedback}"
+            f"more detail:\n{feedback}"
         )
     return (
         "This looks like an SRU, but the bug description doesn't follow "
-        f"the official SRU bug template ({SRU_TEMPLATE_LINK}). {feedback}"
+        f"the official SRU bug template ({SRU_TEMPLATE_LINK}):\n{feedback}"
     )
 
 
@@ -752,7 +756,8 @@ class LLMReviewer:
         """
         Evaluates if an SRU bug description has adequately filled out the required sections.
         Returns (True, "") if pass, or (False, reason) if fail; the reason is
-        a SruTemplateReason whose .problem is "missing" or "thin" (#184).
+        a SruTemplateReason whose .problem is "missing" or "thin" (#184) and
+        whose .points are (section label, what's wrong) pairs (#185).
         """
         bug_description = _cap_text(bug_description)
         template = """You are an Ubuntu Patch Pilot triaging a sponsorship request.
@@ -774,16 +779,19 @@ End your reply with a fenced yaml block, and write nothing after it:
 verdict: pass   # use `fail` if the template is missing sections or is vague
 problem: missing   # if fail: `missing` if any of the three sections is absent,
                    # `thin` if all three are present but some are too thin
-reason: "<if fail, ONE short sentence on a single line, inside double quotes.
-  If `missing`: name which of [Impact]/[Test Plan]/[Where problems could
-  occur] are missing or inadequately filled, and if the description has
-  other content that doesn't substitute for them (e.g. a reproduction
-  recipe, a reference to an upstream fix), say briefly what and that it
-  doesn't cover the missing section(s). If `thin`: name each section that
-  is too thin and say what it lacks, nothing else. Do not restate the
-  general SRU template requirement -- that's already said elsewhere.
-  Leave empty if pass.>"
+impact: ""
+test_plan: ""
+where_problems_could_occur: ""
 ```
+
+If fail, fill in each section that is absent or too thin; leave the
+adequate ones empty. Each is ONE short phrase on a single line, inside
+double quotes, saying what that section lacks -- e.g. "missing", or
+"just 'Compile test', with no steps or expected result". If an absent
+section's ground is partly covered by other content (e.g. a reproduction
+recipe, a reference to an upstream fix), say briefly that it doesn't
+replace it. Don't name the section again, and don't restate the general
+SRU template requirement -- that's already said elsewhere.
 """
 
         reply = self._ask(
@@ -792,10 +800,9 @@ reason: "<if fail, ONE short sentence on a single line, inside double quotes.
             llm_reply.sru_template_verdict,
             bug_description=bug_description,
         )
-        passed, reason = self._verdict_outcome(reply)
-        if passed:
-            return passed, reason
-        return passed, SruTemplateReason(reason, reply.data["problem"])
+        if not (isinstance(reply, llm_reply.Parsed) and reply.data["verdict"] == "fail"):
+            return True, ""  # fail-safe, as _verdict_outcome
+        return False, SruTemplateReason(reply.data["points"], reply.data["problem"])
 
     def review_fixed_in_newer_series(self, bug_text, series_names):
         """
@@ -1395,11 +1402,14 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         if len(bugs) == 1:
             _bug, feedback = failures[0]
             return sru_template_bullet(feedback)
-        detail = "\n\n".join(f"Bug #{bug.id}: {feedback}" for bug, feedback in failures)
+        detail = "\n".join(
+            f"Bug #{bug.id}:\n" + str(feedback).replace("\n", "\n  ").join(["  ", ""])
+            for bug, feedback in failures
+        )
         return (
             "This looks like an SRU with multiple linked bugs, but the "
             "following don't follow the official SRU bug template "
-            f"({template_link}):\n\n{detail}"
+            f"({template_link}):\n{detail}"
         )
 
     def triage_mp(self, lp_obj, diff_text=None):

@@ -491,8 +491,8 @@ def test_advisory_plus_blocking_finding_split_into_sections(tmp_path):
 # the BUG itself is the queue entry.
 
 
-def _sru_template_reply(verdict="pass", reason=""):
-    return f"```yaml\nverdict: {verdict}\nreason: {reason!r}\n```\n"
+def _sru_template_reply(verdict="pass", test_plan=""):
+    return f"```yaml\nverdict: {verdict}\ntest_plan: {test_plan!r}\n```\n"
 
 
 class QueuedReviewer(llm_reviewer.LLMReviewer):
@@ -529,12 +529,11 @@ def test_sru_mp_without_a_linked_bug_skips_the_template_check():
 
 
 def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
-    r = QueuedReviewer([_sru_template_reply("fail", "Missing [Test Plan].")])
+    r = QueuedReviewer([_sru_template_reply("fail", "missing")])
     mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")])
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
-    assert "Missing [Test Plan]" in comment
-    assert "bug-template/#reference-sru-bug-template" in comment
+    assert comment.endswith("bug-template/#reference-sru-bug-template):\n- [Test Plan]: missing")
     # Only the template-check call happened -- the changelog review (which
     # would need a second queued reply) never ran.
     assert len(r.prompts) == 1
@@ -553,7 +552,7 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
     r = QueuedReviewer(
         [
             _sru_template_reply("pass"),
-            _sru_template_reply("fail", "Missing [Impact]."),
+            _sru_template_reply("fail", "missing"),
         ]
     )
     mp = FakeMP(
@@ -562,8 +561,7 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
     )
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
-    assert "Bug #20" in comment
-    assert "Missing [Impact]" in comment
+    assert comment.endswith("):\nBug #20:\n  - [Test Plan]: missing")
     assert "Bug #10" not in comment
 
 
@@ -595,7 +593,7 @@ def test_sru_mp_unreadable_linked_bugs_skips_rather_than_blocks():
 
 def test_sru_mp_pocket_branch_target_is_still_sru_shaped():
     # #84's fix applied to the MP-side duplicate regex too.
-    r = QueuedReviewer([_sru_template_reply("fail", "Missing sections.")])
+    r = QueuedReviewer([_sru_template_reply("fail", "missing")])
     mp = FakeMP(
         target="refs/heads/ubuntu/jammy-updates",
         bugs=[FakeBug(id=1, description="x")],

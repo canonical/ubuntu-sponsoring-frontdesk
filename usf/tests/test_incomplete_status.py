@@ -213,3 +213,53 @@ def test_unmatched_suite_bounces_every_task_as_before():
 
     bug = _scoping_bug("jammy")
     assert checks.bounce_task_targets(bug, _LPDevel()) is None
+
+
+# --- #185 (live, ezurio-qcacld-2.0-dkms bug #2173882) -------------------------
+
+
+def test_a_task_already_incomplete_is_not_asked_about():
+    task = FakeTask("foo (Ubuntu)", "Incomplete")
+    client = _client("yes")
+    assert client.set_bug_tasks_incomplete(FakeBug(tasks=[task])) == {}
+    assert task.saved == 0
+    assert client.write_outcomes == []  # no prompt, and nothing to retry
+
+
+class _Stale412Error(Exception):
+    response = type("Response", (), {"status": 412})
+
+
+class _ConjoinedTask(FakeTask):
+    """Our stale copy of the devel-series task; the server already moved
+    it with its conjoined '(Ubuntu)' task."""
+
+    def __init__(self, name, status, server_status):
+        super().__init__(name, status)
+        self.server_status = server_status
+        self.refreshed = 0
+
+    def lp_save(self):
+        if not self.refreshed:
+            raise _Stale412Error()
+        super().lp_save()
+
+    def lp_refresh(self):
+        self.refreshed += 1
+        self.status = self.server_status
+
+
+def test_a_stale_conjoined_task_counts_as_done_after_refresh():
+    task = _ConjoinedTask("foo (Ubuntu Tenacious)", "In Progress", "Incomplete")
+    client = _client("yes")
+    changed = client.set_bug_tasks_incomplete(FakeBug(tasks=[task]))
+    assert changed == {"foo (Ubuntu Tenacious)": "Incomplete"}
+    assert client.all_writes_effective()
+
+
+def test_a_412_on_a_task_that_still_differs_is_retried_once():
+    task = _ConjoinedTask("foo (Ubuntu Tenacious)", "In Progress", "In Progress")
+    client = _client("yes")
+    client.set_bug_tasks_incomplete(FakeBug(tasks=[task]))
+    assert task.status == "Incomplete" and task.saved == 1
+    assert client.all_writes_effective()

@@ -7,7 +7,7 @@ digraph WriteGate {
     call  [label="LPClient write\ncomment / set_status /\nunsubscribe_sponsors /\nset_bug_tasks_incomplete", shape=box, fillcolor="#C5CAE9"];
 
     isc   [label="is it a comment()?", shape=diamond, fillcolor="#FFF9C4"];
-    dedup [label="_already_posted?\n(self.lp.me + exact text\non Launchpad)", shape=diamond, fillcolor="#FFF9C4"];
+    dedup [label="_already_posted?\n(self.lp.me + exact text\non Launchpad; \"- [Section]:\"\npoint details ignored, #185)", shape=diamond, fillcolor="#FFF9C4"];
     askip [label="audit: skipped-duplicate\nreturn", shape=box, fillcolor="#ECEFF1"];
 
     decide[label="_decide(mode)", shape=diamond, fillcolor="#FFF9C4"];

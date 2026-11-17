@@ -21,7 +21,7 @@ from checks import Finding
 from llm_reviewer import LLMReviewer
 
 PASS = "```yaml\nverdict: pass\nreason:\n```"
-FAIL = "```yaml\nverdict: fail\nreason: No [Test Plan] section.\n```"
+FAIL = "```yaml\nverdict: fail\nreason: No [Test Plan] section.\ntest_plan: missing\n```"
 
 
 def _scripted(monkeypatch, reply, audit=None):
@@ -329,15 +329,26 @@ LIVE_BRACKETED = (
     "doesn't describe a bug being fixed; the [Scope], [Other Info] and [Testing] "
     "checklist content doesn't substitute for them.\n```"
 )
+# The same reply in #185's per-section shape, still unquoted and bracketed.
+LIVE_BRACKETED_SECTIONS = (
+    "The description does not follow the SRU template.\n\n"
+    "```yaml\nverdict: fail\nproblem: missing\n"
+    "impact: doesn't describe a bug being fixed\n"
+    "test_plan: [Testing] checklist only; it doesn't replace a test plan\n"
+    "where_problems_could_occur: missing\n```"
+)
 
 
 def test_a_bracketed_reason_is_still_a_rejection(monkeypatch):
     audit = _Audit()
-    r = _scripted(monkeypatch, LIVE_BRACKETED, audit=audit)
+    r = _scripted(monkeypatch, LIVE_BRACKETED_SECTIONS, audit=audit)
     r.start_item("u")
     passed, reason = r.review_sru_template("d")
     assert passed is False
-    assert reason.startswith("[Test Plan] and [Where problems could occur] are missing")
+    assert reason.points[1] == (
+        "[Test Plan]",
+        "[Testing] checklist only; it doesn't replace a test plan",
+    )
     # The audit trail shows the line fallback was needed.
     assert audit.records[0]["extra"]["result"] == "verdict:fail+lines"
     assert r.item_usage().get("unparseable") is None
@@ -402,7 +413,8 @@ def test_the_verdict_prompts_ask_for_a_quoted_single_line_reason(monkeypatch):
     r.review_sru_template("d")
     r.review_sync_request("d")
     r.review_sync_version_justification("d", "pkg", "1.0", "unstable", {})
-    for prompt in prompts:
+    assert "ONE short phrase on a single line, inside\ndouble quotes" in prompts[0]
+    for prompt in prompts[1:]:
         assert 'reason: "<if fail' in prompt
         assert "single line, inside double quotes" in prompt
 
@@ -422,33 +434,37 @@ def test_the_covered_prompt_counts_a_named_cause(monkeypatch):
     assert "the upload targets\nthe wrong series" in prompts[0]
 
 
-# --- #184: a thin template isn't told it doesn't follow the template -----------
+# --- #184/#185: thin vs missing, one line per section --------------------------
 
-# Live shape (tp-smapi bug #2173763): every section present, two too thin.
+# Live shape (ezurio-qcacld-2.0-dkms bug #2173882): every section present,
+# two too thin.
 LIVE_THIN = (
     "The description uses the SRU headings, but two sections are thin.\n\n"
     "```yaml\nverdict: fail\nproblem: thin\n"
-    "reason: \"[Test Plan] is just 'Compile test', with no steps or expected result.\"\n```"
+    'impact: "lacks the user-visible failure and affected scope"\n'
+    "test_plan: \"no steps exercising remain_on_channel/mgmt_tx beyond 'nothing in dmesg'\"\n"
+    'where_problems_could_occur: ""\n```'
 )
 
 
-def test_a_thin_template_gets_the_uses_the_template_wording(monkeypatch):
+def test_a_thin_template_gets_the_uses_the_template_list(monkeypatch):
     passed, reason = _scripted(monkeypatch, LIVE_THIN).review_sru_template("d")
     assert passed is False and reason.problem == "thin"
-    bullet = llm_reviewer.sru_template_bullet(reason)
-    assert bullet.startswith(
-        "This looks like an SRU, and the bug description uses the SRU bug template ("
+    assert llm_reviewer.sru_template_bullet(reason) == (
+        "This looks like an SRU, and the bug description uses the SRU bug template "
+        f"({llm_reviewer.SRU_TEMPLATE_LINK}), but some sections need more detail:\n"
+        "- [Impact]: lacks the user-visible failure and affected scope\n"
+        "- [Test Plan]: no steps exercising remain_on_channel/mgmt_tx beyond 'nothing in dmesg'"
     )
-    assert "but some sections need more detail. [Test Plan] is just" in bullet
-    assert "doesn't follow" not in bullet
 
 
 def test_a_missing_section_keeps_the_doesnt_follow_wording(monkeypatch):
     reply = LIVE_THIN.replace("problem: thin", "problem: missing")
     passed, reason = _scripted(monkeypatch, reply).review_sru_template("d")
     assert reason.problem == "missing"
-    assert "doesn't follow the official SRU bug template" in llm_reviewer.sru_template_bullet(
-        reason
+    assert llm_reviewer.sru_template_bullet(reason).startswith(
+        "This looks like an SRU, but the bug description doesn't follow the official "
+        f"SRU bug template ({llm_reviewer.SRU_TEMPLATE_LINK}):\n- [Impact]: "
     )
 
 
@@ -459,9 +475,18 @@ def test_no_or_unknown_problem_reads_as_missing(monkeypatch, line):
     assert passed is False and reason.problem == "missing"
 
 
-def test_the_line_fallback_reads_the_problem(monkeypatch):
-    # A bracketed reason needs #171's line fallback; `problem` survives it.
-    reply = LIVE_THIN.replace('reason: "[Test Plan] is just', "reason: [Test Plan] is just")
-    reply = reply.replace('expected result."', "expected result.")
+def test_a_fail_naming_no_section_routes_to_a_human(monkeypatch):
+    reply = "```yaml\nverdict: fail\nproblem: thin\nreason: vague\n```"
+    assert _scripted(monkeypatch, reply).review_sru_template("d") == (True, "")
+
+
+def test_the_line_fallback_reads_problem_and_sections(monkeypatch):
+    reply = LIVE_THIN.replace('impact: "lacks', "impact: [Impact] lacks").replace(
+        'scope"\n', "scope\n"
+    )
     passed, reason = _scripted(monkeypatch, reply).review_sru_template("d")
-    assert reason.problem == "thin" and reason.startswith("[Test Plan]")
+    assert reason.problem == "thin"
+    assert reason.points[0] == (
+        "[Impact]",
+        "[Impact] lacks the user-visible failure and affected scope",
+    )

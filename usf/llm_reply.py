@@ -104,6 +104,21 @@ def _choice(data, field, allowed):
 _VERDICT_LINE_RE = re.compile(r"^verdict:[ \t]*(?P<value>pass|fail)[ \t]*(?:#.*)?$", re.IGNORECASE)
 _REASON_LINE_RE = re.compile(r"^reason:[ \t]*(?P<value>.*?)[ \t]*$")
 _PROBLEM_LINE_RE = re.compile(r"^problem:[ \t]*(?P<value>\w+)[ \t]*(?:#.*)?$", re.IGNORECASE)
+# #185: the SRU template review's per-section points.
+SRU_SECTIONS = (
+    ("impact", "[Impact]"),
+    ("test_plan", "[Test Plan]"),
+    ("where_problems_could_occur", "[Where problems could occur]"),
+)
+_SECTION_LINE_RE = re.compile(
+    r"^(?P<key>" + "|".join(k for k, _ in SRU_SECTIONS) + r"):[ \t]*(?P<value>.*?)[ \t]*$"
+)
+
+
+def _unquote(value):
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
 
 
 def verdict_lines(body):
@@ -120,6 +135,7 @@ def verdict_lines(body):
     content -- an indented continuation, another key, a multi-line value
     all raise ValueError. One pair of enclosing quotes is removed."""
     verdict = reason = problem = None
+    sections = {}
     for line in body.splitlines():
         if not line.strip():
             continue
@@ -135,13 +151,14 @@ def verdict_lines(body):
         if match and problem is None:
             problem = match.group("value").lower()
             continue
+        match = _SECTION_LINE_RE.match(line)
+        if match and match.group("key") not in sections:
+            sections[match.group("key")] = _unquote(match.group("value"))
+            continue
         raise ValueError(f"unexpected line {line.strip()[:40]!r}")
     if verdict is None:
         raise ValueError("no verdict line")
-    reason = reason or ""
-    if len(reason) >= 2 and reason[0] == reason[-1] and reason[0] in "\"'":
-        reason = reason[1:-1]
-    result = {"verdict": verdict, "reason": reason}
+    result = {"verdict": verdict, "reason": _unquote(reason or ""), **sections}
     if problem is not None:
         result["problem"] = problem
     return result
@@ -165,12 +182,26 @@ verdict.fallback = verdict_lines
 
 
 def sru_template_verdict(data):
-    """The SRU template review (#184): `verdict` as above, plus on a fail
-    `problem: missing|thin` -- a section absent, or all present but some
-    too thin. Anything else reads as `missing`, the long-standing wording."""
-    result, value = verdict(data)
+    """The SRU template review: `verdict: pass|fail`; on a fail, `problem:
+    missing|thin` (#184: a section absent, or all present but some too
+    thin -- anything else reads as `missing`, the long-standing wording)
+    and one field per template section saying what's wrong with it, empty
+    when it's fine (#185). The bot writes the section labels itself; a
+    fail naming no section is unparseable (routed to a human)."""
+    value = _choice(data, "verdict", ("pass", "fail"))
+    points = []
+    for key, label in SRU_SECTIONS:
+        text = str(data.get(key) or "").strip()
+        if text:
+            points.append((label, " ".join(text.split())))
+    if value == "fail" and not points:
+        raise ValueError("fail naming no section")
     problem = str(data.get("problem") or "").strip().lower()
-    result["problem"] = "thin" if value == "fail" and problem == "thin" else "missing"
+    result = {
+        "verdict": value,
+        "problem": "thin" if value == "fail" and problem == "thin" else "missing",
+        "points": points if value == "fail" else [],
+    }
     return result, value
 
 

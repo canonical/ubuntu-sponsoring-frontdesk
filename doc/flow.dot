@@ -145,7 +145,7 @@ digraph SponsoringBot {
     agg     [label="any findings collected?", shape=diamond, fillcolor="#FFF9C4"];
     engaged [label="human reviewer engaged? (#45/#72)\ncomment by non-submitter, non-bot,\nnon-service-account since the current\ndiff (MP) / newest usable diff\nattachment (bug; none -> any counts)", shape=diamond, fillcolor="#FFF9C4"];
     covered [label="blocking findings remain (#94)?\nask LLM once (#106): does the\nreviewer's own comment already\nsubstantively cover any of them?\nfail-safe to \"none covered\" on\nno comment text / LLM failure", shape=diamond, fillcolor="#FFF9C4"];
-    post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug + any blocking finding (#70):\ntasks → Incomplete, closing line says\n\"set it back to New\" when addressed", shape=box, fillcolor="#FFE0B2"];
+    post    [label="post ONE aggregated comment\n(#44): intro + \"needs fixing\"\nbullets [+ \"nice to have\"] + closing\nMP: vote='Needs Fixing'\nbug + any blocking finding (#70):\nopen tasks not yet Incomplete → Incomplete\n(stale conjoined task: refresh, #185), closing line says\n\"set it back to New\" when addressed", shape=box, fillcolor="#FFE0B2"];
 
     agg -> engaged [label="yes"];
     engaged -> post [label="no"];
