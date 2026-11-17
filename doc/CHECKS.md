@@ -501,10 +501,19 @@ reads as `missing`. When deciding whether the bot already posted the same
 comment, the text after each `- [Section]:` is ignored, so a re-triage that
 words the same points differently doesn't post again.
 
-With several linked bugs, one sub-list per failing bug (`Bug #N:`):
+With several linked bugs, the lead-in covers both cases, and each failing
+bug gets its own sub-list labelled with its case (#186):
 
-> This looks like an SRU with multiple linked bugs, but the following don't
-> follow the official SRU bug template ({template_link}):
+> This looks like an SRU with multiple linked bugs, but some of their
+> descriptions don't follow the SRU bug template ({SRU_TEMPLATE_LINK}) or need
+> more detail:
+
+```
+Bug #N, doesn't follow the template:
+  - [Test Plan]: ...
+Bug #M, uses the template but needs more detail:
+  - [Impact]: ...
+```
 
 ### Changelog stanza quality
 

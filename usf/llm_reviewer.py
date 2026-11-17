@@ -1395,21 +1395,23 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         if not failures:
             return None
 
-        template_link = (
-            "https://ubuntu.com/project/docs/SRU/reference/bug-template/"
-            "#reference-sru-bug-template"
-        )
         if len(bugs) == 1:
             _bug, feedback = failures[0]
             return sru_template_bullet(feedback)
+        # #186: each bug says which case it is; the lead-in covers both.
+        case = {
+            "missing": "doesn't follow the template",
+            "thin": "uses the template but needs more detail",
+        }
         detail = "\n".join(
-            f"Bug #{bug.id}:\n" + str(feedback).replace("\n", "\n  ").join(["  ", ""])
+            f"Bug #{bug.id}, {case[getattr(feedback, 'problem', 'missing')]}:\n  "
+            + str(feedback).replace("\n", "\n  ")
             for bug, feedback in failures
         )
         return (
-            "This looks like an SRU with multiple linked bugs, but the "
-            "following don't follow the official SRU bug template "
-            f"({template_link}):\n{detail}"
+            "This looks like an SRU with multiple linked bugs, but some of "
+            "their descriptions don't follow the SRU bug template "
+            f"({SRU_TEMPLATE_LINK}) or need more detail:\n{detail}"
         )
 
     def triage_mp(self, lp_obj, diff_text=None):

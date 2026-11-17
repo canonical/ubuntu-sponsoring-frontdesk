@@ -4756,3 +4756,21 @@ each action reaching Launchpad.
   reworded pair counting as a duplicate (each fails without the change),
   plus the rendered bullets and pins for what still posts. Not yet
   deployed or live-verified.
+
+## 186. The Multi-Bug SRU Template Bullet Says Missing or Thin Per Bug
+
+* Follow-up to #184/#185, not a live case: on an MP linked to several
+  bugs, the SRU template bullet still opened with "the following don't
+  follow the official SRU bug template" -- untrue for a bug whose
+  description uses the template with thin sections, the very thing #184
+  fixed for the single-bug bullet -- and nothing per bug said which case
+  applied.
+* **Change** (wording agreed with seb128 from a rendered example): the
+  lead-in covers both cases ("... but some of their descriptions don't
+  follow the SRU bug template (<link>) or need more detail:"), and each
+  failing bug's sub-list is labelled "Bug #N, doesn't follow the
+  template:" or "Bug #N, uses the template but needs more detail:".
+  Dedup is unaffected: the labels are fixed text, and #185 already
+  ignores the per-point details.
+* Test: a missing bug and a thin bug in one bullet (fails without the
+  change). Not yet deployed or live-verified.

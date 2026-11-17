@@ -561,7 +561,9 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
     )
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
-    assert comment.endswith("):\nBug #20:\n  - [Test Plan]: missing")
+    assert comment.endswith(
+        "or need more detail:\nBug #20, doesn't follow the template:\n  - [Test Plan]: missing"
+    )
     assert "Bug #10" not in comment
 
 
@@ -725,3 +727,22 @@ def test_unreadable_comments_do_not_crash_the_review(monkeypatch):
         FakeMP(bugs=[_BrokenBug(title="no marker")]), diff_text=MERGE_DIFF
     )
     assert status == "ADVISORY"  # fails safe to the neutral bullet
+
+
+def test_sru_mp_multiple_bugs_each_say_missing_or_thin():
+    # #186: one bug missing a section, another thin -- the lead-in covers
+    # both, and each bug's sub-list says which case it is.
+    thin = "```yaml\nverdict: fail\nproblem: thin\nimpact: 'vague'\n```\n"
+    r = QueuedReviewer([_sru_template_reply("fail", "missing"), thin])
+    mp = FakeMP(
+        target="refs/heads/ubuntu/noble-devel",
+        bugs=[FakeBug(id=10, description="a"), FakeBug(id=20, description="b")],
+    )
+    _status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert comment == (
+        "This looks like an SRU with multiple linked bugs, but some of their "
+        "descriptions don't follow the SRU bug template "
+        f"({llm_reviewer.SRU_TEMPLATE_LINK}) or need more detail:\n"
+        "Bug #10, doesn't follow the template:\n  - [Test Plan]: missing\n"
+        "Bug #20, uses the template but needs more detail:\n  - [Impact]: vague"
+    )
