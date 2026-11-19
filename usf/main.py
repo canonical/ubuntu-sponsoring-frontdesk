@@ -7,6 +7,7 @@ import sys
 import time
 import urllib.request
 
+import archive_lookup
 import attachments
 import checks
 import facts
@@ -708,6 +709,26 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
                     lp_client.unsubscribe_sponsors(bug_for_targets)
                 outcome = "done"
             else:
+                queued = [t for t in review_targets if closed[t.label] == "queued"]
+                if (
+                    not inconclusive_reasons
+                    and set(closed.values()) <= {"done", "queued"}
+                    and queued
+                ):
+                    # #187: every series is published or waiting in its upload
+                    # queue -- nothing left to sponsor.
+                    logger.info(
+                        "Every series' debdiff is uploaded or in the upload queue. "
+                        "Commenting and unsubscribing ~ubuntu-sponsors."
+                    )
+                    lp_client.comment(
+                        bug_for_targets,
+                        checks.already_queued_comment(
+                            [(t.package, t.version, t.series) for t in queued],
+                            devel=archive_lookup.devel_codename(lp_client.lp),
+                        ),
+                    )
+                    lp_client.unsubscribe_sponsors(bug_for_targets)
                 outcome = "queued"
 
     if outcome == "done":

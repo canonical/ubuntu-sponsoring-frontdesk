@@ -4774,3 +4774,31 @@ each action reaching Launchpad.
   ignores the per-point details.
 * Test: a missing bug and a thin bug in one bullet (fails without the
   change). Not yet deployed or live-verified.
+
+## 187. A Bug Already in the Upload Queue Leaves the Sponsoring Queue
+
+* **Found live in seb128's production `--interactive` pass** (xwayland
+  bug #2150325): the resolute SRU `2:24.1.10-1ubuntu0.1` was already
+  waiting in resolute's Unapproved queue with matching content. #55
+  deferred such items silently, kept ~ubuntu-sponsors subscribed and
+  re-triaged them every run until the version published, on the theory
+  that a queue rejection makes it a sponsoring item again. seb128: in
+  practice there's nothing left to do, and after a rejection it's up to
+  the uploader to review the bug status. Meanwhile the bug sat in the
+  sponsoring queue for every human reader, possibly for weeks.
+* **Change:** on a bug, a matching queued upload gets a one-line note
+  and ~ubuntu-sponsors is unsubscribed (wording agreed with seb128):
+  "This upload is already waiting in the <series> upload queue for SRU
+  team review (`<pkg> <version>`), so there's nothing left to sponsor;
+  unsubscribing ~ubuntu-sponsors." A multi-series bug does this only
+  once every series is published or queued, naming the queued ones;
+  with a series still to review, it stays as before. When a development
+  release upload is among them, "SRU team review" reads "archive review"
+  instead (a devel upload isn't the SRU team's -- my call, flagged for
+  review). Outcome stays PENDING_UPLOAD_QUEUE; the bug is no longer in
+  the queue, so it isn't triaged again, and a re-run before the
+  unsubscribe lands dedups the comment. MPs are unchanged: they can't be
+  unsubscribed and still defer silently.
+* Tests: the single-debdiff bug path, the multi-series all-done/queued
+  path, a still-to-review series staying quiet, and the devel wording
+  (fail without the change). Not yet deployed or live-verified.

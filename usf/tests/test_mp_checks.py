@@ -1152,3 +1152,34 @@ def test_wrong_series_branch_still_bounces(monkeypatch):
     finding = checks.check_target_branch("url", mp, _LP())
     assert finding.tier == "incomplete"
     assert "resolute-devel" in finding.message
+
+
+def test_a_bug_debdiff_in_the_upload_queue_comments_and_unsubscribes(monkeypatch):
+    # #187 (live, xwayland bug #2150325): nothing left to sponsor.
+    from fakes import FakeAttachment, FakeBug
+
+    _patch_archive(
+        monkeypatch,
+        devel="tenacious",
+        versions={"stonking": "1.2-3"},
+        queued=object(),
+        queue_changes=_QUEUE_CHANGES_MATCHING,
+    )
+    monkeypatch.setattr(
+        archive_lookup,
+        "supported_series_ordered",
+        lambda lp: [("stonking", "26.10"), ("tenacious", "27.04")],
+        raising=False,
+    )
+    debdiff = _CHANGELOG_DIFF_V124.replace("diff --git a/debian", "diff -Nru a/debian")
+    bug = FakeBug(attachments=[FakeAttachment("x.debdiff", type="Patch", content=debdiff)])
+    lp = _LP()
+    unsubscribed = []
+    lp.unsubscribe_sponsors = unsubscribed.append
+    assert checks.check_stale_version("url", bug, lp) == "queued"
+    assert unsubscribed == [bug]
+    assert lp.comments == [
+        "This upload is already waiting in the stonking upload queue for SRU team "
+        "review (`testpkg 1.2-4`), so there's nothing left to sponsor; "
+        "unsubscribing ~ubuntu-sponsors."
+    ]

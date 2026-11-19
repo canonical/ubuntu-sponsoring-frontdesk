@@ -3112,9 +3112,26 @@ def _stale_version_bug(url, bug, lp_client):
             url, bug, lp_client, package, version, stanza, pub
         )
 
-    return _stale_version_verdict(
+    result = _stale_version_verdict(
         url, lp_client, package, proposed_version, stanza, suite, classify
     )
+    if result == "queued" and not _defer_bug_close:
+        # #187: already uploaded, waiting for archive review -- nothing left
+        # to sponsor; a rejection is the uploader's to follow up.
+        logger.info(
+            "[%s] already in the %s upload queue. Commenting and unsubscribing ~ubuntu-sponsors.",
+            url,
+            suite,
+        )
+        lp_client.comment(
+            bug,
+            already_queued_comment(
+                [(package, proposed_version, suite)],
+                devel=archive_lookup.devel_codename(lp_client.lp),
+            ),
+        )
+        lp_client.unsubscribe_sponsors(bug)
+    return result
 
 
 def _classify_against_publication_bug(url, bug, lp_client, package, version, proposed_entry, pub):
@@ -3216,6 +3233,26 @@ def already_uploaded_comment(uploads):
         f"already uploaded to the archive as {listed}, so there is nothing "
         "left to sponsor here. Cleaning up the queue by unsubscribing "
         f"~ubuntu-sponsors.\n\n{urls}"
+    )
+
+
+def already_queued_comment(uploads, devel=None):
+    """#187 (live, xwayland bug #2150325): every proposed upload, as
+    (package, version, series), is already waiting in its series' upload
+    queue for archive review. Wording agreed with seb128; a development
+    release upload isn't the SRU team's, so with one among them it says
+    "archive review" instead."""
+    names = [f"`{package} {version}`" for package, version, _series in uploads]
+    series = sorted({s for _p, _v, s in uploads})
+    where = " and ".join([", ".join(series[:-1]), series[-1]] if len(series) > 1 else series)
+    queue = "upload queue" if len(series) == 1 else "upload queues"
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    reviewer = "archive review" if devel in series else "SRU team review"
+    verb = "This upload is" if len(names) == 1 else "These uploads are"
+    return (
+        f"{verb} already waiting in the {where} {queue} for {reviewer} "
+        f"({listed}), so there's nothing left to sponsor; unsubscribing "
+        "~ubuntu-sponsors."
     )
 
 

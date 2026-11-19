@@ -159,7 +159,7 @@ digraph SponsoringBot {
     wait [label="WAITING_ON_CONTRIBUTOR", shape=box, fillcolor="#FFE0B2"];
     rfh  [label="READY_FOR_HUMAN\n(no writes)", shape=box, fillcolor="#B3E5FC"];
     pend [label="PENDING_ARCHIVE_IMPORT\nno comment, no writes\n(git-ubuntu importer may\nauto-close first -- #27)", shape=box, fillcolor="#D1C4E9"];
-    queued [label="PENDING_UPLOAD_QUEUE\nsame version already waiting\nin the target series' queue:\nno comment, no writes, retry\nnext run (#55)", shape=box, fillcolor="#D1C4E9"];
+    queued [label="PENDING_UPLOAD_QUEUE\nsame version already waiting\nin the target series' queue:\nMP: no comment, no writes, retry\nnext run (#55); bug (every series\npublished or queued): comment +\nunsubscribe ~ubuntu-sponsors (#187)", shape=box, fillcolor="#D1C4E9"];
 
     c1  -> done [label="all Ubuntu tasks closed\n& ≥1 landed / MP Merged\nFix Released: silent, the report\ndrops it (#75); any Fix Committed:\ncomment + unsubscribe, the report\nkeeps listing those (#81)"];
     c1b -> done [label="review on linked MP /\nno patch to sponsor"];

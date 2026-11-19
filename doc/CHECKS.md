@@ -132,7 +132,7 @@ debdiffs all target one series gets the plain comment, without headings.
 | 3 | [Merge conflicts](#check-3-merge-conflicts) | MP | The branch cannot be merged cleanly into its target. | incomplete. Skipped entirely when Check 2 fired, since a wrong target branch is usually the cause. |
 | 4 | [Empty diff](#check-4-empty-diff) | MP | The preview diff is empty: the change already landed in the target. | closing: comments, no status write. |
 | 5 | [Changelog bug reference](#check-5-changelog-bug-reference) | MP + bug | The changelog cites `LP: #N` for a bug not reported against this source package. | incomplete; question/verify when the bug cited is the one the debdiff is attached to. |
-| 6 | [Version vs. the archive](#check-6-version-vs-the-archive) | MP + bug | The proposed version against everything published for the target series: already uploaded, same version with different content, older than the archive, or waiting in the upload queue. | Varies: closing when already uploaded; incomplete for a collision or a stale version; or defers the item silently (waiting for the archive importer, or for the upload queue). The only check that notifies the operator. A bounce here skips Check 13. |
+| 6 | [Version vs. the archive](#check-6-version-vs-the-archive) | MP + bug | The proposed version against everything published for the target series: already uploaded, same version with different content, older than the archive, or waiting in the upload queue. | Varies: closing when already uploaded; incomplete for a collision or a stale version; or defers the item silently (waiting for the archive importer, or an MP waiting in the upload queue). A bug in the upload queue is commented on and unsubscribed (#187). The only check that notifies the operator. A bounce here skips Check 13. |
 | 7 | [Newer series first](#check-7-newer-series-first) | MP + bug | An SRU with no evidence the fix landed in the development release or newer supported series. Evidence can be a task status, a linked MP, a patch attachment, or the bug text. | question / verify. Runs late in the pass because it can spend an LLM call. |
 | 8 | [Direct source edit](#check-8-direct-source-edit) | MP + bug | Files outside `debian/` edited directly instead of via `debian/patches`. Merges, new upstream versions and native packages are exempt. | incomplete. |
 | 9 | [Missing changelog entry](#check-9-missing-changelog-entry) | MP | The diff adds no `debian/changelog` entry. | incomplete. |
@@ -289,6 +289,20 @@ Same version, different content -- in the archive:
 > An upload with the same version (`{proposed_version}`) but different
 > content is already waiting in the {target_series} upload queue. Your
 > change needs to be rebased (with a new version number) and resubmitted.
+
+On a bug, the same upload already waiting in the upload queue (for a
+multi-series bug: every series is published or queued) is commented on and
+~ubuntu-sponsors unsubscribed (#187); a queue rejection is the uploader's to
+follow up. "SRU team review" becomes "archive review" when a development
+release upload is among them. MPs still defer silently.
+
+> {verb} already waiting in the {where} {queue} for {reviewer}
+> ({listed}), so there's nothing left to sponsor; unsubscribing
+> ~ubuntu-sponsors.
+
+e.g. "This upload is already waiting in the resolute upload queue for SRU team
+review (`xwayland 2:24.1.10-1ubuntu0.1`), ..."; with several, "These uploads
+are ... in the resolute and stonking upload queues ...".
 
 ### Check 7: newer series first
 

@@ -339,10 +339,14 @@ def pipeline(monkeypatch, tmp_path):
         return False
 
     def stale(url, lp_obj, lp_client):
-        return "done" if "UPLOADED" in focused_text(lp_obj) else False
+        text = focused_text(lp_obj)
+        if "QUEUED" in text:
+            return "queued"
+        return "done" if "UPLOADED" in text else False
 
     monkeypatch.setattr(checks, "check_dep3_patch_header", dep3)
     monkeypatch.setattr(checks, "check_stale_version", stale)
+    monkeypatch.setattr(main.archive_lookup, "devel_codename", lambda lp: "stonking")
 
     def run(bug, llm=None):
         sm = StateManager(db_path=str(tmp_path / "state.db"))
@@ -530,3 +534,37 @@ def test_closed_series_debdiff_is_not_reviewed_end_to_end(pipeline):
     assert "s.debdiff" not in pipeline.reviewed
     assert lp.comments == []
     assert status == "READY_FOR_HUMAN"
+
+
+# --- #187 (live, xwayland bug #2150325): already in the upload queue ---------
+
+
+def test_every_series_uploaded_or_queued_unsubscribes(pipeline):
+    lp, status = pipeline(_bug("QUEUED", "UPLOADED"))
+
+    assert lp.comments == [
+        "This upload is already waiting in the resolute upload queue for SRU "
+        "team review (`foo 1.2-3ubuntu0.1`), so there's nothing left to "
+        "sponsor; unsubscribing ~ubuntu-sponsors."
+    ]
+    assert lp.unsubscribed == 1
+    assert status == "PENDING_UPLOAD_QUEUE"
+
+
+def test_a_series_still_to_review_keeps_the_queued_one_quiet(pipeline):
+    lp, _status = pipeline(_bug("QUEUED", "BAD"))
+
+    assert getattr(lp, "unsubscribed", 0) == 0
+    assert "unsubscribing" not in lp.comments[0]
+
+
+def test_a_queued_devel_upload_is_for_archive_review():
+    comment = checks.already_queued_comment(
+        [("foo", "1.2-3ubuntu0.1", "resolute"), ("foo", "1.2-4ubuntu1", "stonking")],
+        devel="stonking",
+    )
+    assert comment == (
+        "These uploads are already waiting in the resolute and stonking upload "
+        "queues for archive review (`foo 1.2-3ubuntu0.1` and `foo 1.2-4ubuntu1`), "
+        "so there's nothing left to sponsor; unsubscribing ~ubuntu-sponsors."
+    )
