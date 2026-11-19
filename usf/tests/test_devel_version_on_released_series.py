@@ -58,6 +58,12 @@ def _archive(monkeypatch):
     attachments.reset_cache()
     monkeypatch.setattr(archive_lookup, "supported_series_ordered", lambda lp: SERIES)
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "tenacious")
+    # The live shape: tenacious shares stonking's base (#188 keeps firing).
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        lambda lp, pkg, series_names=None: {"tenacious": "1.58.1-1ubuntu3"},
+    )
 
 
 def _bug(suite, version):
@@ -118,3 +124,27 @@ def test_end_to_end_it_replaces_the_sru_findings(tmp_path, monkeypatch):
     assert WORDING in lp.comments[0]
     assert "SRU policy requires" not in lp.comments[0]  # no Check 7/14 restatement
     assert not getattr(llm, "newer_series_queries", [])  # Check 7 skipped
+
+
+# --- #188 (live, golang-1.27 MP #514652) -------------------------------------
+
+
+def test_every_newer_series_above_is_a_valid_sru_version(monkeypatch):
+    # stonking 1.27.1-1 -> 1.27.1-1ubuntu1 with tenacious already newer: it
+    # can't collide, so it's a valid SRU version, not the dch slip.
+    monkeypatch.setattr(
+        archive_lookup,
+        "ubuntu_versions",
+        lambda lp, pkg, series_names=None: {"tenacious-proposed": "1.58.2-1"},
+    )
+    assert _check("stonking", "1.58.1-1ubuntu4") is False
+
+
+def test_a_newer_series_not_above_still_fires(monkeypatch):
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
+    assert _check("stonking", "1.58.1-1ubuntu4").message == WORDING
+
+
+def test_a_failed_lookup_is_inconclusive(monkeypatch):
+    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None)
+    assert _check("stonking", "1.58.1-1ubuntu4") is None

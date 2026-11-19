@@ -1234,9 +1234,11 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
     Check 19 (#182; trigger: network-manager bug #2174507): the new
     changelog entry targets a released series, but the version is numbered
     like a development-release upload (`1.58.1-1ubuntu4` for `stonking`).
-    That's always wrong: either the upload is meant for the development
-    release -- `dch` reuses the previous entry's series, an easy mistake
-    right after a release -- or it's an SRU without an SRU version. The
+    Either the upload is meant for the development release -- `dch` reuses
+    the previous entry's series, an easy mistake right after a release --
+    or it's an SRU without an SRU version. Unless every newer series
+    already publishes a higher version (#188): then the plain `ubuntuN`
+    can't collide and is a valid SRU version, so it stays quiet. The
     finding names both readings; main.py skips Checks 13/14 for the target
     (and Check 7 when every target fired), which would only restate it.
 
@@ -1249,7 +1251,7 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
         return None
     if result is False:
         return False
-    _package, _target, proposed_version, proposed_entry = result
+    package, _target, proposed_version, proposed_entry = result
     header = _CHANGELOG_HEADER_RE.match(proposed_entry.splitlines()[0])
     if not header:
         return False
@@ -1262,7 +1264,23 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
     supported = archive_lookup.supported_series_ordered(lp_client.lp)
     if supported is None:
         return None
-    if series not in (name for name, _version in supported):
+    names = [name for name, _version in supported]
+    if series not in names:
+        return False
+    # #188 (live, golang-1.27 MP #514652): with every newer series already
+    # above it, `1.27.1-1ubuntu1` on stonking can't collide with anything --
+    # a valid SRU version, not the dch series slip.
+    newer = names[names.index(series) + 1 :]
+    above = _newer_series_all_above(lp_client, package, newer, proposed_version)
+    if above is None:
+        return None
+    if above:
+        logger.debug(
+            "check_devel_version_on_released_series: every newer series (%s) "
+            "publishes a version above %r; a valid SRU version.",
+            newer,
+            proposed_version,
+        )
         return False
     logger.info(
         "[%s] %r targets the released series %s with a development-style "
@@ -1281,6 +1299,22 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
         f"`{series}`, it needs an SRU version and the SRU process. See "
         "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/",
     )
+
+
+def _newer_series_all_above(lp_client, package, newer, proposed_version):
+    """#188: True when each of `newer` publishes `package` (any pocket) at a
+    version above `proposed_version`; False when one doesn't (or none is
+    newer); None when the lookup failed."""
+    if not newer:
+        return False
+    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=newer)
+    if versions is None:
+        return None
+    for name in newer:
+        published = [v for suite, v in versions.items() if suite.split("-")[0] == name]
+        if not any(archive_lookup.version_compare(v, proposed_version) > 0 for v in published):
+            return False
+    return True
 
 
 # --- Check 18: a patch pasted into a comment (#179) --------------------------

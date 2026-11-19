@@ -4802,3 +4802,32 @@ each action reaching Launchpad.
 * Tests: the single-debdiff bug path, the multi-series all-done/queued
   path, a still-to-review series staying quiet, and the devel wording
   (fail without the change). Not yet deployed or live-verified.
+
+## 188. Check 19 Stays Quiet When Every Newer Series Is Already Above
+
+* **Found live in seb128's production `--interactive` pass** (golang-1.27
+  MP #514652, declined at `[y/N]`): a stonking SRU, `1.27.1-1` ->
+  `1.27.1-1ubuntu1`, from a branch named `fix-lp2169165-stonking`.
+  Tenacious already has a newer version, so the plain `ubuntuN` can't
+  collide with anything and is in line with the version guidelines --
+  yet Check 19 bounced it as "numbered like a development-release
+  upload". seb128: too little to nag the submitter about.
+* #182's premise was too strong: "every SRU form has a dot, so the
+  combination is always wrong". A plain `ubuntuN` on a released series is
+  only a problem when a newer series could reach the same or a higher
+  version -- the network-manager case (`1.58.1-1ubuntu3` -> `ubuntu4`, the
+  same base in tenacious), where it's really the `dch` series slip.
+* **Change:** Check 19 stays quiet when every newer supported series
+  publishes the package (any pocket) above the proposed version. A newer
+  series without the package, or not above it, still fires as before; a
+  failed lookup is inconclusive. No wording change. When it's quiet,
+  Checks 13/14/7 run as usual.
+* **Open, to check live:** Check 13 asks ubuntu-lint for the expected SRU
+  version. If it insists on `ubuntu0.1` for a base unique to the series,
+  the bot nags about the same thing from another angle -- a unit test
+  can't pin ubuntu-lint's answer, so re-run this MP in `--interactive`
+  and decide then whether Check 13 needs the same exception.
+* Tests: every newer series above is quiet, one not above still fires,
+  a failed lookup is inconclusive; the live-shape fixture now gives
+  tenacious the same base. The quiet case fails without the change. Not
+  yet deployed.
