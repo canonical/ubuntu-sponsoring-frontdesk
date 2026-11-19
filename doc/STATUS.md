@@ -1475,6 +1475,16 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
     follows the new series, and an untouched bug isn't re-triaged. So it's
     mostly the cut-over backlog. Revisit if it shows up after the next
     release with regular runs.
+- **Backlog: MPs already in the upload queue stay in the sponsoring
+  queue** (#187). A bug whose upload is waiting in the upload queue is
+  commented on and unsubscribed, but an MP can't be unsubscribed, so it
+  still defers silently until publication. Idea (seb128): claim the
+  ~ubuntu-sponsors review slot from the privileged helper's account,
+  which is a team member -- #78's side effect (a member's review claims
+  the team slot and drops the MP from the report) is exactly what's
+  wanted here. Not started; would need a new helper action (claim
+  and/or review vote), the wording of any accompanying comment, and a
+  check that it does drop the MP from the sponsoring report.
 - **Backlog: limits deliberately left in place**, to revisit if live data
   pushes on them: Check 16 doesn't judge modified patches or header
   quality; Check 17 can't name an edited entry whose header isn't in the
