@@ -88,7 +88,7 @@ digraph SponsoringBot {
     c8 -> c9;
     c9 -> c10;
     c10 -> c11;
-    c19 [label="Check 19: devel_version_on_released_series\n(#182) released series + plain ubuntuN\n(quiet if every newer series is\nalready above it, #188)\n(a devel upload mis-targeted by dch,\nor an SRU without an SRU version)\n→ incomplete Finding; skips 13/14 here,\nand Check 7 when every target fires", shape=box, fillcolor="#FFFFFF"];
+    c19 [label="Check 19: devel_version_on_released_series\n(#182) released series + plain ubuntuN\n(a devel upload mis-targeted by dch,\nor an SRU without an SRU version)\n→ advisory Finding (#189), with\nubuntu-lint's expected version;\nskips 13/14 here,\nand Check 7 when every target fires", shape=box, fillcolor="#FFFFFF"];
     c13 [label="Check 13: sru_version_suffix_convention\n(#109/#129) via ubuntu-lint\nMPs + debdiff attachments on bugs\nskipped if Check 6 already bounced\nthe version (#122); silent if\npython3-ubuntu-lint is absent\n→ question/advisory Finding", shape=box, fillcolor="#FFFFFF"];
     c14 [label="Check 14: sru_version_newer_series_\nprecedence (#110/#124)\n1) newer series publishes a LOWER\nversion -> fix hasn't landed there\n2) proposed version already used\nanywhere in archive history\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];
     c15 [label="Check 15: no_change_rebuild_version\n(#132) only debian/changelog changed\n(+ update-maintainer's control lines)\nbut an ubuntuN revision, not buildN\n→ incomplete Finding", shape=box, fillcolor="#FFFFFF"];

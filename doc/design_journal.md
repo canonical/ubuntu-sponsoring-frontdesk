@@ -4831,3 +4831,34 @@ each action reaching Launchpad.
   a failed lookup is inconclusive; the live-shape fixture now gives
   tenacious the same base. The quiet case fails without the change. Not
   yet deployed.
+
+## 189. Check 19 Is Advice, With ubuntu-lint's Expected Version; #188 Reverted
+
+* **Prompted by #188's live re-run** (golang-1.27 MP #514652). With
+  Check 19 quiet, Check 13 ran and ubuntu-lint asked for
+  `1.27.1-1ubuntu0.1` -- the bot now gave two different answers to one
+  question. seb128 pointed at the version-strings table: every SRU form
+  is dotted (`2.0-2` -> `2.0-2ubuntu0.1`, `2.0-2ubuntu2` ->
+  `2.0-2ubuntu2.1`, ...), whatever newer series carry. So #182's premise
+  was right after all and #188's exception was wrong: **#188 is
+  reverted.**
+* What was wrong in #182 was the tier: both readings (the `dch` series
+  slip, an SRU without an SRU version) are trivial for the sponsor to fix
+  before uploading, not worth bouncing the contributor -- but the
+  contributor should still learn the right form (seb128).
+* **Change** (wording agreed with seb128): Check 19 is question-tier,
+  kind advisory ("nice to have"; no Needs Fixing vote, no Incomplete). The
+  bullet says what the SRU form would be, "The sponsor can adjust this
+  before uploading, but please keep it in mind for next time." It still
+  skips Checks 13/14 (and 7 on every target), so the point is made once.
+* The example version: #182 left it out because Check 19 couldn't tell
+  whether the base is shared across releases. ubuntu-lint can (it looks
+  the package up in the archive), so Check 19 runs the same ubuntu-lint
+  call as Check 13 and quotes its "expected version" (read from its
+  message text, the only place it gives it). When ubuntu-lint is missing,
+  skips, fails or the text doesn't match, the example is left out rather
+  than the item going inconclusive -- it's illustration, not the finding.
+  Costs one more archive lookup on items where Check 19 fires.
+* Tests: tier/kind, the example from ubuntu-lint's text, no example on
+  no answer, end to end not bouncing. Not yet deployed; re-run the
+  golang MP in `--interactive` to see the real example.

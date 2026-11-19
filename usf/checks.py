@@ -1234,17 +1234,19 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
     Check 19 (#182; trigger: network-manager bug #2174507): the new
     changelog entry targets a released series, but the version is numbered
     like a development-release upload (`1.58.1-1ubuntu4` for `stonking`).
-    Either the upload is meant for the development release -- `dch` reuses
-    the previous entry's series, an easy mistake right after a release --
-    or it's an SRU without an SRU version. Unless every newer series
-    already publishes a higher version (#188): then the plain `ubuntuN`
-    can't collide and is a valid SRU version, so it stays quiet. The
-    finding names both readings; main.py skips Checks 13/14 for the target
+    That's always wrong (#189: the version-strings table gives every SRU a
+    dotted form): either the upload is meant for the development release
+    -- `dch` reuses the previous entry's series, an easy mistake right
+    after a release -- or it's an SRU without an SRU version. Advisory,
+    not blocking (#189): the sponsor can fix either before uploading. The
+    finding names both readings, with ubuntu-lint's expected version when
+    it gives one; main.py skips Checks 13/14 for the target
     (and Check 7 when every target fired), which would only restate it.
 
     MP or bug (the debdiff in focus), via _sru_proposal_inputs; the series
     is read from the entry's own suite, the one the upload would go to.
-    Returns an incomplete Finding, False, or None (a lookup failed).
+    Returns an advisory (question-tier) Finding, False, or None (a lookup
+    failed).
     """
     result = _sru_proposal_inputs(lp_obj, lp_client)
     if result is None:
@@ -1264,57 +1266,47 @@ def check_devel_version_on_released_series(url, lp_obj, lp_client):
     supported = archive_lookup.supported_series_ordered(lp_client.lp)
     if supported is None:
         return None
-    names = [name for name, _version in supported]
-    if series not in names:
-        return False
-    # #188 (live, golang-1.27 MP #514652): with every newer series already
-    # above it, `1.27.1-1ubuntu1` on stonking can't collide with anything --
-    # a valid SRU version, not the dch series slip.
-    newer = names[names.index(series) + 1 :]
-    above = _newer_series_all_above(lp_client, package, newer, proposed_version)
-    if above is None:
-        return None
-    if above:
-        logger.debug(
-            "check_devel_version_on_released_series: every newer series (%s) "
-            "publishes a version above %r; a valid SRU version.",
-            newer,
-            proposed_version,
-        )
+    if series not in (name for name, _version in supported):
         return False
     logger.info(
         "[%s] %r targets the released series %s with a development-style "
-        "version. Adding an incomplete finding.",
+        "version. Adding an advisory finding.",
         url,
         proposed_version,
         series,
     )
+    expected = _lint_expected_sru_version(url, lp_client, package, series, proposed_entry)
+    example = f" (e.g. `{expected}`)" if expected else ""
+    # #189: advice, not a bounce -- the sponsor can fix either reading
+    # before uploading (seb128), but the contributor should learn it.
     return Finding(
-        "incomplete",
+        "question",
         f"The changelog entry targets `{series}`, a released series, but "
         f"`{proposed_version}` is numbered like a development-release upload. "
-        "If this is meant for the development release, the changelog should "
-        f"target `{devel}` instead (`dch` reuses the previous entry's series, an "
-        "easy mistake to make). If it's a stable release update for "
-        f"`{series}`, it needs an SRU version and the SRU process. See "
+        "If it's a stable release update, the version needs the SRU form"
+        f"{example}; if it's meant for the development release, the changelog "
+        f"should target `{devel}` instead (`dch` reuses the previous entry's "
+        "series). The sponsor can adjust this before uploading, but please "
+        "keep it in mind for next time. See "
         "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/",
+        kind="advisory",
     )
 
 
-def _newer_series_all_above(lp_client, package, newer, proposed_version):
-    """#188: True when each of `newer` publishes `package` (any pocket) at a
-    version above `proposed_version`; False when one doesn't (or none is
-    newer); None when the lookup failed."""
-    if not newer:
-        return False
-    versions = archive_lookup.ubuntu_versions(lp_client.lp, package, series_names=newer)
-    if versions is None:
+_LINT_EXPECTED_RE = re.compile(r"expected version (?P<version>[^\s,)]+)")
+
+
+def _lint_expected_sru_version(url, lp_client, package, series, proposed_entry):
+    """#189: the SRU version ubuntu-lint expects (it knows whether the base
+    is shared across releases), read from Check 13's finding text; None
+    when it can't say -- the example is then left out."""
+    try:
+        verdict = _sru_version_convention_verdict(url, lp_client, package, series, proposed_entry)
+    except Exception as e:
+        logger.debug("_lint_expected_sru_version: %s", e)
         return None
-    for name in newer:
-        published = [v for suite, v in versions.items() if suite.split("-")[0] == name]
-        if not any(archive_lookup.version_compare(v, proposed_version) > 0 for v in published):
-            return False
-    return True
+    match = _LINT_EXPECTED_RE.search(getattr(verdict, "message", "") or "")
+    return match.group("version").rstrip(".") if match else None
 
 
 # --- Check 18: a patch pasted into a comment (#179) --------------------------

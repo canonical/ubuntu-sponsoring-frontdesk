@@ -145,7 +145,7 @@ debdiffs all target one series gets the plain comment, without headings.
 | 16 | [DEP-3 patch header](#check-16-dep-3-patch-header) | MP + bug | A newly added `debian/patches/` patch with no DEP-3 header (no `Description:`/`Subject:`). Merges skipped; modified patches not judged. | incomplete. |
 | 17 | [Released changelog entry edited](#check-17-released-changelog-entry-edited) | MP + bug | The diff adds a new changelog entry but also changes an older, already-uploaded one -- whitespace included. Merges and `UNRELEASED` entries skipped. | incomplete. |
 | 18 | [Patch pasted in a comment](#check-18-patch-pasted-in-a-comment) | bug | No patch attached and no merge proposal, but the description or a comment carries a pasted unified diff. Skipped for sync requests and when a human reviewer is engaged. | incomplete. |
-| 19 | [Development version for a released series](#check-19-development-version-for-a-released-series) | MP + bug | The new changelog entry targets a released series but the version is a plain `ubuntuN` -- numbered like a development-release upload, and some newer series doesn't already publish a higher version (#188). Checks 13/14 skipped for that target, Check 7 when every target fires. | incomplete. |
+| 19 | [Development version for a released series](#check-19-development-version-for-a-released-series) | MP + bug | The new changelog entry targets a released series but the version is a plain `ubuntuN` -- numbered like a development-release upload. Checks 13/14 skipped for that target, Check 7 when every target fires. | question / advisory (#189). |
 
 ## What the bot posts
 
@@ -459,41 +459,25 @@ longer closes such a bug as "nothing to sponsor".
 
 ### Check 19: development version for a released series
 
-`check_devel_version_on_released_series`, design #182/#188. Quiet when every
-newer supported series already publishes a higher version: the plain
-`ubuntuN` can't collide then, so it's a valid SRU version (#188). Runs before Check 13;
-when it fires, Checks 13 and 14 are skipped for that target (they would only
-restate it from the SRU angle), and Check 7 when it fires on every target.
+`check_devel_version_on_released_series`, design #182/#189. Every SRU version
+has a dotted Ubuntu part (the version-strings table), so a plain `ubuntuN` for
+a released series is either a development upload with the wrong series or an
+SRU without an SRU version. Advisory (#189): the sponsor can fix either before
+uploading. Runs before Check 13; when it fires, Checks 13 and 14 are skipped
+for that target (they would only restate it from the SRU angle), and Check 7
+when it fires on every target. The example is the version ubuntu-lint expects
+(it knows whether the base is shared across releases); left out when
+ubuntu-lint gives none.
 
 > The changelog entry targets `{series}`, a released series, but
-> `{version}` is numbered like a development-release upload. If this is
+> `{proposed_version}` is numbered like a development-release upload. If it's a
+> stable release update, the version needs the SRU form{example}; if it's
 > meant for the development release, the changelog should target `{devel}`
-> instead (`dch` reuses the previous entry's series, an easy mistake to
-> make). If it's a stable release update for `{series}`, it needs an SRU
-> version and the SRU process. See
+> instead (`dch` reuses the previous entry's series). The sponsor can adjust
+> this before uploading, but please keep it in mind for next time. See
 > https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/
 
-## LLM-assisted reviews
-
-These live in `llm_reviewer.py` and ask a model to judge free text a regex
-can't: whether a description is actually meaningful, not whether it matches
-a pattern. They run after the deterministic checks and only when the item
-looks relevant. If the model is unavailable or its answer can't be parsed,
-they fail safe: nothing is posted and the item is left for a human.
-
-The prompts embed contributor-written text, so they run under a tool-less
-opencode agent and a reply containing any tool use is discarded outright
-(design #99).
-
-| Review | Scope | What it judges | What the bot does |
-|---|---|---|---|
-| [SRU template](#sru-template) | bug + MP | Whether an SRU bug description really follows the SRU template (not just that headings exist). | incomplete. On an MP it short-circuits the rest of the MP review. |
-| [Changelog stanza quality](#changelog-stanza-quality) | MP | Whether the changelog entry describes the change usefully. | question / advisory. |
-| [Changelog vs. diff](#changelog-vs-diff) | MP | Whether the changelog matches what the diff actually does. | question / verify. |
-| [Feature Freeze](#feature-freeze) | MP | Whether the change adds a feature while Feature Freeze is in effect. Silent when an FFe bug is already linked. | question / verify. |
-| [Sync requests](#sync-requests) | bug | Whether a sync request is already satisfied, needs more justification, or should go to a human. | closing (Fix Released), incomplete, or hand over to a human. |
-| Fixed in a newer series | bug | Whether the bug text shows the fix already landed in a newer series. | No comment of its own: it suppresses Check 7. |
-| Already covered by a reviewer | MP + bug | Whether a human reviewer's comments already make the same points. | No comment of its own: it drops findings that would repeat the reviewer. |
+`{example}` is " (e.g. `<version>`)".
 
 ### SRU template
 

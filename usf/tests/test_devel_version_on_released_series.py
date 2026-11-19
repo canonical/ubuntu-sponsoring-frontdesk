@@ -22,11 +22,11 @@ SERIES = [("noble", "24.04"), ("resolute", "26.04"), ("stonking", "26.10"), ("te
 
 WORDING = (
     "The changelog entry targets `stonking`, a released series, but "
-    "`1.58.1-1ubuntu4` is numbered like a development-release upload. If this is "
-    "meant for the development release, the changelog should target `tenacious` "
-    "instead (`dch` reuses the previous entry's series, an easy mistake to make). "
-    "If it's a stable release update for `stonking`, it needs an SRU version and "
-    "the SRU process. See "
+    "`1.58.1-1ubuntu4` is numbered like a development-release upload. If it's a "
+    "stable release update, the version needs the SRU form{example}; if it's meant "
+    "for the development release, the changelog should target `tenacious` instead "
+    "(`dch` reuses the previous entry's series). The sponsor can adjust this before "
+    "uploading, but please keep it in mind for next time. See "
     "https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/version-strings/"
 )
 
@@ -58,12 +58,8 @@ def _archive(monkeypatch):
     attachments.reset_cache()
     monkeypatch.setattr(archive_lookup, "supported_series_ordered", lambda lp: SERIES)
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "tenacious")
-    # The live shape: tenacious shares stonking's base (#188 keeps firing).
-    monkeypatch.setattr(
-        archive_lookup,
-        "ubuntu_versions",
-        lambda lp, pkg, series_names=None: {"tenacious": "1.58.1-1ubuntu3"},
-    )
+    # ubuntu-lint unavailable by default: no example version.
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: False)
 
 
 def _bug(suite, version):
@@ -84,8 +80,9 @@ def _check(suite, version):
 
 def test_the_live_shape():
     finding = _check("stonking", "1.58.1-1ubuntu4")
-    assert finding.tier == "incomplete"
-    assert finding.message == WORDING
+    # #189: advice, not a bounce.
+    assert (finding.tier, finding.kind) == ("question", "advisory")
+    assert finding.message == WORDING.format(example="")
 
 
 @pytest.mark.parametrize(
@@ -104,7 +101,7 @@ def test_other_shapes_do_not_fire(suite, version):
 
 
 def test_a_pocket_suffix_is_read_as_its_series():
-    assert _check("stonking-proposed", "1.58.1-1ubuntu4").tier == "incomplete"
+    assert _check("stonking-proposed", "1.58.1-1ubuntu4").tier == "question"
 
 
 def test_end_to_end_it_replaces_the_sru_findings(tmp_path, monkeypatch):
@@ -121,30 +118,28 @@ def test_end_to_end_it_replaces_the_sru_findings(tmp_path, monkeypatch):
     main.triage_url(URL, sm, lp, llm)
 
     assert len(lp.comments) == 1
-    assert WORDING in lp.comments[0]
+    assert WORDING.format(example="") in lp.comments[0]
+    assert "Nice to have" in lp.comments[0]
+    assert bug.bug_tasks[0].status == "New"  # not bounced
     assert "SRU policy requires" not in lp.comments[0]  # no Check 7/14 restatement
     assert not getattr(llm, "newer_series_queries", [])  # Check 7 skipped
 
 
-# --- #188 (live, golang-1.27 MP #514652) -------------------------------------
+# --- #189 (live, golang-1.27 MP #514652): ubuntu-lint's expected version -----
 
 
-def test_every_newer_series_above_is_a_valid_sru_version(monkeypatch):
-    # stonking 1.27.1-1 -> 1.27.1-1ubuntu1 with tenacious already newer: it
-    # can't collide, so it's a valid SRU version, not the dch slip.
-    monkeypatch.setattr(
-        archive_lookup,
-        "ubuntu_versions",
-        lambda lp, pkg, series_names=None: {"tenacious-proposed": "1.58.2-1"},
+def test_the_example_is_ubuntu_lints_expected_version(monkeypatch):
+    lint = checks.Finding(
+        "question",
+        "The proposed version doesn't follow Ubuntu's recommended SRU version-string "
+        "convention: 1.58.1-1ubuntu4 does not match expected version 1.58.1-1ubuntu3.1. ...",
     )
-    assert _check("stonking", "1.58.1-1ubuntu4") is False
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: lint)
+    finding = _check("stonking", "1.58.1-1ubuntu4")
+    assert finding.message == WORDING.format(example=" (e.g. `1.58.1-1ubuntu3.1`)")
 
 
-def test_a_newer_series_not_above_still_fires(monkeypatch):
-    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {})
-    assert _check("stonking", "1.58.1-1ubuntu4").message == WORDING
-
-
-def test_a_failed_lookup_is_inconclusive(monkeypatch):
-    monkeypatch.setattr(archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: None)
-    assert _check("stonking", "1.58.1-1ubuntu4") is None
+@pytest.mark.parametrize("verdict", [None, False])
+def test_no_lint_answer_means_no_example(monkeypatch, verdict):
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: verdict)
+    assert _check("stonking", "1.58.1-1ubuntu4").message == WORDING.format(example="")
