@@ -1301,12 +1301,18 @@ def _lint_expected_sru_version(url, lp_client, package, series, proposed_entry):
     is shared across releases), read from Check 13's finding text; None
     when it can't say -- the example is then left out."""
     try:
-        verdict = _sru_version_convention_verdict(url, lp_client, package, series, proposed_entry)
+        # quiet: no "Adding an advisory finding" log line -- this is only a
+        # lookup, nothing gets added (#190).
+        verdict = _sru_version_convention_verdict(
+            url, lp_client, package, series, proposed_entry, quiet=True
+        )
     except Exception as e:
         logger.debug("_lint_expected_sru_version: %s", e)
         return None
     match = _LINT_EXPECTED_RE.search(getattr(verdict, "message", "") or "")
-    return match.group("version").rstrip(".") if match else None
+    expected = match.group("version").rstrip(".") if match else None
+    logger.debug("Check 19: ubuntu-lint expects %s.", expected or "nothing usable")
+    return expected
 
 
 # --- Check 18: a patch pasted into a comment (#179) --------------------------
@@ -4544,13 +4550,14 @@ def lint_handles_dotted_revisions():
     return _LINT_DOTTED_REVISION_OK
 
 
-def _sru_version_convention_finding(url, reason):
-    logger.info(
-        "[%s] proposed version doesn't follow the SRU version-string "
-        "convention (%s). Adding an advisory finding.",
-        url,
-        reason,
-    )
+def _sru_version_convention_finding(url, reason, quiet=False):
+    if not quiet:
+        logger.info(
+            "[%s] proposed version doesn't follow the SRU version-string "
+            "convention (%s). Adding an advisory finding.",
+            url,
+            reason,
+        )
     # ubuntu-lint's own reason already ends in "..., see <its own doc link>";
     # drop that trailer so the finding carries only our doc link (the
     # human-readable published page, not the raw source doc -- same
@@ -4575,14 +4582,20 @@ def _sru_version_convention_finding(url, reason):
 _LINT_ACCEPTED = "accepted"
 
 
-def _sru_version_convention_verdict(url, lp_client, package, target_series, proposed_entry):
+def _sru_version_convention_verdict(
+    url, lp_client, package, target_series, proposed_entry, quiet=False
+):
     """_sru_version_convention_result with "ubuntu-lint accepted it" folded
     into False, the contract every check-facing caller wants."""
-    result = _sru_version_convention_result(url, lp_client, package, target_series, proposed_entry)
+    result = _sru_version_convention_result(
+        url, lp_client, package, target_series, proposed_entry, quiet=quiet
+    )
     return False if result == _LINT_ACCEPTED else result
 
 
-def _sru_version_convention_result(url, lp_client, package, target_series, proposed_entry):
+def _sru_version_convention_result(
+    url, lp_client, package, target_series, proposed_entry, quiet=False
+):
     """Shared core of check_sru_version_suffix_convention (#109): given the
     new (top) changelog stanza a proposal adds, fetch the currently
     published changelog for `target_series` and hand both to ubuntu-lint's
@@ -4687,7 +4700,7 @@ def _sru_version_convention_result(url, lp_client, package, target_series, propo
             logger.debug("_sru_version_convention_verdict: ubuntu-lint skipped (%s).", e.reason)
             return False
         if e.result == ubuntu_lint.LintResult.FAIL:
-            return _sru_version_convention_finding(url, e.reason)
+            return _sru_version_convention_finding(url, e.reason, quiet=quiet)
         logger.warning(
             "_sru_version_convention_verdict: ubuntu-lint couldn't determine "
             "(%s: %s); can't determine.",

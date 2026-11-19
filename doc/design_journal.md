@@ -4862,3 +4862,13 @@ each action reaching Launchpad.
 * Tests: tier/kind, the example from ubuntu-lint's text, no example on
   no answer, end to end not bouncing. Not yet deployed; re-run the
   golang MP in `--interactive` to see the real example.
+
+## 190. Check 19's ubuntu-lint Lookup Doesn't Log as a Finding
+
+* Seen on #189's live re-run (golang-1.27 MP #514652): Check 19's lookup
+  of ubuntu-lint's expected version went through Check 13's code path,
+  which logs "proposed version doesn't follow the SRU version-string
+  convention ... Adding an advisory finding." -- reading like a second
+  finding when nothing was added. Log-only change: that path is quiet
+  when called for the lookup, and Check 19 logs "ubuntu-lint expects X"
+  at debug. Nothing posted changes.

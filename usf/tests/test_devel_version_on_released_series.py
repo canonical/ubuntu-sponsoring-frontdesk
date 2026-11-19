@@ -59,7 +59,7 @@ def _archive(monkeypatch):
     monkeypatch.setattr(archive_lookup, "supported_series_ordered", lambda lp: SERIES)
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "tenacious")
     # ubuntu-lint unavailable by default: no example version.
-    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: False)
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a, **k: False)
 
 
 def _bug(suite, version):
@@ -134,12 +134,21 @@ def test_the_example_is_ubuntu_lints_expected_version(monkeypatch):
         "The proposed version doesn't follow Ubuntu's recommended SRU version-string "
         "convention: 1.58.1-1ubuntu4 does not match expected version 1.58.1-1ubuntu3.1. ...",
     )
-    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: lint)
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a, **k: lint)
     finding = _check("stonking", "1.58.1-1ubuntu4")
     assert finding.message == WORDING.format(example=" (e.g. `1.58.1-1ubuntu3.1`)")
 
 
 @pytest.mark.parametrize("verdict", [None, False])
 def test_no_lint_answer_means_no_example(monkeypatch, verdict):
-    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a: verdict)
+    monkeypatch.setattr(checks, "_sru_version_convention_verdict", lambda *a, **k: verdict)
     assert _check("stonking", "1.58.1-1ubuntu4").message == WORDING.format(example="")
+
+
+def test_the_lint_lookup_logs_no_finding(caplog):
+    # #190: Check 19's ubuntu-lint lookup isn't a Check 13 finding.
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="checks"):
+        checks._sru_version_convention_finding("u", "x", quiet=True)
+    assert "Adding an advisory finding" not in caplog.text
