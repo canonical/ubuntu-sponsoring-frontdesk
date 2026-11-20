@@ -278,6 +278,12 @@ Proposed version older than what's published:
 > in the archive (`{archive_version}` in {target_series}). Please rebase on
 > top of the current archive version.
 
+"Same content" tolerates a sponsor's edit before upload (#191): the entries
+match apart from whitespace and the ` -- ` trailer; or the upload was created
+by the MP's author / the debdiff's uploader; or the header and `LP: #`
+references match, the line count is the same and every line is nearly
+identical. Anything else is a collision.
+
 Same version, different content -- in the archive:
 
 > An upload with the same version (`{version}`) but different content

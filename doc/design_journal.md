@@ -4872,3 +4872,29 @@ each action reaching Launchpad.
   finding when nothing was added. Log-only change: that path is quiet
   when called for the lookup, and Check 19 logs "ubuntu-lint expects X"
   at debug. Nothing posted changes.
+
+## 191. A Sponsor's Changelog Edit Isn't a Version Collision
+
+* **Found live by seb128** (libvirt MP #513129): `10.0.0-2ubuntu8.20` is
+  published in noble-proposed, created by the MP's author (~kicchou) and
+  signed by the sponsor (~hectorcao). The only difference from the MP is
+  one changelog line the sponsor corrected before uploading (`d/p/u/` to
+  `d/p/u-aa/`, where the patch actually lives). Check 6 compared the
+  entries for exact equality and asked the contributor to rebase with a
+  new version -- for their own, already-uploaded change. Sponsors make
+  such small fixes routinely.
+* **Change** (option (c), agreed with seb128): one shared `_same_upload`
+  decides for the archive and the upload-queue comparisons, MP and bug:
+  - equal apart from whitespace and the ` -- ` trailer (now ignored on
+    the archive side too, as the queue side already did: a sponsor
+    re-dating the entry isn't a different change);
+  - else the publication's `package_creator` is the MP's registrant or
+    the reviewed debdiff's uploader;
+  - else same header line, same `LP: #` set, same line count and every
+    line pair at difflib ratio >= 0.85 (the live edit is 0.98; a
+    different bullet is ~0.5).
+  Anything else is still the collision bounce. The queue side has no
+  creator to compare, so only the content rules apply there.
+* Tests: the live pair, the author's own upload, and what still
+  collides (different change, bug, header, an added bullet); the live
+  pair and the creator case fail without the change. Not yet deployed.

@@ -1183,3 +1183,22 @@ def test_a_bug_debdiff_in_the_upload_queue_comments_and_unsubscribes(monkeypatch
         "review (`testpkg 1.2-4`), so there's nothing left to sponsor; "
         "unsubscribing ~ubuntu-sponsors."
     ]
+
+
+def test_stale_version_authors_own_upload_with_edited_changelog_isnt_a_collision(
+    monkeypatch,
+):
+    # #191 (live, libvirt MP #513129): the sponsor edited the changelog
+    # before uploading; the upload was still created by the MP's author.
+    import types
+
+    from fakes import HUMAN
+
+    _patch_archive(
+        monkeypatch,
+        versions={"noble": "1.2-4"},
+        changelog=_ARCHIVE_CHANGELOG_DIFFERENT,
+        pub=types.SimpleNamespace(package_creator_link=HUMAN, status="Published"),
+    )
+    mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
+    assert not isinstance(checks.check_stale_version("url", mp, _LP()), checks.Finding)

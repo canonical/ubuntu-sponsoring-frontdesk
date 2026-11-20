@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import difflib
 import logging
 import os
 import re
@@ -2218,6 +2219,43 @@ def _normalize_changelog_entry(text):
     return "\n".join(line.rstrip() for line in text.strip("\n").splitlines())
 
 
+_LP_REF_RE = re.compile(r"LP:\s*#(\d+)(?:\s*,\s*#(\d+))*", re.IGNORECASE)
+_SAME_UPLOAD_LINE_RATIO = 0.85
+
+
+def _lp_refs(text):
+    return set(re.findall(r"#(\d+)", " ".join(m.group(0) for m in _LP_REF_RE.finditer(text))))
+
+
+def _same_upload(proposed_entry, other_entry, creator=None, author=None):
+    """#191: is `other_entry` (the archive's or the queue's stanza for the
+    same version) this proposal's upload? Sponsors often touch the
+    changelog before uploading (live: libvirt MP #513129, `d/p/u/` fixed to
+    `d/p/u-aa/`), so exact equality is too strict. In order:
+    - identical apart from whitespace and the trailer: yes;
+    - the upload was created by the proposal's author: yes;
+    - same header, same `LP: #` references, same number of lines, and
+      every line nearly identical: yes;
+    - otherwise no (the same-version collision bounce)."""
+    mine = _normalize_changelog_entry(_strip_changelog_trailer(proposed_entry))
+    theirs = _normalize_changelog_entry(_strip_changelog_trailer(other_entry))
+    if mine == theirs:
+        return True
+    if creator and author and creator == author:
+        logger.debug("_same_upload: changelog edited, but the upload is the author's own.")
+        return True
+    a, b = mine.splitlines(), theirs.splitlines()
+    if not a or len(a) != len(b) or a[0] != b[0] or _lp_refs(mine) != _lp_refs(theirs):
+        return False
+    close = all(
+        x == y or difflib.SequenceMatcher(None, x, y).ratio() >= _SAME_UPLOAD_LINE_RATIO
+        for x, y in zip(a, b)
+    )
+    if close:
+        logger.debug("_same_upload: only small per-line edits; the same upload.")
+    return close
+
+
 def _strip_changelog_trailer(text):
     """Drop a stanza's ' -- maintainer <email>  date' trailer line(s). A
     queued upload's .changes Changes field carries the stanza WITHOUT the
@@ -2696,9 +2734,7 @@ def _stale_version_verdict(
                     "Changes field; can't determine whose upload it is."
                 )
                 return None
-            same_content = _normalize_changelog_entry(
-                _strip_changelog_trailer(proposed_entry)
-            ) == _normalize_changelog_entry(_strip_changelog_trailer(queue_entry))
+            same_content = _same_upload(proposed_entry, queue_entry)
             if not same_content:
                 logger.info(
                     "[%s] version %r is waiting in the %s upload queue with "
@@ -2808,8 +2844,11 @@ def _classify_against_publication(url, lp_obj, lp_client, package, version, prop
         return None
 
     archive_entry = _first_changelog_stanza_text(archive_text)
-    same_content = _normalize_changelog_entry(proposed_entry) == _normalize_changelog_entry(
-        archive_entry
+    same_content = _same_upload(
+        proposed_entry,
+        archive_entry,
+        creator=getattr(pub, "package_creator_link", None),
+        author=getattr(lp_obj, "registrant_link", None),
     )
     logger.debug(
         "check_stale_version: version %r already published (status=%s); content matches=%s",
@@ -3166,6 +3205,15 @@ def _stale_version_bug(url, bug, lp_client):
     return result
 
 
+def _debdiff_uploader(bug):
+    """#191: who attached the debdiff under review, or None."""
+    try:
+        target = attachments.review_target(bug)
+        return getattr(target[0].message, "owner_link", None) if target else None
+    except Exception:
+        return None
+
+
 def _classify_against_publication_bug(url, bug, lp_client, package, version, proposed_entry, pub):
     """
     The bug-side sibling of _classify_against_publication: an existing
@@ -3190,8 +3238,11 @@ def _classify_against_publication_bug(url, bug, lp_client, package, version, pro
         return None
 
     archive_entry = _first_changelog_stanza_text(archive_text)
-    same_content = _normalize_changelog_entry(proposed_entry) == _normalize_changelog_entry(
-        archive_entry
+    same_content = _same_upload(
+        proposed_entry,
+        archive_entry,
+        creator=getattr(pub, "package_creator_link", None),
+        author=_debdiff_uploader(bug),
     )
     logger.debug(
         "check_stale_version: version %r already published (status=%s); content matches=%s",
