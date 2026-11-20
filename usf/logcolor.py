@@ -1,9 +1,10 @@
 """Coloured console logging for the operator (#193).
 
 Display only: warnings in yellow, errors in red, the `[ACTION]` write
-prompts in bold cyan, everything else plain. Used only when the output is a
-terminal (or forced with --color=always) and NO_COLOR isn't set, so cron,
-the charm and piped runs stay plain.
+prompts in bold cyan, item headers in bold magenta (#194), everything
+else plain. Used only when the output is a terminal (or forced with
+--color=always) and NO_COLOR isn't set, so cron, the charm and piped runs
+stay plain.
 """
 
 import logging
@@ -14,6 +15,7 @@ RESET = "\033[0m"
 YELLOW = "\033[33m"
 RED = "\033[31m"
 BOLD_CYAN = "\033[1;36m"
+BOLD_MAGENTA = "\033[1;35m"
 
 
 def wanted(choice, stream=None, environ=None):
@@ -38,6 +40,9 @@ class ColorFormatter(logging.Formatter):
             color = YELLOW
         elif record.getMessage().lstrip("\n").startswith("[ACTION]"):
             color = BOLD_CYAN
+        elif record.getMessage().lstrip("\n").startswith(("=====", "=== ")):
+            # #194: the item header/footer.
+            color = BOLD_MAGENTA
         else:
             return text
         # Colour each line, so a multi-line comment preview stays coloured

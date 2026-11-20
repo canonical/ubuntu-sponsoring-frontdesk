@@ -51,3 +51,15 @@ def test_every_write_prompt_names_the_item(caplog):
     with caplog.at_level(logging.INFO):
         client._decide("Post this comment")
     assert "  Item: https://launchpad.net/bugs/1" in caplog.text
+
+
+def test_the_item_header_stands_out():
+    # #194: a rule line, then the header, both coloured.
+    import main
+
+    header = _fmt(logging.INFO, f"\n{main.ITEM_RULE}\n=== Starting triage for: u ===")
+    assert header == (
+        f"\n{logcolor.BOLD_MAGENTA}{main.ITEM_RULE}{logcolor.RESET}"
+        f"\n{logcolor.BOLD_MAGENTA}=== Starting triage for: u ==={logcolor.RESET}"
+    )
+    assert _fmt(logging.INFO, "=== Finished triage for: u ===\n").startswith(logcolor.BOLD_MAGENTA)

@@ -4936,3 +4936,15 @@ each action reaching Launchpad.
     failed -- they're the lines worth spotting in a pass.
 * Tests: when colour applies, the colours per level/prompt, the item
   line. Not yet tried on a real terminal.
+
+## 194. Each Item's Log Section Starts With a Rule
+
+* **Asked by seb128** after #193: copying one item's log out of a long
+  pass means finding where its section starts, and "--- Starting triage
+  for: <url> ---" doesn't stand out among the other lines.
+* **Change** (display only): a blank line and a full-width `=` rule
+  before each item, and its start/finish lines read "=== Starting
+  triage for: <url> ===" / "=== Finished triage for: <url> ===". With
+  colour on (#193), the rule and both lines are bold magenta. The rule
+  is there without colour too, so piped logs and the charm's get it.
+* Test: the header is coloured as one block.

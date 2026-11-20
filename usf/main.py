@@ -21,6 +21,8 @@ from state import StateManager
 
 logger = logging.getLogger(__name__)
 
+ITEM_RULE = "=" * 78
+
 # #91: the Launchpad "new bug" form can't set everything a report needs
 # (targeted series, linked MPs/PRs, etc) -- submitters commonly finish the
 # report in an edit or follow-up comment right after filing. Wait this long
@@ -144,7 +146,7 @@ def triage_url(url, state_manager, lp_client, llm_reviewer, force=False, item=No
                 extra=report.extra(llm_reviewer, time.monotonic() - t_start),
             )
         logger.debug("[timing] TOTAL for %s: %.2fs", url, time.monotonic() - t_start)
-        logger.info("--- Finished triage for: %s ---\n", url)
+        logger.info("=== Finished triage for: %s ===\n", url)
 
 
 def _blocked_series_task_targets(lp_obj, lp_client, review_targets, group_layout, findings):
@@ -170,7 +172,9 @@ def _blocked_series_task_targets(lp_obj, lp_client, review_targets, group_layout
 
 
 def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start, report):
-    logger.info("--- Starting triage for: %s ---", url)
+    # #194: a full-width rule above each item, so its log section is easy
+    # to find and select (coloured as a header by logcolor).
+    logger.info("\n%s\n=== Starting triage for: %s ===", ITEM_RULE, url)
 
     def add_finding(check, finding):
         findings.append(finding)
