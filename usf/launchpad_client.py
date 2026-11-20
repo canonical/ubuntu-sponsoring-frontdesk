@@ -160,9 +160,11 @@ class LPClient:
             version="devel",
         )
 
-    def start_item(self):
-        """Reset per-item write tracking. Called by main at the start of each URL."""
+    def start_item(self, url=None):
+        """Reset per-item write tracking. Called by main at the start of each
+        URL; `url` is shown with every write prompt (#193)."""
         self.write_outcomes = []
+        self.current_url = url
 
     def all_writes_effective(self):
         """
@@ -212,6 +214,9 @@ class LPClient:
                           write rather than crash on input()'s EOF.
         """
         logger.info("\n[ACTION] %s", description)
+        if getattr(self, "current_url", None):
+            # #193: the item's header is often screens above the prompt.
+            logger.info("  Item: %s", self.current_url)
 
         if self.mode == "dry-run":
             logger.info(

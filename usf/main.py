@@ -11,6 +11,7 @@ import archive_lookup
 import attachments
 import checks
 import facts
+import logcolor
 import notify
 import sweep
 from audit import AuditLog
@@ -357,7 +358,7 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     # gate -- the writes would silently never happen. LPClient tracks each
     # write's outcome per item; a declined write is retried (re-prompted) on
     # the next run, same as a transient failure.
-    lp_client.start_item()
+    lp_client.start_item(url)
     # #100: reset the per-item LLM call budget and tag usage records.
     llm_reviewer.start_item(url)
     # Fresh item, fresh diff-content memo (design_journal.md #39) -- checks
@@ -784,11 +785,14 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
         # (The LLM phase is skipped too -- its finding would be gated the
         # same way, so running it would only spend tokens on a pass that
         # can't act.)
-        logger.info(
-            "One or more checks couldn't be fully evaluated (a lookup/fetch "
-            "failure). Skipping the LLM phase and posting nothing this run -- "
-            "the aggregated review must not claim to be complete when it "
-            "isn't. Facts won't be persisted, so this URL is retried next run."
+        # #193: a warning naming what failed, so it stands out in a pass.
+        logger.warning(
+            "Inconclusive (%s): one or more checks couldn't be fully evaluated "
+            "(a lookup/fetch failure). Skipping the LLM phase and posting "
+            "nothing this run -- the aggregated review must not claim to be "
+            "complete when it isn't. Facts won't be persisted, so this URL is "
+            "retried next run.",
+            ", ".join(inconclusive_reasons),
         )
         return
 
@@ -842,8 +846,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     logger.debug("check_sru_newer_series -> %s", result)
     if result is None:
         mark_inconclusive("check_sru_newer_series")
-        logger.info(
-            "check_sru_newer_series couldn't be fully evaluated (a lookup/"
+        logger.warning(
+            "Inconclusive: check_sru_newer_series couldn't be fully evaluated (a lookup/"
             "LLM failure). Posting nothing this run -- facts won't be "
             "persisted, so this URL is retried next run."
         )
@@ -899,8 +903,8 @@ def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_star
     if failed_reviews:
         for review in failed_reviews:
             mark_inconclusive(f"llm-failed:{review}")
-        logger.info(
-            "LLM review(s) couldn't be completed (%s). Posting nothing this "
+        logger.warning(
+            "Inconclusive: LLM review(s) couldn't be completed (%s). Posting nothing this "
             "run -- facts won't be persisted, so this URL is retried next run.",
             ", ".join(failed_reviews),
         )
@@ -1133,12 +1137,21 @@ def main():
         action="store_true",
         help="Perform writes without prompting (for unattended/cron use)",
     )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="Colour warnings, errors and write prompts (default: auto, "
+        "only on a terminal and without NO_COLOR; use always with tee)",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(message)s" if not args.verbose else "[verbose] %(name)s: %(message)s",
-    )
+    log_format = "%(message)s" if not args.verbose else "[verbose] %(name)s: %(message)s"
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format=log_format)
+    if logcolor.wanted(args.color):
+        # #193: display only.
+        for handler in logging.getLogger().handlers:
+            handler.setFormatter(logcolor.ColorFormatter(log_format))
 
     if args.yes:
         mode = "yes"

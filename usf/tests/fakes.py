@@ -332,7 +332,7 @@ class FakeTriageClient:
         self.write_outcome = write_outcome
         self.write_outcomes = []
 
-    def start_item(self):
+    def start_item(self, url=None):
         self.write_outcomes = []
 
     def all_writes_effective(self):

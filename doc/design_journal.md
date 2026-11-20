@@ -4917,3 +4917,22 @@ each action reaching Launchpad.
   (#166 defines it there, not in any config file).
 * Tests: a failure with an empty stderr logs opencode's error from
   stdout (fails without the change); `_tail` keeps the end.
+
+## 193. Operator Console: Colours, and the Item With Every Prompt
+
+* **Asked by seb128** during the production `--interactive` passes: in
+  a long verbose log, errors don't stand out, and the item's URL is
+  printed once at the start of its triage, often several screens above
+  the `[y/N]` prompt that needs it.
+* **Change** (display only; nothing posted or persisted changes):
+  - every `[ACTION]` prompt is followed by `  Item: <url>`, in all modes,
+    so dry-run logs and the audit-free console show it too;
+  - `--color=auto|always|never` (`usf/logcolor.py`): warnings yellow,
+    errors red, `[ACTION]` prompts bold cyan, the rest plain. `auto`
+    colours only on a terminal without `NO_COLOR`, so cron, the charm
+    and `| tee` runs stay plain unless `always` is passed;
+  - the three "inconclusive, posting nothing" lines are now warnings and
+    start with "Inconclusive", the pre-LLM one naming the checks that
+    failed -- they're the lines worth spotting in a pass.
+* Tests: when colour applies, the colours per level/prompt, the item
+  line. Not yet tried on a real terminal.

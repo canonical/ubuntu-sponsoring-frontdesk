@@ -33,7 +33,7 @@ and are run from it.
 ## Usage
 
 ```
-python3 usf/main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--verbose]
+python3 usf/main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [--verbose] [--color=auto|always|never]
 ```
 
 - `--url` triages one Launchpad bug or merge proposal; `--all` processes
@@ -45,6 +45,10 @@ python3 usf/main.py (--url <bug-or-MP-url> | --all | --sweep) [mode] [--force] [
 - `--force` bypasses the "nothing changed since last look" gate;
   `--verbose` logs every decision step, including LLM prompts/replies
   and token usage.
+- `--color` colours warnings (yellow), errors (red) and the `[ACTION]`
+  write prompts (bold cyan). `auto` (default) only on a terminal and
+  without `NO_COLOR`; use `always` when piping through `tee`, and read
+  the log with `less -R`.
 
 Retrospective over the audit trail (read-only, writes nothing):
 
