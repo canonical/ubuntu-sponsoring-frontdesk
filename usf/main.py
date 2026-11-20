@@ -174,7 +174,8 @@ def _blocked_series_task_targets(lp_obj, lp_client, review_targets, group_layout
 def _triage_url(url, state_manager, lp_client, llm_reviewer, force, item, t_start, report):
     # #194: a full-width rule above each item, so its log section is easy
     # to find and select (coloured as a header by logcolor).
-    logger.info("\n%s\n=== Starting triage for: %s ===", ITEM_RULE, url)
+    logger.info("\n%s", ITEM_RULE, extra={"bare": True})
+    logger.info("=== Starting triage for: %s ===", url)
 
     def add_finding(check, finding):
         findings.append(finding)
@@ -1152,10 +1153,10 @@ def main():
 
     log_format = "%(message)s" if not args.verbose else "[verbose] %(name)s: %(message)s"
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format=log_format)
-    if logcolor.wanted(args.color):
-        # #193: display only.
-        for handler in logging.getLogger().handlers:
-            handler.setFormatter(logcolor.ColorFormatter(log_format))
+    # #193/#194: display only.
+    formatter = logcolor.ColorFormatter if logcolor.wanted(args.color) else logcolor.Formatter
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter(log_format))
 
     if args.yes:
         mode = "yes"

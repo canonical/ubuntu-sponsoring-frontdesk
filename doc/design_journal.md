@@ -4943,8 +4943,12 @@ each action reaching Launchpad.
   pass means finding where its section starts, and "--- Starting triage
   for: <url> ---" doesn't stand out among the other lines.
 * **Change** (display only): a blank line and a full-width `=` rule
-  before each item, and its start/finish lines read "=== Starting
+  before each item, printed without the `[verbose] name:` prefix (a
+  record flagged `bare`), and its start/finish lines read "=== Starting
   triage for: <url> ===" / "=== Finished triage for: <url> ===". With
-  colour on (#193), the rule and both lines are bold magenta. The rule
-  is there without colour too, so piped logs and the charm's get it.
-* Test: the header is coloured as one block.
+  colour on (#193), only the Starting line is bold magenta (seb128, on
+  the first try: the prefix-only line, the rule and the header all in
+  magenta was too much). The rule is there without colour too, so piped
+  logs and the charm's get it.
+* Tests: the separator has no prefix and no colour, with either
+  formatter; only the Starting line is coloured.

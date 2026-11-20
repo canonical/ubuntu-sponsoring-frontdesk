@@ -31,17 +31,30 @@ def wanted(choice, stream=None, environ=None):
     return bool(getattr(stream, "isatty", lambda: False)())
 
 
-class ColorFormatter(logging.Formatter):
+class Formatter(logging.Formatter):
+    """The console formatter, coloured or not: a record logged with
+    extra={"bare": True} is printed as its message alone, without the
+    `[verbose] name:` prefix (#194's separator)."""
+
+    def format(self, record):
+        if getattr(record, "bare", False):
+            return record.getMessage()
+        return super().format(record)
+
+
+class ColorFormatter(Formatter):
     def format(self, record):
         text = super().format(record)
+        if getattr(record, "bare", False):
+            return text
         if record.levelno >= logging.ERROR:
             color = RED
         elif record.levelno >= logging.WARNING:
             color = YELLOW
         elif record.getMessage().lstrip("\n").startswith("[ACTION]"):
             color = BOLD_CYAN
-        elif record.getMessage().lstrip("\n").startswith(("=====", "=== ")):
-            # #194: the item header/footer.
+        elif record.getMessage().startswith("=== Starting triage"):
+            # #194: the item header.
             color = BOLD_MAGENTA
         else:
             return text

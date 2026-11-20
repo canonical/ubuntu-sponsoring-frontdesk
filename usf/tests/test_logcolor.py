@@ -53,13 +53,28 @@ def test_every_write_prompt_names_the_item(caplog):
     assert "  Item: https://launchpad.net/bugs/1" in caplog.text
 
 
-def test_the_item_header_stands_out():
-    # #194: a rule line, then the header, both coloured.
+def _record(msg, **extra):
+    record = logging.LogRecord("__main__", logging.INFO, __file__, 1, msg, None, None)
+    record.__dict__.update(extra)
+    return record
+
+
+@pytest.mark.parametrize("formatter", [logcolor.Formatter, logcolor.ColorFormatter])
+def test_the_separator_has_no_prefix_and_no_colour(formatter):
+    # #194: a blank line and the rule, without "[verbose] __main__:".
     import main
 
-    header = _fmt(logging.INFO, f"\n{main.ITEM_RULE}\n=== Starting triage for: u ===")
-    assert header == (
-        f"\n{logcolor.BOLD_MAGENTA}{main.ITEM_RULE}{logcolor.RESET}"
-        f"\n{logcolor.BOLD_MAGENTA}=== Starting triage for: u ==={logcolor.RESET}"
+    fmt = formatter("[verbose] %(name)s: %(message)s")
+    assert fmt.format(_record(f"\n{main.ITEM_RULE}", bare=True)) == f"\n{main.ITEM_RULE}"
+
+
+def test_only_the_starting_line_is_coloured():
+    fmt = logcolor.ColorFormatter("[verbose] %(name)s: %(message)s")
+    start = fmt.format(_record("=== Starting triage for: u ==="))
+    assert start == (
+        f"{logcolor.BOLD_MAGENTA}[verbose] __main__: === Starting triage for: u ==="
+        f"{logcolor.RESET}"
     )
-    assert _fmt(logging.INFO, "=== Finished triage for: u ===\n").startswith(logcolor.BOLD_MAGENTA)
+    assert fmt.format(_record("=== Finished triage for: u ===")) == (
+        "[verbose] __main__: === Finished triage for: u ==="
+    )
