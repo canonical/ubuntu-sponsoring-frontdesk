@@ -4990,3 +4990,33 @@ each action reaching Launchpad.
   against ubuntu-lint's upstream main in the sandbox. The charm change
   hasn't been deployed (seb128 isn't redeploying; `make charm-integration`
   would need 0.3.1 in -updates anyway).
+
+## 196. Check 2: Every Pocket Branch of the Right Series Is Advice or "Behind"
+
+* **Found live in seb128's production `--interactive` pass** (roctracer
+  MP #515016, declined at `[y/N]`): the previous upload,
+  `7.2.4-1~exp1ubuntu0.1`, was only in resolute-proposed, and the
+  follow-up MP targeted `ubuntu/resolute-proposed`. Check 2 knew only
+  `ubuntu/<series>-devel` and (#128) the plain release-pocket branch, so
+  any other branch of the right series fell through to the
+  "wrong series" bounce -- "update the target branch to match the series
+  you're fixing", untrue when the series does match.
+* **Decision** (seb128, after checking with a colleague on the security
+  side): contributors should always target `-devel`, security updates
+  included -- only the changelog's distribution picks the landing pocket,
+  and `-devel` is the newest by design (`-proposed` mustn't mask a
+  security update). So every pocket branch of the right series
+  (`ubuntu/<series>`, `-updates`, `-proposed`, `-security`) gets #128's
+  treatment: `-devel` recommended as non-blocking advice when the branch
+  isn't behind, the existing "is behind ... please target -devel and
+  rebase" bounce when a newer version is published in another pocket. A
+  branch of another series still gets the "wrong series" bounce. No new
+  wording.
+* "What the branch carries": its own pocket's published version, else
+  the first pocket below it that publishes (`-proposed` -> `-updates` ->
+  `-security` -> release), as an empty git-ubuntu pocket branch follows
+  the pockets below it. Roctracer: `-proposed` carries
+  `ubuntu0.1`, nothing newer -> advice only, no Needs Fixing.
+* Tests: advice for each pocket when not behind, the bounce for each
+  when behind, the empty-pocket fallback (fail without the change). Not
+  yet deployed.

@@ -190,7 +190,7 @@ When a needs-packaging bug is already published or sitting in the queue:
 
 ### Check 2: target branch
 
-`check_target_branch`, design #4/#128. A merge MP pointed at the wrong
+`check_target_branch`, design #4/#128/#196. A merge MP pointed at the wrong
 branch:
 
 > This Merge Proposal is a merge (rebase onto a newer Debian revision) but
@@ -198,7 +198,8 @@ branch:
 > {target_phrase} instead (workaround for LP: #1976112). Please update the
 > target branch.
 
-An SRU-shaped MP whose changelog and target branch disagree:
+An SRU-shaped MP whose target branch is for another series than its
+changelog:
 
 > This Merge Proposal's changelog entry targets `{suite}`, but the MP itself
 > targets `{target_branch_name}` instead of `{expected}`. Please update the
@@ -206,9 +207,11 @@ An SRU-shaped MP whose changelog and target branch disagree:
 > also the cause of any reported merge conflicts, since the branch is being
 > compared against the wrong history.
 
-A release-pocket branch that is genuinely behind (blocking); when it isn't
-behind, the same recommendation is posted as a non-blocking advisory
-instead:
+A pocket branch of the right series -- `ubuntu/{suite}`, or its
+`-updates`, `-proposed` or `-security` branch (#196; security uploads too:
+only the changelog picks the landing pocket) -- that is genuinely behind
+(blocking); when it isn't behind, the bot recommends `-devel` as a
+non-blocking advisory instead:
 
 > The branch this Merge Proposal targets (`{target_branch_name}`) is behind:
 > it carries `{release}` while `{newest}` is already published, so this

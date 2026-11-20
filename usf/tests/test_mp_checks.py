@@ -3,6 +3,7 @@
 import datetime
 import types
 
+import pytest
 from fakes import FakeBug, FakeBugRef, FakeDiff, FakeMP, FakeTask
 
 import archive_lookup
@@ -1202,3 +1203,46 @@ def test_stale_version_authors_own_upload_with_edited_changelog_isnt_a_collision
     )
     mp = _merge_mp_with_diff(_CHANGELOG_DIFF_V124)
     assert not isinstance(checks.check_stale_version("url", mp, _LP()), checks.Finding)
+
+
+# --- #196 (live, roctracer MP #515016): every pocket branch of the series ------
+
+
+@pytest.mark.parametrize("pocket", ["updates", "proposed", "security"])
+def test_a_pocket_branch_not_behind_is_advice(monkeypatch, pocket):
+    # roctracer: the previous upload only in -proposed, the MP on
+    # ubuntu/resolute-proposed -- the right series, not a "wrong series".
+    _patch_archive(
+        monkeypatch,
+        versions={"resolute": "0.10.1-4", f"resolute-{pocket}": "0.10.1-4.1"},
+    )
+    mp = _plain_series_mp(target=f"refs/heads/ubuntu/resolute-{pocket}")
+    finding = checks.check_target_branch("url", mp, _LP())
+    assert (finding.tier, finding.kind) == ("question", "advisory")
+    assert f"targets `refs/heads/ubuntu/resolute-{pocket}`" in finding.message
+
+
+@pytest.mark.parametrize(
+    "pocket, newer_in",
+    [("updates", "proposed"), ("proposed", "security"), ("security", "proposed")],
+)
+def test_a_pocket_branch_behind_is_needs_fixing(monkeypatch, pocket, newer_in):
+    # A newer version published in another pocket than the targeted one.
+    _patch_archive(
+        monkeypatch,
+        versions={f"resolute-{pocket}": "0.10.1-4.1", f"resolute-{newer_in}": "0.10.1-4.2"},
+    )
+    mp = _plain_series_mp(target=f"refs/heads/ubuntu/resolute-{pocket}")
+    finding = checks.check_target_branch("url", mp, _LP())
+    assert finding.tier == "incomplete"
+    assert "is behind: it carries `0.10.1-4.1` while `0.10.1-4.2`" in finding.message
+
+
+def test_an_empty_pocket_follows_the_ones_below_it(monkeypatch):
+    # Nothing staged in -proposed: the branch carries -updates' version.
+    _patch_archive(
+        monkeypatch,
+        versions={"resolute": "0.10.1-4", "resolute-updates": "0.10.1-4.1"},
+    )
+    mp = _plain_series_mp(target="refs/heads/ubuntu/resolute-proposed")
+    assert checks.check_target_branch("url", mp, _LP()).tier == "question"

@@ -1862,6 +1862,27 @@ def _new_changelog_suite(lp_obj):
 _NON_SERIES_SUITES = {"unstable", "experimental", "unreleased"}
 
 
+# #196: the pockets a git-ubuntu pocket branch falls back to, in order. A
+# branch with nothing published in its own pocket follows the ones below it
+# (e.g. `-proposed` with nothing staged is the same as `-updates`).
+_POCKET_BRANCH_FALLBACK = {
+    None: ("",),
+    "security": ("-security", ""),
+    "updates": ("-updates", "-security", ""),
+    "proposed": ("-proposed", "-updates", "-security", ""),
+}
+
+
+def _pocket_branch_version(versions, suite, pocket):
+    """#196: the version a pocket branch carries, from ubuntu_versions'
+    {suite[-pocket]: version}: its own pocket's, else the first pocket
+    below it that publishes; None when none does."""
+    for suffix in _POCKET_BRANCH_FALLBACK[pocket]:
+        if f"{suite}{suffix}" in versions:
+            return versions[f"{suite}{suffix}"]
+    return None
+
+
 def _check_sru_target_series(url, lp_obj, lp_client):
     """Check 2b: an SRU-shaped MP (new changelog entry targets a stable
     series) must target that series' `ubuntu/<series>-devel` branch, not
@@ -1921,7 +1942,17 @@ def _check_sru_target_series(url, lp_obj, lp_client):
     # the common case and was wrongly blocked. So: always say -devel is
     # the recommended target, but only block when the targeted branch is
     # actually behind in content (a newer version in another pocket).
-    if target_branch_name == f"refs/heads/ubuntu/{suite}":
+    # #196 (live, roctracer MP #515016 targeting `resolute-proposed`): the
+    # same goes for every pocket branch of the right series -- -updates,
+    # -proposed, and -security too (seb128 with the security team: always
+    # -devel, the changelog alone picks the landing pocket). Advice when
+    # the branch isn't behind, a bounce when it is.
+    pocket_match = re.fullmatch(
+        rf"refs/heads/ubuntu/{re.escape(suite)}(?:-(?P<pocket>updates|proposed|security))?",
+        target_branch_name,
+    )
+    if pocket_match:
+        pocket = pocket_match.group("pocket")
         recommendation = (
             f"This Merge Proposal targets `{target_branch_name}`. The "
             f"recommended target is `{expected}`, which also includes any "
@@ -1944,17 +1975,17 @@ def _check_sru_target_series(url, lp_obj, lp_client):
             )
             behind = None
         else:
-            release = versions.get(suite)
+            release = _pocket_branch_version(versions, suite, pocket)
             newest = _max_published_version(versions)
             behind = bool(
                 release and newest and archive_lookup.version_compare(newest, release) > 0
             )
         if behind:
             logger.info(
-                "[%s] targets the %r release pocket branch, which is behind "
+                "[%s] targets the %r pocket branch, which is behind "
                 "(%s vs %s). Adding an incomplete finding.",
                 url,
-                suite,
+                target_branch_name,
                 release,
                 newest,
             )
@@ -1970,10 +2001,10 @@ def _check_sru_target_series(url, lp_obj, lp_client):
                 "contributors/advanced/handle-git-ubuntu-uploads/",
             )
         logger.info(
-            "[%s] targets the %r release pocket branch rather than "
+            "[%s] targets the %r pocket branch rather than "
             "-devel, but it isn't behind. Adding an advisory finding.",
             url,
-            suite,
+            target_branch_name,
         )
         return Finding("question", f"{recommendation}.", kind="advisory")
 
