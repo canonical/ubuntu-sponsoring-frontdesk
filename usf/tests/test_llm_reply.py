@@ -490,3 +490,31 @@ def test_the_line_fallback_reads_problem_and_sections(monkeypatch):
         "[Impact]",
         "[Impact] lacks the user-visible failure and affected scope",
     )
+
+
+# --- #192: a failed call logs what opencode printed -----------------------------
+
+
+def test_a_failed_call_logs_stdout_when_stderr_is_empty(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(
+        llm_reviewer,
+        "_check_agent",
+        lambda env: opencode_agent.Inspection(None, "openrouter/anthropic/m"),
+    )
+    error = json.dumps({"type": "error", "error": {"message": "No API key for openrouter"}})
+
+    def run(cmd, input, text, capture_output, check, timeout, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout=error, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with caplog.at_level(logging.WARNING):
+        assert LLMReviewer().review_sru_template("d") == (True, "")
+    assert "No API key for openrouter" in caplog.text
+    assert "Stderr: (empty)" in caplog.text
+
+
+def test_tail_keeps_the_end():
+    assert llm_reviewer._tail("\n".join(str(i) for i in range(50)), lines=3) == "47\n48\n49"
+    assert llm_reviewer._tail(None) == ""

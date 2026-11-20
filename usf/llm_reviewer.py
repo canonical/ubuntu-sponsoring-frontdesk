@@ -352,6 +352,12 @@ def sru_template_bullet(feedback):
     )
 
 
+def _tail(text, lines=20, chars=2000):
+    """#192: the end of a subprocess stream, for a failure log line."""
+    text = (text or "").strip()
+    return "\n".join(text.splitlines()[-lines:])[-chars:]
+
+
 class LLMReviewer:
     def __init__(self, provider="placeholder", lp=None, audit=None):
         self.provider = provider
@@ -529,7 +535,14 @@ class LLMReviewer:
             )
 
             if proc.returncode != 0:
-                logger.warning("opencode returned %d. Stderr: %s", proc.returncode, proc.stderr)
+                # #192: opencode can fail with an empty stderr, its error
+                # only in the JSON event stream on stdout -- log both tails.
+                logger.warning(
+                    "opencode returned %d. Stderr: %s Stdout (tail): %s",
+                    proc.returncode,
+                    _tail(proc.stderr) or "(empty)",
+                    _tail(proc.stdout) or "(empty)",
+                )
                 return "FAIL: LLM invocation failed internally."
 
             if f'agent "{_OPENCODE_AGENT}" not found' in (proc.stderr or ""):

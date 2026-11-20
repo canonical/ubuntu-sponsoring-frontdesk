@@ -4898,3 +4898,22 @@ each action reaching Launchpad.
 * Tests: the live pair, the author's own upload, and what still
   collides (different change, bug, header, an added bullet); the live
   pair and the creator case fail without the change. Not yet deployed.
+
+## 192. A Failed opencode Call Logs What opencode Printed
+
+* **Seen by seb128** running the bot from his own checkout (libvirt MP
+  #513129): both LLM calls failed with "opencode returned 1. Stderr: "
+  and nothing else, leaving nothing to debug from. The bot behaved
+  correctly (no post, retried next run, #169), but the cause was
+  invisible: with `--format json` opencode reports errors in its event
+  stream on stdout, which wasn't logged.
+* **Change:** the failure warning includes the last 20 lines (at most
+  2000 characters) of stdout as well as stderr, each "(empty)" when
+  empty. Log-only; the stdout may echo bits of the model's partial
+  output, which is no more than the verbose prompt/reply logging
+  already shows.
+* Also noted for local runs: `opencode debug agent sponsoring-reviewer`
+  only finds the agent with the bot's OPENCODE_CONFIG_CONTENT exported
+  (#166 defines it there, not in any config file).
+* Tests: a failure with an empty stderr logs opencode's error from
+  stdout (fails without the change); `_tail` keeps the end.
