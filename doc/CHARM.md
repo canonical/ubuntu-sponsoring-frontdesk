@@ -60,10 +60,10 @@ concurrent pass would just duplicate work and double the Launchpad calls.
   compiled extension tied to the system interpreter; the version comparison
   in every check depends on it. Packages: `python3-apt`, `python3-debian`,
   `python3-launchpadlib`, `python3-yaml`, `distro-info`.
-- **`python3-ubuntu-lint`** (Check 13) from `ppa:enr0n/ubuntu-lint`. Absent,
-  the check degrades to silence rather than failing -- so it is optional,
-  but the check is dead weight without it. See `.workshop/frontdesk-dev/`
-  for the exact install sequence, which is known to work on 26.04.
+- **`python3-ubuntu-lint`** (Checks 13/19), >= 0.3, from the archive with
+  the packages above (#195; it came from `ppa:enr0n/ubuntu-lint` until its
+  SRU to 26.04). Older than 0.3, the bot warns once per run and the checks
+  stay silent.
 - **`opencode`** for the LLM phases, plus the tool-less `sponsoring-reviewer`
   agent. The bot pins its definition on every call (#166); the charm also
   writes it, with the `llm-model`, to `~/.config/opencode/opencode.jsonc`.
@@ -129,9 +129,8 @@ minutes for ~55 items.
 4. **Where state lives.** A charm storage mount keeps `state.db` across
    unit replacement, which matters more than it looks: losing it costs a
    full re-triage, which is LLM spend rather than wrong behaviour.
-5. **Does the charm own `ubuntu-lint`'s PPA?** It is currently a manual
-   `add-apt-repository`; a charm config for the source is tidier, and the
-   dotted-revision fix (0.2.4) is awaited there anyway.
+5. ~~**Does the charm own `ubuntu-lint`'s PPA?**~~ No PPA any more (#195):
+   the package is in the 26.04 archive.
 6. **Observability.** `stats.py` and `stats.py --queue` are the current
    interface. A charm action wrapping them is the obvious first step; the
    Mattermost webhook already covers operator alerts.
@@ -165,8 +164,9 @@ journal.
    `frontdesk` wrapper.
 4. **State on the rootfs** (`/var/lib/frontdesk`) for now; seb128 handles
    backups. Juju storage vs. an off-host copy is in the STATUS.md backlog.
-5. **The charm adds `ppa:enr0n/ubuntu-lint`**, hard-coded and best effort,
-   until the package is SRUed to 26.04 -- then the PPA goes.
+5. **`python3-ubuntu-lint` comes from the archive** (#195); the
+   `ppa:enr0n/ubuntu-lint` the charm used to add is gone. Its source file
+   stays on units installed before, harmless.
 6. **Actions:** `stats`, `run-now`, `triage url=` (always dry-run).
 
 Not exposed, deliberately: `SPONSORING_BOT_LP_USERNAME` (it must match the
@@ -369,7 +369,6 @@ At runtime, the bot:
 | `launchpadlibrarian.net`, `*.restricted.launchpadlibrarian.net` | MP diffs, bug attachments, archive changelogs, `.dsc`/`.changes` files; the restricted host has a random prefix per file, so it needs a wildcard rule |
 | `sponsoring-reports.ubuntu.com` | the queue JSON each pass starts from |
 | `api.ftp-master.debian.org` | Debian versions (madison), for sync requests and merges |
-| `people.canonical.com` | not our code: ubuntu-lint (Check 13) queries `~ubuntu-archive/madison.cgi` there |
 | `git.launchpad.net` | the git ancestry check (#49) fetches the upload's `Vcs-Git` URL -- in practice git.launchpad.net, in principle any host |
 | `openrouter.ai` | the LLM calls (OpenRouter key in `opencode-auth`, `llm-model=openrouter/...`) |
 | `models.opencode.ai` | possibly: opencode's model catalogue. Looked up while a Copilot login was in `auth.json`, not with the OpenRouter-only one (2026-10-07); allow it to be safe |
@@ -381,7 +380,6 @@ the bot's):
 | host | why |
 |---|---|
 | the Ubuntu archive, or the local mirror | the runtime packages |
-| `ppa.launchpadcontent.net`, `api.launchpad.net` | the ubuntu-lint PPA and its signing key (`add-apt-repository`) |
 | `api.snapcraft.io`, `*.snapcraftcontent.com` | the opencode snap |
 
 **Proxies:** the charm writes Juju's `juju-http-proxy`, `juju-https-proxy`
@@ -391,7 +389,6 @@ urllib, requests, git and opencode all honour. Seen working in production
 behind a proxy (2026-10): the file carried the model's proxy, and opencode
 reached OpenRouter through it.
 
-**Allow or reject `people.canonical.com`, don't silently drop it.**
-ubuntu-lint calls `requests.get()` without a timeout; behind a firewall that
-drops packets, every SRU item would hang on Check 13. Every lookup of the
-bot's own has a timeout.
+ubuntu-lint >= 0.3 looks versions up through the bot's own Launchpad
+connection (#195), so `people.canonical.com` (its madison host before) is no
+longer needed.

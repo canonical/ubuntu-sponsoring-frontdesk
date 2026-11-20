@@ -1292,19 +1292,12 @@ review documents directly for details. ~~No dependency pinning in CI~~ and
 
 ## Backlog: ubuntu-lint follow-ups
 
-- **Drop the dotted-Debian-revision workaround** in
-  `_sru_version_convention_verdict` (#129) once `python3-ubuntu-lint`
-  >= 0.2.4 is installed. The bug (expected SRU version computed from only
-  the leading digits of the revision, so `0.10.1-4.1` -> expects
-  `0.10.1-4ubuntu0.1`) is **fixed upstream**: it landed just after 0.2.3, so
-  it ships in 0.2.4 (seb128, 2026-10-01). Nothing to file -- this is now
-  waiting on a release reaching the PPA. The hosts run 0.2.1.
+- ~~**Drop the dotted-Debian-revision workaround**~~ -- done (#195).
 - ~~**Nothing pins or logs the installed `ubuntu_lint` version**~~ -- partly
-  addressed (#141): `checks.lint_handles_dotted_revisions()` probes the
-  installed library's *behaviour* on the #129 case and logs a warning once
-  the fix is present, so the workaround's removal doesn't depend on anyone
-  remembering to check. A version string would not have worked: this host's
-  deb is 0.2.1 while the Python metadata it installs says 0.1.0. Still open:
+  addressed: #141's behaviour probe did its job (it flagged the #129 fix)
+  and went with the workaround in #195, which also made 0.3 the minimum
+  (an older one is warned about once per run, and the checks stay silent).
+  Still open:
   its verdicts can change under us on package upgrade -- same class of problem as
   #108's unpinned ruff. Consider logging it at startup, or asserting a
   minimum version.
@@ -1407,16 +1400,7 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
     unattended-upgrades can be scoped to a single package;
   - at minimum, a Mattermost notification when the status turns
     "outdated", so it doesn't depend on someone reading `juju status`.
-- **Backlog: drop the ubuntu-lint PPA handling** once `python3-ubuntu-lint`
-  is SRUed to 26.04 (resolute; planned), so the unit takes it from the
-  archive like every other package. What goes, all in `src/frontdesk.py`:
-  `UBUNTU_LINT_PPA` and `_install_ubuntu_lint`'s `add-apt-repository` call
-  (`python3-ubuntu-lint` simply joins `PACKAGES`), and `_proxy_environ`,
-  which exists only for that call (#160) -- plus their unit tests, and the
-  `ppa.launchpadcontent.net` row in CHARM.md's firewall table. Keep the
-  best-effort behaviour only if the package can still be absent; once it's
-  in the archive, a missing package is an install failure like any other.
-  The PPA currently has 0.2.3, without the #129 fix.
+- ~~**Backlog: drop the ubuntu-lint PPA handling**~~ -- done (#195).
 - **Backlog: LLM-hardening follow-ups deferred by the 2026-11-08 review**
   (#166-#168 did the rest):
   - *Re-ask once on an unparseable reply*, quoting the validation error
@@ -1500,10 +1484,6 @@ series', grouped by series), plus new Checks 16 (DEP-3 header, #151) and
   proposal that prompted it was deleted before we could test against it. The
   first no-change rebuild in the queue is worth running in `--interactive`
   and reading carefully.
-- **`python3-ubuntu-lint` 0.2.4.** When it reaches the PPA,
-  `checks.lint_handles_dotted_revisions()` (#141) starts logging, once per
-  run, that the #129 workaround can be deleted and Check 13 can cover NMU'd
-  packages again.
 - **#96's engagement heuristic can't tell "reviewer asked for something,
   submitter provided it" (resume) from "reviewer said wait on X, submitter
   acknowledged" (still held)** -- both end with the submitter's comment

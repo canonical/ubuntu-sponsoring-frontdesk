@@ -1,10 +1,9 @@
-"""#162: only the DEBIAN part of the previous revision is tested for a dot.
+"""Dotted revisions reach ubuntu-lint (#162, #195).
 
-#129's skip (ubuntu-lint misreads a dotted Debian/NMU revision) tested the
-whole revision string, Ubuntu suffix included -- `4ubuntu0.22.04.1`, an
-ordinary re-SRU revision, has dots only in that Ubuntu part, so Check 13
-was skipped on most re-SRUs of an already-SRUed package (tigervnc bug
-#2161717's jammy debdiff). Uses a fake ubuntu_lint, like
+#129 skipped Check 13 when the previous Debian revision had a dot (an NMU),
+because ubuntu-lint 0.2.x misread it; #162 narrowed that to the Debian part
+(tigervnc bug #2161717). ubuntu-lint 0.3 has the fix, and #195 removed the
+skip: every shape is now handed to ubuntu-lint. Uses a fake ubuntu_lint, like
 test_sru_version_suffix_convention_missing_lint.py, so it runs without the
 real package installed.
 """
@@ -39,7 +38,6 @@ def _fake_lint(monkeypatch, calls):
         ),
     )
     monkeypatch.setattr(checks, "debian_changelog", debian_changelog)
-    monkeypatch.setattr(checks, "lint_handles_dotted_revisions", lambda: False)
 
 
 def _mp(archive_version, proposed_version, suite="jammy", package="tigervnc"):
@@ -94,29 +92,44 @@ def test_an_ordinary_re_sru_revision_is_not_skipped(monkeypatch):
     assert result is False
 
 
-def test_a_genuine_dotted_debian_revision_is_still_skipped(monkeypatch):
-    """#129's actual case: the DEBIAN part itself has a dot (an NMU)."""
+def test_a_dotted_debian_revision_reaches_ubuntu_lint(monkeypatch):
+    """#129's case, skipped until #195: the DEBIAN part itself has a dot."""
     calls = []
     _fake_lint(monkeypatch, calls)
     _patch_archive(monkeypatch, "0.10.1-4.1")
     mp = _mp("0.10.1-4.1", "0.10.1-4.1ubuntu0.1")
 
-    result = checks.check_sru_version_suffix_convention(URL, mp, _LP())
+    checks.check_sru_version_suffix_convention(URL, mp, _LP())
 
-    assert calls == []
-    assert result is False
+    assert len(calls) == 1
 
 
-def test_a_dotted_debian_revision_with_no_ubuntu_suffix_is_still_skipped(monkeypatch):
-    """A first-ever Ubuntu delta on top of a dotted Debian NMU: no `ubuntu`
-    in the revision at all, so splitting on it is a no-op -- the whole
-    (dotted) string is the Debian part."""
+def test_ubuntu_lint_gets_our_launchpad_connection(monkeypatch):
+    # #195: no anonymous login per call.
     calls = []
     _fake_lint(monkeypatch, calls)
     _patch_archive(monkeypatch, "0.10.1-4.1")
-    mp = _mp("0.10.1-4.1", "0.10.1-4.1build1")
+    lp = _LP()
+    lp.lp = object()
 
-    result = checks.check_sru_version_suffix_convention(URL, mp, _LP())
+    checks.check_sru_version_suffix_convention(URL, _mp("0.10.1-4.1", "0.10.1-4.1ubuntu0.1"), lp)
 
+    assert calls[0]["launchpad_handle"] is lp.lp
+
+
+def test_an_ubuntu_lint_older_than_0_3_is_silent_and_warned_once(monkeypatch, caplog):
+    calls = []
+    _fake_lint(monkeypatch, calls)
+
+    def old_context(debian_changelog):  # 0.2.x: no launchpad_handle
+        raise AssertionError("not reached")
+
+    checks.ubuntu_lint.Context = old_context
+    monkeypatch.setattr(checks, "_LINT_TOO_OLD_WARNED", False)
+    _patch_archive(monkeypatch, "0.10.1-4")
+    mp = _mp("0.10.1-4", "0.10.1-4ubuntu0.1")
+
+    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
+    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
+    assert caplog.text.count("older than 0.3") == 1
     assert calls == []
-    assert result is False

@@ -73,7 +73,6 @@ def _fake_lint(monkeypatch, shared, calls=None):
         ),
     )
     monkeypatch.setattr(checks, "debian_changelog", debian_changelog)
-    monkeypatch.setattr(checks, "lint_handles_dotted_revisions", lambda: False)
 
 
 @pytest.fixture(autouse=True)

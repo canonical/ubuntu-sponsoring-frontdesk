@@ -72,7 +72,6 @@ def _with_lint_raising(monkeypatch, exc):
     )
     monkeypatch.setattr(checks, "ubuntu_lint", fake_lint)
     monkeypatch.setattr(checks, "debian_changelog", debian_changelog)
-    monkeypatch.setattr(checks, "lint_handles_dotted_revisions", lambda: False)
     monkeypatch.setattr(archive_lookup, "devel_codename", lambda lp: "stonking")
     monkeypatch.setattr(
         archive_lookup, "ubuntu_versions", lambda lp, pkg, series_names=None: {"noble": "1.2-3"}

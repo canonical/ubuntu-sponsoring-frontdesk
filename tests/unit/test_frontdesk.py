@@ -111,9 +111,9 @@ def test_install_sets_up_packages_code_and_wrapper(fd, installers):
         "apt-update",
         ("apt", PACKAGES),
         ("snap", "opencode", True),
-        ("run", "add-apt-repository", "-y", "ppa:enr0n/ubuntu-lint"),
-        ("apt", "python3-ubuntu-lint"),
     ]
+    # #195: ubuntu-lint comes from the archive with the rest, no PPA.
+    assert "python3-ubuntu-lint" in PACKAGES
     assert (fd.code_dir / "main.py").exists()
     assert not (fd.code_dir / "tests").exists()
     assert not (fd.code_dir / "conftest.py").exists()
@@ -145,48 +145,6 @@ def test_install_failure_leaves_it_uninstalled(fd, installers, monkeypatch):
     with pytest.raises(InstallError, match="no network"):
         fd.install()
     assert not fd.installed
-
-
-def test_add_apt_repository_gets_the_proxy(fd, installers, monkeypatch):
-    """#160: hooks only see JUJU_CHARM_*_PROXY; add-apt-repository fetches
-    the PPA key itself and needs the usual variables."""
-    fd.environ = {"PATH": "/usr/bin", "JUJU_CHARM_HTTPS_PROXY": "http://proxy.example:3128"}
-    seen = {}
-
-    def run(cmd, **kwargs):
-        seen["env"] = kwargs.get("env")
-        return subprocess.CompletedProcess(cmd, 0)
-
-    monkeypatch.setattr(frontdesk.subprocess, "run", run)
-
-    fd.install()
-
-    assert seen["env"]["https_proxy"] == "http://proxy.example:3128"
-    assert seen["env"]["HTTPS_PROXY"] == "http://proxy.example:3128"
-    assert seen["env"]["PATH"] == "/usr/bin"
-
-
-def test_ubuntu_lint_failure_logs_the_tools_error(fd, installers, monkeypatch, caplog):
-    def fail(cmd, **kwargs):
-        raise subprocess.CalledProcessError(1, cmd, "", "Error: timed out fetching the key\n")
-
-    monkeypatch.setattr(frontdesk.subprocess, "run", fail)
-
-    fd.install()
-
-    assert fd.installed
-    assert "timed out fetching the key" in caplog.text
-
-
-def test_ubuntu_lint_failure_does_not_fail_the_install(fd, installers, monkeypatch):
-    def no_ppa(cmd, **kwargs):
-        raise subprocess.CalledProcessError(1, cmd)
-
-    monkeypatch.setattr(frontdesk.subprocess, "run", no_ppa)
-
-    fd.install()
-
-    assert fd.installed
 
 
 # --- configure -----------------------------------------------------------------

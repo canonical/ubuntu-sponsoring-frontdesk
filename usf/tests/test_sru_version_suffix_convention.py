@@ -26,8 +26,18 @@ URL = "url"
 
 
 class _LP:
+    """#195: ubuntu-lint >= 0.3 looks versions up through the Launchpad
+    handle it's given; an empty archive keeps these tests off the network
+    (each series then counts as not publishing the base, so the single-
+    release suffix is expected)."""
+
     def __init__(self):
-        self.lp = None
+        import types
+
+        archive = types.SimpleNamespace(getPublishedSources=lambda **kw: [])
+        self.lp = types.SimpleNamespace(
+            distributions={"ubuntu": types.SimpleNamespace(main_archive=archive)}
+        )
 
 
 def _patch_archive(monkeypatch, devel="stonking", versions=None, pub=object(), changelog=None):
@@ -98,6 +108,11 @@ def test_devel_targeted_mp_is_not_an_sru(monkeypatch):
     # ubuntu-lint derives "is this an SRU" from the changelog stanza's own
     # distribution field, not the MP's git target branch -- a devel-shaped
     # stanza (suite=stonking, the current devel codename) self-skips.
+    # ubuntu-lint asks the host's distro-info, which the conftest pin
+    # doesn't reach: pin it too, or the test depends on the host's data.
+    import distro_info
+
+    monkeypatch.setattr(distro_info.UbuntuDistroInfo, "devel", lambda self, *a, **k: "stonking")
     _patch_archive(monkeypatch, versions={"stonking": "1.2-3"}, changelog=_ARCHIVE_CHANGELOG_DEVEL)
     mp = _mp_with_diff(
         _diff_for("1.2-3ubuntu1", suite="stonking"), target="refs/heads/ubuntu/devel"
@@ -226,44 +241,16 @@ _DOTTED_ARCHIVE_CHANGELOG = """testpkg (1.2-4.1) noble; urgency=medium
 """
 
 
-def test_dotted_debian_revision_is_skipped(monkeypatch):
-    # #129 (live, xrdp MP #507677): ubuntu-lint reads `1.2-4.1` as revision
-    # `4` + ubuntu revision `.1` and would expect `1.2-4ubuntu0.1`, when
-    # `1.2-4.1ubuntu0.1` is right. Say nothing rather than advise wrongly.
+def test_dotted_debian_revision_is_judged_correctly(monkeypatch):
+    # #129 (live, xrdp MP #507677) was skipped because ubuntu-lint 0.2.x
+    # read `1.2-4.1` as revision `4` + `.1`. 0.3 gets it right (#195).
     _patch_archive(monkeypatch, versions={"noble": "1.2-4.1"}, changelog=_DOTTED_ARCHIVE_CHANGELOG)
-    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu0.1"))
+    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu0.1", prev_stanza_version="1.2-4.1"))
     assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
 
 
-def test_dotted_debian_revision_skipped_even_when_the_version_is_odd(monkeypatch):
+def test_an_odd_version_on_a_dotted_revision_is_advised(monkeypatch):
     _patch_archive(monkeypatch, versions={"noble": "1.2-4.1"}, changelog=_DOTTED_ARCHIVE_CHANGELOG)
-    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu99"))
-    assert checks.check_sru_version_suffix_convention(URL, mp, _LP()) is False
-
-
-# --- the dotted-revision probe (#129 follow-up) -------------------------------
-
-
-def test_probe_detects_whether_dotted_revisions_are_handled(monkeypatch):
-    # A behaviour probe, not a version check: this host's deb is 0.2.1 while
-    # the Python metadata it installs claims 0.1.0, so the version string
-    # can't answer "has the fix landed?". The fix ships in 0.2.4.
-    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", None)
-    result = checks.lint_handles_dotted_revisions()
-    assert result in (True, False)
-
-
-def test_probe_is_none_without_the_library(monkeypatch):
-    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", None)
-    monkeypatch.setattr(checks, "ubuntu_lint", None)
-    assert checks.lint_handles_dotted_revisions() is None
-
-
-def test_probe_result_is_memoized(monkeypatch):
-    monkeypatch.setattr(checks, "_LINT_DOTTED_REVISION_OK", True)
-
-    def _explode(*a, **k):
-        raise AssertionError("probe re-ran instead of using the memo")
-
-    monkeypatch.setattr(checks, "debian_changelog", _explode)
-    assert checks.lint_handles_dotted_revisions() is True
+    mp = _mp_with_diff(_diff_for("1.2-4.1ubuntu99", prev_stanza_version="1.2-4.1"))
+    finding = checks.check_sru_version_suffix_convention(URL, mp, _LP())
+    assert finding and "1.2-4.1ubuntu0.1" in finding.message

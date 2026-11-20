@@ -4952,3 +4952,41 @@ each action reaching Launchpad.
   logs and the charm's get it.
 * Tests: the separator has no prefix and no colour, with either
   formatter; only the Starting line is coloured.
+
+## 195. ubuntu-lint 0.3 From the Archive: PPA and #129 Workaround Gone
+
+* **Prompted by seb128:** ubuntu-lint 0.3.1 has been SRUed to resolute
+  (accepted, in -proposed, to -updates the following week) and the PPA has
+  0.3.0, which seb128 installed by hand on the production unit. He
+  doesn't plan to redeploy in the next weeks, so there was no reason to
+  carry a transition period: drop 0.2.x support and the PPA now.
+* **Bot:**
+  - ubuntu-lint >= 0.3 looks versions up through Launchpad (it used
+    madison on people.canonical.com before), with an anonymous login per
+    `Context` unless given a handle. Checks 13/19 now pass the bot's own
+    connection (`launchpad_handle`).
+  - #129's skip of dotted (NMU) Debian revisions is deleted, with #141's
+    probe that existed to tell us when it could go: 0.3 has the fix, so
+    Check 13 covers NMU'd packages again.
+  - An ubuntu-lint older than 0.3 (no `launchpad_handle` argument) is
+    warned about once per run, and the checks stay silent -- the same as
+    ubuntu-lint being absent, never a crash or an inconclusive item.
+* **Charm:** `python3-ubuntu-lint` joins `PACKAGES`; the
+  `add-apt-repository` step, `UBUNTU_LINT_PPA` and `_proxy_environ`
+  (#160, which existed only for that call) are gone with their tests.
+  It's now a hard dependency, like the other runtime packages. **Until
+  0.3.1 reaches resolute-updates, a fresh install fails** (the package
+  is only in -proposed) -- accepted, as no redeploy is planned before
+  then. A refresh of the existing unit is fine: the package is already
+  installed. The PPA's source file stays on that unit, harmless. CHARM.md
+  drops the PPA and people.canonical.com firewall rows; the workshop
+  image installs the package from the archive, best effort.
+* Tests: dotted revisions now reach ubuntu-lint and are judged by it,
+  the handle is passed, an old ubuntu-lint is silent and warned once
+  (each fails without the change); the real-library tests get a fake
+  empty Launchpad archive to stay off the network, and the "devel MP
+  isn't an SRU" test pins ubuntu-lint's own distro-info view (it
+  depended on the host's data and failed on an up-to-date one). Run
+  against ubuntu-lint's upstream main in the sandbox. The charm change
+  hasn't been deployed (seb128 isn't redeploying; `make charm-integration`
+  would need 0.3.1 in -updates anyway).

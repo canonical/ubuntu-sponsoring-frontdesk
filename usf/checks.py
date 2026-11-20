@@ -6,10 +6,10 @@ import os
 import re
 from typing import NamedTuple
 
-# ubuntu_lint (python3-ubuntu-lint) is a system package, not pip-installable
-# (same shape as apt_pkg in archive_lookup.py) -- and as of #109 has no
-# 24.04 PPA build yet, so it's present on the bot's own VM but not on
-# GitHub Actions' runner. Import defensively: check_sru_version_suffix_
+# ubuntu_lint (python3-ubuntu-lint, >= 0.3, #195) is a system package, not
+# pip-installable (same shape as apt_pkg in archive_lookup.py) -- present on
+# the bot's own VM (from the archive, 26.04 and later) but not on GitHub
+# Actions' runner. Import defensively: check_sru_version_suffix_
 # convention fails safe (returns None, "can't determine") rather than
 # taking the whole module down with an ImportError when it's absent.
 try:
@@ -4546,59 +4546,9 @@ def check_ppa_version_suffix(url, lp_obj, lp_client):
     return _ppa_version_finding(url, proposed_version)
 
 
-# Whether the installed ubuntu-lint computes the expected SRU version
-# correctly for a dotted (NMU-style) Debian revision. None until probed.
-_LINT_DOTTED_REVISION_OK = None
-
-# A minimal two-entry changelog exercising exactly the #129 bug: a previous
-# version with a dotted revision, and the correct SRU version derived from
-# it. A fixed ubuntu-lint accepts this; 0.2.3 and older expect
-# `0.10.1-4ubuntu0.1` instead and raise FAIL.
-_DOTTED_REVISION_PROBE = """\
-probe (0.10.1-4.1ubuntu0.1) noble; urgency=medium
-
-  * Probe entry.
-
- -- Probe <probe@example.com>  Mon, 01 Sep 2025 00:00:00 +0000
-
-probe (0.10.1-4.1) unstable; urgency=medium
-
-  * Previous entry with a dotted Debian revision.
-
- -- Probe <probe@example.com>  Sun, 31 Aug 2025 00:00:00 +0000
-"""
-
-
-def lint_handles_dotted_revisions():
-    """True when the installed ubuntu-lint gets dotted Debian revisions
-    right, False when it still has the #129 bug, None when it or
-    python-debian isn't installed at all.
-
-    A behaviour probe rather than a version check, because the version is
-    not trustworthy: this host's deb is 0.2.1 while the Python metadata it
-    installs says 0.1.0. The answer decides nothing at runtime today -- the
-    workaround skips dotted revisions either way -- but it is what tells us
-    the fix (landed upstream after 0.2.3, so shipping in 0.2.4) has arrived
-    and the workaround can be deleted. Memoized: the probe is pure and the
-    installed library can't change mid-run.
-    """
-    global _LINT_DOTTED_REVISION_OK
-    if _LINT_DOTTED_REVISION_OK is not None:
-        return _LINT_DOTTED_REVISION_OK
-    if ubuntu_lint is None or debian_changelog is None:
-        return None
-    try:
-        context = ubuntu_lint.Context(
-            debian_changelog=debian_changelog.Changelog(_DOTTED_REVISION_PROBE)
-        )
-        ubuntu_lint.check_sru_version_string_convention(context)
-        _LINT_DOTTED_REVISION_OK = True
-    except ubuntu_lint.LintException as e:
-        _LINT_DOTTED_REVISION_OK = e.result != ubuntu_lint.LintResult.FAIL
-    except Exception as e:
-        logger.debug("lint_handles_dotted_revisions: probe failed (%s).", e)
-        return None
-    return _LINT_DOTTED_REVISION_OK
+# #195: ubuntu-lint 0.2.x has no launchpad_handle argument; warned about
+# once per run, then Check 13 stays silent as if ubuntu-lint were absent.
+_LINT_TOO_OLD_WARNED = False
 
 
 def _sru_version_convention_finding(url, reason, quiet=False):
@@ -4705,46 +4655,24 @@ def _sru_version_convention_result(
 
     try:
         parsed = debian_changelog.Changelog(proposed_entry + "\n" + archive_text)
-        # #129 (live, xrdp MP #507677): ubuntu-lint derives the expected
-        # version with `re.search(r"-[0-9]*", prev)`, which keeps only the
-        # leading digits of the Debian revision -- for a dotted (NMU-style)
-        # revision like `0.10.1-4.1` it reads the revision as `4` and the
-        # `.1` as an Ubuntu revision, then expects `0.10.1-4ubuntu0.1`
-        # instead of `0.10.1-4.1ubuntu0.1`. Its verdict is unusable there,
-        # so say nothing rather than advise a wrong version.
-        # DROP THIS once ubuntu-lint >= 0.2.4 is installed: the fix (match
-        # the whole dotted revision) landed upstream just after 0.2.3, so it
-        # ships in 0.2.4 (seb128, 2026-10-01). This host runs 0.2.1 from the
-        # PPA. See STATUS.md's backlog note.
-        previous = parsed[1].version if len(parsed) > 1 else None
-        revision = getattr(previous, "debian_revision", None) or ""
-        # #162 (live, tigervnc bug #2161717): a dot anywhere in the WHOLE
-        # revision was tested, so an ordinary SRU revision like
-        # `4ubuntu0.22.04.1` -- dots only in its Ubuntu part -- was wrongly
-        # read as the dotted-Debian-revision case, skipping Check 13 on
-        # most re-SRUs of an already-SRUed package. #129 is specifically
-        # about the DEBIAN part (the bare NMU revision before any `ubuntuN`
-        # suffix); only that part is tested now.
-        debian_part = revision.split("ubuntu", 1)[0]
-        if "." in debian_part:
-            if lint_handles_dotted_revisions():
-                # The reason for this skip is gone: say so loudly once per
-                # run rather than leaving dead caution in place for years.
-                logger.warning(
-                    "The installed ubuntu-lint handles dotted Debian "
-                    "revisions correctly now -- the #129 workaround in "
-                    "_sru_version_convention_verdict can be removed, and "
-                    "Check 13 will start covering NMU'd packages again."
-                )
-            logger.debug(
-                "_sru_version_convention_verdict: previous version %s has a "
-                "dotted Debian revision (%r); ubuntu-lint miscomputes the "
-                "expected version, skipping.",
-                previous,
-                debian_part,
+        # #195: ubuntu-lint >= 0.3 looks the versions up on Launchpad; hand
+        # it our connection rather than have each call log in anonymously.
+        # (#129's dotted-revision workaround is gone: 0.3 has the fix.)
+        try:
+            context = ubuntu_lint.Context(
+                debian_changelog=parsed, launchpad_handle=getattr(lp_client, "lp", None)
             )
+        except TypeError as e:
+            global _LINT_TOO_OLD_WARNED
+            if not _LINT_TOO_OLD_WARNED:
+                _LINT_TOO_OLD_WARNED = True
+                logger.warning(
+                    "The installed ubuntu-lint is older than 0.3 (%s); the SRU "
+                    "version checks (13 and 19's example) stay silent until it's "
+                    "upgraded.",
+                    e,
+                )
             return False
-        context = ubuntu_lint.Context(debian_changelog=parsed)
         ubuntu_lint.check_sru_version_string_convention(context)
     except ubuntu_lint.LintException as e:
         if e.result == ubuntu_lint.LintResult.SKIP:

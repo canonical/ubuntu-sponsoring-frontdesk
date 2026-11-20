@@ -381,8 +381,9 @@ before upload."
 
 ### Check 13: SRU version convention
 
-`check_sru_version_suffix_convention`, design #109/#119/#122/#129/#173. The
-reason comes from `ubuntu-lint`.
+`check_sru_version_suffix_convention`, design #109/#119/#122/#129/#173/#195. The
+reason comes from `ubuntu-lint` (>= 0.3; #195 removed #129's skip of
+dotted Debian revisions, fixed there).
 
 > The proposed version doesn't follow Ubuntu's recommended SRU
 > version-string convention: {reason}. This isn't necessarily wrong (what
