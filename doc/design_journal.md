@@ -5036,7 +5036,9 @@ each action reaching Launchpad.
 * **Wording** (iterated with seb128 on rendered examples): the thin
   lead-in says the description follows the template and that more detail
   "will make the SRU team's review easier", linking the SRU requirements
-  page. Each thin section is its own paragraph, blank-line separated:
+  page, its two sentences on separate lines (seb128, after a rendered
+  preview: one long line with two links was hard to read). Each thin
+  section is its own paragraph, blank-line separated:
   fixed guidance taken from that page ("[Test Plan] should be precise
   enough that someone else following it would run exactly the same
   steps.") then "Here it <gap>." from the model. seb128 preferred the

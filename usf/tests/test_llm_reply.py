@@ -453,7 +453,7 @@ def test_a_thin_template_gets_the_uses_the_template_list(monkeypatch):
     # #197: the agreed rendering -- guidance first, then the gap.
     assert llm_reviewer.sru_template_bullet(reason) == (
         "This looks like an SRU, and the bug description follows the SRU bug template "
-        f"({llm_reviewer.SRU_TEMPLATE_LINK}). Some sections could be more detailed, "
+        f"({llm_reviewer.SRU_TEMPLATE_LINK}).\nSome sections could be more detailed, "
         "which will make the SRU team's review easier (see "
         "https://ubuntu.com/project/docs/SRU/explanation/requirements/):\n\n"
         "- [Impact] should explain the real-world impact to users, in a way a technical "

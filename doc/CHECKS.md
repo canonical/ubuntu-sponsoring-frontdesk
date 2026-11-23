@@ -526,8 +526,12 @@ Every section there but some too thin is advice ("nice to have"; no
 Incomplete, no vote, the MP review goes on; #197):
 
 > This looks like an SRU, and the bug description follows the SRU bug
-> template ({SRU_TEMPLATE_LINK}). Some sections could be more detailed, which
-> will make the SRU team's review easier (see {SRU_REQUIREMENTS_LINK}):
+> template ({SRU_TEMPLATE_LINK}).
+
+> Some sections could be more detailed, which will make the SRU team's
+> review easier (see {SRU_REQUIREMENTS_LINK}):
+
+(two lines of the same bullet, #197)
 
 followed by one paragraph per thin section, separated by blank lines: the
 section's fixed guidance (from the SRU requirements page), then "Here it

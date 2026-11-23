@@ -389,7 +389,7 @@ def sru_template_bullet(feedback):
         # #197: advice, not a bounce (seb128).
         return (
             "This looks like an SRU, and the bug description follows the SRU "
-            f"bug template ({SRU_TEMPLATE_LINK}). Some sections could be more "
+            f"bug template ({SRU_TEMPLATE_LINK}).\nSome sections could be more "
             "detailed, which will make the SRU team's review easier (see "
             f"{SRU_REQUIREMENTS_LINK}):\n\n{feedback}"
         )
