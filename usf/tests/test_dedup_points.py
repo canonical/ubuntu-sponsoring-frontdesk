@@ -4,13 +4,14 @@ SRU-template bounce twice, reworded)."""
 
 from fakes import BOT, FakeAudit, FakeBug, FakeBugMessage, FakeRoot
 
+import checks
 import llm_reviewer
 from launchpad_client import FOOTNOTE, LPClient
 
 
 def _posted(points, problem="thin"):
     bullet = llm_reviewer.sru_template_bullet(llm_reviewer.SruTemplateReason(points, problem))
-    body = "* " + bullet.replace("\n", "\n  ")  # as checks' comment rendering
+    body = checks._bullet_text(bullet)
     return f"Thanks!\n\n{body}\n\n{FOOTNOTE}"
 
 
@@ -36,7 +37,9 @@ def _already(existing, new, owner=BOT):
 
 
 def test_the_rendered_points_are_indented_under_the_bullet():
-    assert "\n  - [Impact]: does not say" in FIRST
+    assert "\n\n  - [Impact] should explain" in FIRST
+    assert "Here it does not say" in FIRST
+    assert "\n  \n" not in FIRST  # blank lines stay empty (#197)
 
 
 def test_reworded_points_for_the_same_sections_are_a_duplicate():

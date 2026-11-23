@@ -107,15 +107,25 @@ _EFFECTIVE_WRITE_OUTCOMES = ("performed", "skipped-duplicate")
 
 # #185: a "- [Section]: <text>" point (the SRU template review's list);
 # the text is LLM-written and varies between runs.
-_POINT_DETAIL_RE = re.compile(r"^(?P<head>[ \t]*- \[[^\]\n]+\]:).*$", re.MULTILINE)
+_POINT_DETAIL_RE = re.compile(r"^(?P<head>[ \t]*- \[[^\]\n]+\])(?P<rest>.*)$", re.MULTILINE)
+
+
+def _strip_point_detail(match):
+    # #197: a thin point is "<label> <fixed guidance> Here it <detail>";
+    # keep the guidance. Anything else keeps the label only.
+    rest = match.group("rest")
+    cut = rest.find(" Here it ")
+    return match.group("head") + (rest[: cut + len(" Here it")] if cut >= 0 else "")
 
 
 def _dedup_key(text):
     """What the duplicate-comment check compares (#185): the comment with
     each point's LLM-written detail dropped, so a re-triage's reworded
     reason for the same sections counts as already posted (live:
-    ezurio-qcacld-2.0-dkms bug #2173882 got two)."""
-    return _POINT_DETAIL_RE.sub(r"\g<head>", (text or "").strip())
+    ezurio-qcacld-2.0-dkms bug #2173882 got two). Trailing whitespace per
+    line is ignored too."""
+    text = "\n".join(line.rstrip() for line in (text or "").strip().splitlines())
+    return _POINT_DETAIL_RE.sub(_strip_point_detail, text)
 
 
 class LPClient:

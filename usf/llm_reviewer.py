@@ -322,15 +322,60 @@ SRU_TEMPLATE_LINK = (
 )
 
 
+SRU_REQUIREMENTS_LINK = "https://ubuntu.com/project/docs/SRU/explanation/requirements/"
+
+# #197: what each section should do, from the SRU requirements page (fixed
+# text, written by the bot; the model only says what's lacking).
+SRU_SECTION_GUIDANCE = {
+    "[Impact]": (
+        "should explain the real-world impact to users, in a way a technical "
+        "reader unfamiliar with Ubuntu development can follow."
+    ),
+    "[Test Plan]": (
+        "should be precise enough that someone else following it would run exactly the same steps."
+    ),
+    "[Where problems could occur]": (
+        "should analyse what could break for existing users with this "
+        "change, and how that risk is kept low."
+    ),
+}
+
+
+def _sentence(text):
+    return text.rstrip(" .") + "."
+
+
 class SruTemplateReason(str):
     """The SRU template review's fail reason: the per-section list (#185),
     carrying `problem` (#184: "missing" -- a section absent -- or "thin",
-    all present, some too thin) and `points`, (label, text) pairs."""
+    all present, some too thin) and `points`, (label, text) pairs, the text
+    completing "Here it ..." (#197).
+
+    Rendered (#197, wording agreed with seb128): for `thin`, each point is
+    the section's guidance then "Here it <text>.", points separated by a
+    blank line; for `missing`, "- <label> <text>." per line."""
 
     def __new__(cls, points, problem="missing"):
-        obj = super().__new__(cls, "\n".join(f"- {label}: {text}" for label, text in points))
+        if problem == "thin":
+            text = "\n\n".join(
+                f"- {label} {SRU_SECTION_GUIDANCE[label]} Here it {_sentence(detail)}"
+                for label, detail in points
+            )
+        else:
+            text = "\n".join(f"- {label} {_sentence(detail)}" for label, detail in points)
+        obj = super().__new__(cls, text)
         obj.problem = problem
         obj.points = list(points)
+        return obj
+
+
+class SruBullet(str):
+    """The SRU template bullet for an MP, with `blocking` (#197): only a
+    missing section blocks; thin sections are advice."""
+
+    def __new__(cls, text, blocking):
+        obj = super().__new__(cls, text)
+        obj.blocking = blocking
         return obj
 
 
@@ -341,10 +386,12 @@ def sru_template_bullet(feedback):
     re-triage's differently worded LLM text still dedups (see
     launchpad_client._dedup_key)."""
     if getattr(feedback, "problem", "missing") == "thin":
+        # #197: advice, not a bounce (seb128).
         return (
-            "This looks like an SRU, and the bug description uses the SRU "
-            f"bug template ({SRU_TEMPLATE_LINK}), but some sections need "
-            f"more detail:\n{feedback}"
+            "This looks like an SRU, and the bug description follows the SRU "
+            f"bug template ({SRU_TEMPLATE_LINK}). Some sections could be more "
+            "detailed, which will make the SRU team's review easier (see "
+            f"{SRU_REQUIREMENTS_LINK}):\n\n{feedback}"
         )
     return (
         "This looks like an SRU, but the bug description doesn't follow "
@@ -799,12 +846,13 @@ where_problems_could_occur: ""
 
 If fail, fill in each section that is absent or too thin; leave the
 adequate ones empty. Each is ONE short phrase on a single line, inside
-double quotes, saying what that section lacks -- e.g. "missing", or
-"just 'Compile test', with no steps or expected result". If an absent
-section's ground is partly covered by other content (e.g. a reproduction
-recipe, a reference to an upstream fix), say briefly that it doesn't
-replace it. Don't name the section again, and don't restate the general
-SRU template requirement -- that's already said elsewhere.
+double quotes, completing the sentence "Here it ..." about that section
+-- e.g. "is missing", "is just 'Compile test', with no steps or expected
+result", or "lacks the user-visible failure". If an absent section's
+ground is partly covered by other content (e.g. a reproduction recipe, a
+reference to an upstream fix), say briefly that it doesn't replace it.
+Don't name the section again, and don't restate the general SRU template
+requirement -- that's already said elsewhere.
 """
 
         reply = self._ask(
@@ -1280,6 +1328,9 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
                 # Bullet-style, no greeting/sign-off (design #31): the
                 # aggregated comment's template carries both.
                 comment = sru_template_bullet(feedback)
+                if getattr(feedback, "problem", "missing") == "thin":
+                    # #197: thin sections are advice (seb128).
+                    return "ADVISORY", [("advisory", comment)]
                 return "INCOMPLETE", comment
             else:
                 return (
@@ -1408,9 +1459,11 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         if not failures:
             return None
 
+        # #197: only a missing section blocks.
+        blocking = any(getattr(f, "problem", "missing") != "thin" for _b, f in failures)
         if len(bugs) == 1:
             _bug, feedback = failures[0]
-            return sru_template_bullet(feedback)
+            return SruBullet(sru_template_bullet(feedback), blocking)
         # #186: each bug says which case it is; the lead-in covers both.
         case = {
             "missing": "doesn't follow the template",
@@ -1421,10 +1474,11 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
             + str(feedback).replace("\n", "\n  ")
             for bug, feedback in failures
         )
-        return (
+        return SruBullet(
             "This looks like an SRU with multiple linked bugs, but some of "
             "their descriptions don't follow the SRU bug template "
-            f"({SRU_TEMPLATE_LINK}) or need more detail:\n{detail}"
+            f"({SRU_TEMPLATE_LINK}) or need more detail:\n{detail}",
+            blocking,
         )
 
     def triage_mp(self, lp_obj, diff_text=None):
@@ -1447,9 +1501,18 @@ reason: "<if fail, a polite comment on a single line, inside double quotes,
         to say (including every skip and fail-safe path).
         """
         sru_template_comment = self._sru_template_check_for_mp(lp_obj)
-        if sru_template_comment is not None:
-            return "INCOMPLETE", sru_template_comment
+        if sru_template_comment is not None and sru_template_comment.blocking:
+            return "INCOMPLETE", str(sru_template_comment)
+        status, result = self._review_mp_content(lp_obj, diff_text)
+        if sru_template_comment is None:
+            return status, result
+        # #197: thin sections are advice, alongside the content review.
+        advice = [("advisory", str(sru_template_comment))]
+        return "ADVISORY", advice + (result if status == "ADVISORY" else [])
 
+    def _review_mp_content(self, lp_obj, diff_text):
+        """triage_mp's changelog/diff/Feature Freeze review (#47), split out
+        so a non-blocking SRU template bullet (#197) can join its result."""
         if not isinstance(diff_text, str) or not diff_text.strip():
             # An unfetchable diff (None) already made the deterministic pass
             # inconclusive before the LLM phase; an absent/empty one (False,

@@ -442,7 +442,7 @@ LIVE_THIN = (
     "The description uses the SRU headings, but two sections are thin.\n\n"
     "```yaml\nverdict: fail\nproblem: thin\n"
     'impact: "lacks the user-visible failure and affected scope"\n'
-    "test_plan: \"no steps exercising remain_on_channel/mgmt_tx beyond 'nothing in dmesg'\"\n"
+    "test_plan: \"has no steps exercising remain_on_channel/mgmt_tx beyond 'nothing in dmesg'\"\n"
     'where_problems_could_occur: ""\n```'
 )
 
@@ -450,11 +450,18 @@ LIVE_THIN = (
 def test_a_thin_template_gets_the_uses_the_template_list(monkeypatch):
     passed, reason = _scripted(monkeypatch, LIVE_THIN).review_sru_template("d")
     assert passed is False and reason.problem == "thin"
+    # #197: the agreed rendering -- guidance first, then the gap.
     assert llm_reviewer.sru_template_bullet(reason) == (
-        "This looks like an SRU, and the bug description uses the SRU bug template "
-        f"({llm_reviewer.SRU_TEMPLATE_LINK}), but some sections need more detail:\n"
-        "- [Impact]: lacks the user-visible failure and affected scope\n"
-        "- [Test Plan]: no steps exercising remain_on_channel/mgmt_tx beyond 'nothing in dmesg'"
+        "This looks like an SRU, and the bug description follows the SRU bug template "
+        f"({llm_reviewer.SRU_TEMPLATE_LINK}). Some sections could be more detailed, "
+        "which will make the SRU team's review easier (see "
+        "https://ubuntu.com/project/docs/SRU/explanation/requirements/):\n\n"
+        "- [Impact] should explain the real-world impact to users, in a way a technical "
+        "reader unfamiliar with Ubuntu development can follow. Here it lacks the "
+        "user-visible failure and affected scope.\n\n"
+        "- [Test Plan] should be precise enough that someone else following it would "
+        "run exactly the same steps. Here it has no steps exercising "
+        "remain_on_channel/mgmt_tx beyond 'nothing in dmesg'."
     )
 
 
@@ -464,7 +471,7 @@ def test_a_missing_section_keeps_the_doesnt_follow_wording(monkeypatch):
     assert reason.problem == "missing"
     assert llm_reviewer.sru_template_bullet(reason).startswith(
         "This looks like an SRU, but the bug description doesn't follow the official "
-        f"SRU bug template ({llm_reviewer.SRU_TEMPLATE_LINK}):\n- [Impact]: "
+        f"SRU bug template ({llm_reviewer.SRU_TEMPLATE_LINK}):\n- [Impact] lacks "
     )
 
 

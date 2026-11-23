@@ -489,30 +489,65 @@ ubuntu-lint gives none.
 
 `{example}` is " (e.g. `<version>`)".
 
+## LLM-assisted reviews
+
+These live in `llm_reviewer.py` and ask a model to judge free text a regex
+can't: whether a description is actually meaningful, not whether it matches
+a pattern. They run after the deterministic checks and only when the item
+looks relevant. If the model is unavailable or its answer can't be parsed,
+they fail safe: nothing is posted and the item is left for a human.
+
+The prompts embed contributor-written text, so they run under a tool-less
+opencode agent and a reply containing any tool use is discarded outright
+(design #99).
+
+| Review | Scope | What it judges | What the bot does |
+|---|---|---|---|
+| [SRU template](#sru-template) | bug + MP | Whether an SRU bug description really follows the SRU template (not just that headings exist). | incomplete when a section is missing (on an MP it short-circuits the rest of the MP review); question / advisory when all are there but some are thin (#197). |
+| [Changelog stanza quality](#changelog-stanza-quality) | MP | Whether the changelog entry describes the change usefully. | question / advisory. |
+| [Changelog vs. diff](#changelog-vs-diff) | MP | Whether the changelog matches what the diff actually does. | question / verify. |
+| [Feature Freeze](#feature-freeze) | MP | Whether the change adds a feature while Feature Freeze is in effect. Silent when an FFe bug is already linked. | question / verify. |
+| [Sync requests](#sync-requests) | bug | Whether a sync request is already satisfied, needs more justification, or should go to a human. | closing (Fix Released), incomplete, or hand over to a human. |
+| Fixed in a newer series | bug | Whether the bug text shows the fix already landed in a newer series. | No comment of its own: it suppresses Check 7. |
+| Already covered by a reviewer | MP + bug | Whether a human reviewer's comments already make the same points. | No comment of its own: it drops findings that would repeat the reviewer. |
+
 ### SRU template
+
+A section absent (or the template not used) is blocking -- incomplete, and
+on an MP it short-circuits the rest of the MP review:
 
 > This looks like an SRU, but the bug description doesn't follow the
 > official SRU bug template ({SRU_TEMPLATE_LINK}):
 
-When every section is there but some are too thin (#184):
+followed by one `- [Section] <what's wrong>.` line per section, e.g.
+`- [Test Plan] is missing.`
 
-> This looks like an SRU, and the bug description uses the SRU bug template
-> ({SRU_TEMPLATE_LINK}), but some sections need more detail:
+Every section there but some too thin is advice ("nice to have"; no
+Incomplete, no vote, the MP review goes on; #197):
 
-Either is followed by one line per section that needs work (#185), the label
-written by the bot and the rest by the model, e.g.:
+> This looks like an SRU, and the bug description follows the SRU bug
+> template ({SRU_TEMPLATE_LINK}). Some sections could be more detailed, which
+> will make the SRU team's review easier (see {SRU_REQUIREMENTS_LINK}):
 
-```
-- [Test Plan]: just 'Compile test', with no steps or expected result
-```
+followed by one paragraph per thin section, separated by blank lines: the
+section's fixed guidance (from the SRU requirements page), then "Here it
+<what's lacking>." written by the model. The guidance:
+
+- `[Impact]` "should explain the real-world impact to users, in a way a
+  technical reader unfamiliar with Ubuntu development can follow."
+- `[Test Plan]` "should be precise enough that someone else following it
+  would run exactly the same steps."
+- `[Where problems could occur]` "should analyse what could break for
+  existing users with this change, and how that risk is kept low."
 
 The model says which case applies (`problem: missing|thin`); anything else
 reads as `missing`. When deciding whether the bot already posted the same
-comment, the text after each `- [Section]:` is ignored, so a re-triage that
-words the same points differently doesn't post again.
+comment, the model's part of each point is ignored (#185), so a re-triage
+that words the same points differently doesn't post again.
 
 With several linked bugs, the lead-in covers both cases, and each failing
-bug gets its own sub-list labelled with its case (#186):
+bug gets its own sub-list labelled with its case (#186); the bullet is
+blocking if any bug is missing a section, advice otherwise (#197):
 
 > This looks like an SRU with multiple linked bugs, but some of their
 > descriptions don't follow the SRU bug template ({SRU_TEMPLATE_LINK}) or need
@@ -520,9 +555,9 @@ bug gets its own sub-list labelled with its case (#186):
 
 ```
 Bug #N, doesn't follow the template:
-  - [Test Plan]: ...
+  - [Test Plan] is missing.
 Bug #M, uses the template but needs more detail:
-  - [Impact]: ...
+  - [Impact] should explain ... Here it ...
 ```
 
 ### Changelog stanza quality

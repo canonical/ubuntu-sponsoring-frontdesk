@@ -5020,3 +5020,39 @@ each action reaching Launchpad.
 * Tests: advice for each pocket when not behind, the bounce for each
   when behind, the empty-pocket fallback (fail without the change). Not
   yet deployed.
+
+## 197. Thin SRU Template Sections Are Advice, With What Each Should Do
+
+* **Prompted by seb128 and the reporter of ezurio-qcacld-2.0-dkms bug
+  #2173882**: setting the bug Incomplete over sections that are all there
+  but thin was too strong, and the bullet ("some sections need more
+  detail" plus the model's terse gaps) didn't make clear what was
+  expected.
+* **Tier:** `thin` is now question-tier advice ("nice to have"): no
+  Incomplete, no vote, and on an MP the changelog/diff review still runs,
+  its findings joined to the SRU bullet. `missing` stays blocking. The
+  multi-bug MP bullet blocks when any bug is missing a section, and is
+  advice otherwise.
+* **Wording** (iterated with seb128 on rendered examples): the thin
+  lead-in says the description follows the template and that more detail
+  "will make the SRU team's review easier", linking the SRU requirements
+  page. Each thin section is its own paragraph, blank-line separated:
+  fixed guidance taken from that page ("[Test Plan] should be precise
+  enough that someone else following it would run exactly the same
+  steps.") then "Here it <gap>." from the model. seb128 preferred the
+  expectation first: the gap-first variant read like an echo of the
+  contributor's own text before the explanation. The prompt now asks for
+  a phrase completing "Here it ...". The `missing` points read
+  "- [Test Plan] is missing." (label then that phrase; was
+  "- [Test Plan]: missing") -- my rendering choice, flagged to seb128.
+* Rendering: a bullet's blank lines stay empty instead of carrying the
+  two-space indent, and dedup ignores trailing whitespace, so a stored
+  comment compares equal whatever Launchpad does with it. Dedup keeps
+  the fixed guidance and drops only the model's "Here it" part.
+* **Also fixed:** #189's CHECKS.md edit had deleted the whole "LLM-assisted
+  reviews" intro and table (a section rewrite ran to the next `###`
+  heading, swallowing a `##` section); restored, the SRU row updated.
+  The doc test couldn't catch it: it checks quotes, not completeness.
+* Tests: thin is advice on bugs and MPs (the MP review continues), the
+  exact thin rendering, the missing rendering, multi-bug blocking, blank
+  lines and dedup. Not yet deployed or live-verified.

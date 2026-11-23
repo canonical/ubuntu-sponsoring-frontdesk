@@ -6,7 +6,7 @@ any parsing doubt means silence, not noise."""
 import datetime
 
 import pytest
-from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTriageClient
+from fakes import CLEAN_DIFF_TEXT, FakeBug, FakeDiff, FakeLLM, FakeMP, FakeTask, FakeTriageClient
 
 import archive_lookup
 import llm_reviewer
@@ -529,11 +529,13 @@ def test_sru_mp_without_a_linked_bug_skips_the_template_check():
 
 
 def test_sru_mp_single_bug_failing_template_blocks_before_the_diff_review():
-    r = QueuedReviewer([_sru_template_reply("fail", "missing")])
+    r = QueuedReviewer([_sru_template_reply("fail", "is missing")])
     mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")])
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
-    assert comment.endswith("bug-template/#reference-sru-bug-template):\n- [Test Plan]: missing")
+    assert comment.endswith(
+        "bug-template/#reference-sru-bug-template):\n- [Test Plan] is missing."
+    )
     # Only the template-check call happened -- the changelog review (which
     # would need a second queued reply) never ran.
     assert len(r.prompts) == 1
@@ -552,7 +554,7 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
     r = QueuedReviewer(
         [
             _sru_template_reply("pass"),
-            _sru_template_reply("fail", "missing"),
+            _sru_template_reply("fail", "is missing"),
         ]
     )
     mp = FakeMP(
@@ -562,7 +564,7 @@ def test_sru_mp_multiple_bugs_all_must_pass_failures_listed():
     status, comment = r.triage_mp(mp, diff_text=MERGE_DIFF)
     assert status == "INCOMPLETE"
     assert comment.endswith(
-        "or need more detail:\nBug #20, doesn't follow the template:\n  - [Test Plan]: missing"
+        "or need more detail:\nBug #20, doesn't follow the template:\n  - [Test Plan] is missing."
     )
     assert "Bug #10" not in comment
 
@@ -595,7 +597,7 @@ def test_sru_mp_unreadable_linked_bugs_skips_rather_than_blocks():
 
 def test_sru_mp_pocket_branch_target_is_still_sru_shaped():
     # #84's fix applied to the MP-side duplicate regex too.
-    r = QueuedReviewer([_sru_template_reply("fail", "missing")])
+    r = QueuedReviewer([_sru_template_reply("fail", "is missing")])
     mp = FakeMP(
         target="refs/heads/ubuntu/jammy-updates",
         bugs=[FakeBug(id=1, description="x")],
@@ -732,8 +734,8 @@ def test_unreadable_comments_do_not_crash_the_review(monkeypatch):
 def test_sru_mp_multiple_bugs_each_say_missing_or_thin():
     # #186: one bug missing a section, another thin -- the lead-in covers
     # both, and each bug's sub-list says which case it is.
-    thin = "```yaml\nverdict: fail\nproblem: thin\nimpact: 'vague'\n```\n"
-    r = QueuedReviewer([_sru_template_reply("fail", "missing"), thin])
+    thin = "```yaml\nverdict: fail\nproblem: thin\nimpact: 'is vague'\n```\n"
+    r = QueuedReviewer([_sru_template_reply("fail", "is missing"), thin])
     mp = FakeMP(
         target="refs/heads/ubuntu/noble-devel",
         bugs=[FakeBug(id=10, description="a"), FakeBug(id=20, description="b")],
@@ -743,6 +745,33 @@ def test_sru_mp_multiple_bugs_each_say_missing_or_thin():
         "This looks like an SRU with multiple linked bugs, but some of their "
         "descriptions don't follow the SRU bug template "
         f"({llm_reviewer.SRU_TEMPLATE_LINK}) or need more detail:\n"
-        "Bug #10, doesn't follow the template:\n  - [Test Plan]: missing\n"
-        "Bug #20, uses the template but needs more detail:\n  - [Impact]: vague"
+        "Bug #10, doesn't follow the template:\n  - [Test Plan] is missing.\n"
+        "Bug #20, uses the template but needs more detail:\n  - [Impact] "
+        + llm_reviewer.SRU_SECTION_GUIDANCE["[Impact]"]
+        + " Here it is vague."
     )
+
+
+# --- #197: thin SRU template sections are advice -------------------------------
+
+_THIN = "```yaml\nverdict: fail\nproblem: thin\ntest_plan: 'is just a build'\n```\n"
+
+
+def test_sru_mp_thin_template_is_advice_and_the_review_continues():
+    r = QueuedReviewer([_THIN, _reply()])
+    mp = FakeMP(target="refs/heads/ubuntu/noble-devel", bugs=[FakeBug(id=42, description="x")])
+    status, result = r.triage_mp(mp, diff_text=MERGE_DIFF)
+    assert status == "ADVISORY"
+    assert len(r.prompts) == 2  # the changelog review still ran
+    ((kind, bullet),) = result
+    assert kind == "advisory" and "Some sections could be more detailed" in bullet
+
+
+def test_sru_bug_thin_template_is_advice():
+    r = QueuedReviewer([_THIN])
+    bug = FakeBug(
+        tasks=[FakeTask("testpkg (Ubuntu Noble)", "New")],
+        description="[Impact]\nx\n[Test Plan]\nbuild\n[Where problems could occur]\ny",
+    )
+    status, result = r.triage_bug(bug)
+    assert status == "ADVISORY" and result[0][0] == "advisory"

@@ -88,7 +88,7 @@ def render_findings_comment(findings, for_bug=False, groups=None):
     def bullets(items):
         # Continuation lines are indented so a multi-line message stays
         # visually attached to its bullet in Launchpad's plain-text renderer.
-        return "\n".join("* " + f.message.replace("\n", "\n  ") for f in items)
+        return "\n".join(_bullet_text(f.message) for f in items)
 
     def sections(items):
         incomplete = [f for f in items if f.tier == "incomplete"]
@@ -3348,6 +3348,13 @@ def already_uploaded_comment(uploads):
         "left to sponsor here. Cleaning up the queue by unsubscribing "
         f"~ubuntu-sponsors.\n\n{urls}"
     )
+
+
+def _bullet_text(message):
+    """One `* ` bullet; continuation lines are indented, blank lines stay
+    empty (#197's spaced-out SRU template points)."""
+    first, *rest = message.split("\n")
+    return "\n".join(["* " + first] + [("  " + ln) if ln else ln for ln in rest])
 
 
 def already_queued_comment(uploads, devel=None):
