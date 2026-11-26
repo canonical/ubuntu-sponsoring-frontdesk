@@ -5058,3 +5058,27 @@ each action reaching Launchpad.
 * Tests: thin is advice on bugs and MPs (the MP review continues), the
   exact thin rendering, the missing rendering, multi-bug blocking, blank
   lines and dedup. Not yet deployed or live-verified.
+
+## 198. Check 12 Asks the Previous .dsc Before Calling It a First Delta
+
+* **Found by a colleague of seb128** (hwloc bug #2171267, arighi): Check
+  12 told the noble SRU debdiff (`2.10.0-1build1` -> `2.10.0-1ubuntu0.1`)
+  it was the package's first Ubuntu delta and should add
+  `XSBC-Original-Maintainer`. But noble's `2.10.0-1build1` .dsc already
+  has `Maintainer: Ubuntu Developers` and `Original-Maintainer: Samuel
+  Thibault` -- the `buildN` upload had run update-maintainer. #93's
+  assumption (seb128's, from the bug thread) was that no-change rebuilds
+  don't; some do.
+* **Change** (agreed with seb128): the version test stays the cheap first
+  filter. Only when it says "first delta" and the diff doesn't add the
+  field, the previous version's .dsc (in the target series, any status)
+  is fetched: `Original-Maintainer:` there -- what the debian/control
+  field becomes in a .dsc -- means already done, no finding. No such
+  field, or no publication of that version, keeps the finding as
+  before. A failed lookup or fetch is inconclusive, retried next run
+  (seb128's choice over keeping the finding: retrying beats a false
+  positive). Advisory tier and wording unchanged.
+* seb128 is handling the reply on the bug himself.
+* Tests: the live shape is quiet, a failed lookup is inconclusive, no
+  fetch when the diff adds the field, the .dsc parsing with and without
+  the field, no publication. Not yet deployed.

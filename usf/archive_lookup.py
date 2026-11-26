@@ -383,6 +383,54 @@ _DSC_FORMAT_RE = re.compile(r"^Format:\s*(?P<format>.+?)\s*$", re.MULTILINE)
 _NON_NATIVE_FILE_MARKERS = (".diff.gz", ".debian.tar.")
 
 
+_DSC_ORIGINAL_MAINTAINER_RE = re.compile(r"^Original-Maintainer:\s*\S", re.MULTILINE)
+
+
+def original_maintainer_recorded(lp, package, series_name, version):
+    """#198: whether the .dsc of `package` `version` in `series_name` (any
+    status, any pocket) already carries `Original-Maintainer:` -- what
+    `XSBC-Original-Maintainer` in debian/control becomes in the .dsc, so
+    update-maintainer was already run (live: hwloc 2.10.0-1build1 in noble,
+    a no-change rebuild that did). True / False (no such field, or no such
+    publication) / None (a lookup or fetch failed -- retriable)."""
+    try:
+        ubuntu = lp.distributions["ubuntu"]
+        series = ubuntu.getSeries(name_or_version=series_name)
+        pubs = list(
+            ubuntu.main_archive.getPublishedSources(
+                source_name=package, exact_match=True, distro_series=series, version=version
+            )
+        )
+        if not pubs:
+            logger.debug(
+                "original_maintainer_recorded: no publication of %s %s in %s.",
+                package,
+                version,
+                series_name,
+            )
+            return False
+        pubs.sort(key=lambda p: getattr(p, "status", "") == "Deleted")
+        dsc_url = next((u for u in pubs[0].sourceFileUrls() if u.endswith(".dsc")), None)
+    except Exception as e:
+        logger.warning(
+            "Launchpad lookup failed (source files for %s %s in %s): %s",
+            package,
+            version,
+            series_name,
+            e,
+        )
+        return None
+    if dsc_url is None:
+        return None
+    try:
+        with urllib.request.urlopen(dsc_url, timeout=_LIBRARIAN_TIMEOUT) as resp:
+            text = resp.read().decode(errors="replace")
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        logger.warning("could not fetch .dsc at %s: %s", dsc_url, e)
+        return None
+    return bool(_DSC_ORIGINAL_MAINTAINER_RE.search(text))
+
+
 def is_native_source(lp, package, series_name):
     """
     Whether the currently published `package` in `series_name` is a native

@@ -373,7 +373,11 @@ changes edit" for an MP, "The attached debdiff edits" for a bug).
 
 ### Check 12: XSBC-Original-Maintainer
 
-`check_xsbc_original_maintainer`, design #93.
+`check_xsbc_original_maintainer`, design #93/#198. "First delta" is read from
+the versions (no `ubuntu` before, one now); before it fires, the previous
+version's `.dsc` is checked for `Original-Maintainer:` -- a `buildN` upload
+may already have run update-maintainer (#198). A failed fetch leaves the item
+for the next run.
 
 > This looks like the package's first Ubuntu delta, but `debian/control`
 > doesn't add an `XSBC-Original-Maintainer` field preserving the Debian

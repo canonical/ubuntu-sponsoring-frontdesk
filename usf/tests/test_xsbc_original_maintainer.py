@@ -4,12 +4,19 @@ https://ubuntu.com/project/docs/contributors/updating/make-changes-to-a-
 package/#updating-the-maintainer). Advisory only -- a sponsor can add it
 at upload time."""
 
+import pytest
 from fakes import FakeAttachment, FakeBug, FakeDiff, FakeMP, FakeRoot, FakeTriageClient
 
 import archive_lookup
 import checks
 
 URL = "url"
+
+
+@pytest.fixture(autouse=True)
+def _previous_dsc_without_the_field(monkeypatch):
+    # #198: by default the previous version's .dsc doesn't record it.
+    monkeypatch.setattr(archive_lookup, "original_maintainer_recorded", lambda *a: False)
 
 
 def _mp_with_diff(diff_text):
@@ -186,3 +193,87 @@ def test_bug_no_attachments_is_false():
         checks.check_xsbc_original_maintainer(URL, bug, FakeTriageClient(objects={URL: bug}))
         is False
     )
+
+
+# --- #198 (live, hwloc bug #2171267): the previous .dsc already records it --
+
+
+def _check(mp):
+    return checks.check_xsbc_original_maintainer(URL, mp, FakeTriageClient({}, lp=FakeRoot()))
+
+
+def test_a_build_n_that_ran_update_maintainer_is_not_flagged(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        archive_lookup,
+        "original_maintainer_recorded",
+        lambda lp, pkg, series, version: seen.append((pkg, series, version)) or True,
+    )
+    mp = _mp_with_diff(_FIRST_DELTA_NO_XSBC)
+    assert _check(mp) is False
+    # The MP targets ubuntu/devel, which FakeRoot calls noble.
+    assert seen == [("foo", "noble", "1.2-3")]
+
+
+def test_a_failed_dsc_lookup_is_inconclusive(monkeypatch):
+    monkeypatch.setattr(archive_lookup, "original_maintainer_recorded", lambda *a: None)
+    mp = _mp_with_diff(_FIRST_DELTA_NO_XSBC)
+    assert _check(mp) is None
+
+
+def test_the_dsc_is_not_fetched_when_the_diff_adds_the_field(monkeypatch):
+    monkeypatch.setattr(archive_lookup, "original_maintainer_recorded", lambda *a: 1 / 0)
+    mp = _mp_with_diff(_FIRST_DELTA_WITH_XSBC)
+    assert _check(mp) is False
+
+
+_DSC = """-----BEGIN PGP SIGNED MESSAGE-----
+
+Format: 3.0 (quilt)
+Source: hwloc
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+{extra}Version: 2.10.0-1build1
+"""
+
+
+@pytest.mark.parametrize(
+    "extra, expected",
+    [("Original-Maintainer: Samuel Thibault <sthibault@debian.org>\n", True), ("", False)],
+)
+def test_original_maintainer_recorded_reads_the_dsc(monkeypatch, extra, expected):
+    import io
+    import types
+    import urllib.request
+
+    pub = types.SimpleNamespace(
+        status="Published", sourceFileUrls=lambda: ["https://x/hwloc_2.10.0-1build1.dsc"]
+    )
+    archive = types.SimpleNamespace(getPublishedSources=lambda **kw: [pub])
+    lp = types.SimpleNamespace(
+        distributions={
+            "ubuntu": types.SimpleNamespace(main_archive=archive, getSeries=lambda **kw: "noble")
+        }
+    )
+    monkeypatch.undo()  # the real function, not the autouse stub
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda url, timeout: io.BytesIO(_DSC.format(extra=extra).encode()),
+    )
+    assert (
+        archive_lookup.original_maintainer_recorded(lp, "hwloc", "noble", "2.10.0-1build1")
+        is expected
+    )
+
+
+def test_original_maintainer_recorded_without_publication_is_false(monkeypatch):
+    import types
+
+    archive = types.SimpleNamespace(getPublishedSources=lambda **kw: [])
+    lp = types.SimpleNamespace(
+        distributions={
+            "ubuntu": types.SimpleNamespace(main_archive=archive, getSeries=lambda **kw: "noble")
+        }
+    )
+    monkeypatch.undo()
+    assert archive_lookup.original_maintainer_recorded(lp, "hwloc", "noble", "1") is False

@@ -5470,9 +5470,13 @@ def check_xsbc_original_maintainer(url, lp_obj, lp_client):
     add this at upload time, so it doesn't need to bounce the
     contribution back.
 
+    The version test can't see a `buildN` upload that ran update-maintainer
+    anyway (#198), so before firing, the previous version's .dsc is
+    checked for `Original-Maintainer:`.
+
     Returns a Finding (question/advisory), False (not a first delta, or
-    the field is already present), or None (diff/archive lookup failed --
-    retriable).
+    the field is already present -- in the diff or the previous .dsc), or
+    None (diff/archive lookup failed -- retriable).
     """
     resource_type = lp_obj.resource_type_link.split("#")[-1]
     if resource_type in ("bug", "bug_task"):
@@ -5546,6 +5550,24 @@ def check_xsbc_original_maintainer(url, lp_obj, lp_client):
         return None
     if _XSBC_ORIGINAL_MAINTAINER_RE.search(full_text):
         return False
+    # #198 (live, hwloc bug #2171267): a version without `ubuntu` can still
+    # have had update-maintainer run -- some no-change rebuilds (`buildN`)
+    # do. The previous version's .dsc says for sure; only fetched here,
+    # where the cheap version test would otherwise fire.
+    if target_series:
+        recorded = archive_lookup.original_maintainer_recorded(
+            lp_client.lp, package, target_series, old_version
+        )
+        if recorded is None:
+            return None
+        if recorded:
+            logger.debug(
+                "check_xsbc_original_maintainer: %s %s already records the "
+                "original maintainer; not a first delta.",
+                package,
+                old_version,
+            )
+            return False
     return _xsbc_original_maintainer_finding(url)
 
 
